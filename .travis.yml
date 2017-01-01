@@ -4,14 +4,6 @@ os:
   - linux
   - osx
 
-dist: trusty
-sudo: required
-osx_image: xcode8.2
-
-compiler:
-  - gcc
-  - clang
-
 branches:
   only:
     - master
@@ -28,9 +20,16 @@ matrix:
     - os: osx
   include:
     - os: linux
+      dist: trusty
+      sudo: required
       env: CODE_BUILD=1 LINUX_BUILD=1 APPLE_BUILD=0 DOCS_BUILD=0
+      compiler:
+      - gcc
+      - clang
     - os: osx
+      osx_image: xcode8.2
       env: CODE_BUILD=1 LINUX_BUILD=0 APPLE_BUILD=1 DOCS_BUILD=0
+      compiler: clang
     - compiler: gcc
       env: CODE_BUILD=0 LINUX_BUILD=0 APPLE_BUILD=0 DOCS_BUILD=1
 
