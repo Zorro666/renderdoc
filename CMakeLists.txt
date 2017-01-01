@@ -54,6 +54,13 @@ option(ENABLE_QRENDERDOC "Enable qrenderdoc" ON)
 option(ENABLE_XLIB "Enable xlib windowing support" ON)
 option(ENABLE_XCB "Enable xcb windowing support" ON)
 
+if(APPLE)
+    message(STATUS "Disabling qrenderdoc for apple build")
+    set(ENABLE_QRENDERDOC OFF CACHE BOOL "" FORCE)
+    message(STATUS "Disabling Vulkan driver for apple build")
+	set(ENABLE_VULKAN OFF CACHE BOOL "" FORCE)
+endif()
+
 if(WIN32)
     message(FATAL_ERROR "CMake is not needed on Windows, just open and build renderdoc.sln")
 endif()
