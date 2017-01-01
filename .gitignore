@@ -31,6 +31,7 @@ obj/
 *.sdf
 *.suo
 *.dll
+*.swp
 symsrv.yes
 ipch/
 renderdoc/driver/vulkan/renderdoc_capture.json
