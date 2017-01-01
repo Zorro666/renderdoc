@@ -16,8 +16,6 @@ env:
 # only build docs once on linux
 matrix:
   fast_finish: true
-  allow_failures:
-    - os: osx
   include:
     - os: linux
       dist: trusty
@@ -29,12 +27,15 @@ matrix:
       sudo: required
       env: CODE_BUILD=1 LINUX_BUILD=1 APPLE_BUILD=0 DOCS_BUILD=0
       compiler: clang
+    - os: linux
+      dist: trusty
+      sudo: required
+      compiler: gcc
+      env: CODE_BUILD=0 LINUX_BUILD=0 APPLE_BUILD=0 DOCS_BUILD=1
     - os: osx
       osx_image: xcode8.2
       env: CODE_BUILD=1 LINUX_BUILD=0 APPLE_BUILD=1 DOCS_BUILD=0
       compiler: clang
-    - compiler: gcc
-      env: CODE_BUILD=0 LINUX_BUILD=0 APPLE_BUILD=0 DOCS_BUILD=1
 
 # install dependencies
 install:
