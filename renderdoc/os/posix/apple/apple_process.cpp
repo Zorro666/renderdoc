@@ -67,6 +67,7 @@ int GetIdentPort(pid_t childPid)
   uint32_t wait = 1;
   for(int i = 0; i < 10; ++i)
   {
+    usleep(100 * 1000);
     result = execcmd(lsof.c_str());
     if(!result.empty())
       break;
@@ -141,7 +142,10 @@ int GetIdentPort(pid_t childPid)
       return 0;
     }
   }
-  RDCERR("Failed to parse output from lsof:\n%s", result.c_str());
+  RDCLOG("\n");
+  RDCLOG(result.c_str());
+  RDCLOG("\n");
+  RDCERR("Failed to parse output from lsof");
   return 0;
 }
 
