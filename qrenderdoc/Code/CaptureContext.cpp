@@ -1758,9 +1758,17 @@ WindowingData CaptureContext::CreateWindowingData(QWidget *window)
 #elif defined(RENDERDOC_PLATFORM_LINUX)
 
   if(m_CurWinSystem == WindowingSystem::XCB)
-    return CreateXCBWindowingData(m_XCBConnection, (xcb_window_t)window->winId());
+    return CreateXCBWindowingData(m_XCBConnection, (xcb_window_t)widget);
   else
-    return CreateXlibWindowingData(m_X11Display, (Drawable)window->winId());
+    return CreateXlibWindowingData(m_X11Display, (Drawable)widget);
+
+#elif defined(RENDERDOC_PLATFORM_APPLE)
+
+  void *view = (void *)window->winId();
+
+  void *layer = makeNSViewMetalCompatible(view);
+
+  return CreateMacOSWindowingData(layer);
 
 #elif defined(RENDERDOC_PLATFORM_APPLE)
 
