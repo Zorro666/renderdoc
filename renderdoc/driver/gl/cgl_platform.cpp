@@ -22,6 +22,7 @@
  * THE SOFTWARE.
  ******************************************************************************/
 
+#include <OpenGL/OpenGL.h>
 #include "cgl_dispatch_table.h"
 #include "gl_common.h"
 

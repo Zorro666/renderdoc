@@ -23,6 +23,7 @@
  ******************************************************************************/
 
 #include <dlfcn.h>
+#include "OpenGL/OpenGL.h"
 #include "hooks/hooks.h"
 #include "cgl_dispatch_table.h"
 #include "gl_driver.h"
@@ -73,7 +74,7 @@ CGLError GL_EXPORT_NAME(CGLCreateContext)(CGLPixelFormatObj pix, CGLContextObj s
   init.isSRGB = value;
   value = 1;
   // GLX.glXGetConfig(dpy, vis, GLX_SAMPLES_ARB, &value);
-  init.multiSamples = RDCMAX(1, value);
+  init.isSRGB = RDCMAX(1, value);
 
   GLWindowingData data;
   data.wnd = NULL;
@@ -148,6 +149,8 @@ CGLError GL_EXPORT_NAME(CGLFlushDrawable)(CGLContextObj ctx)
 
   SCOPED_LOCK(glLock);
 
+  cglhook.driver.WindowSize((void *)0x4, 800, 200);
+
   cglhook.driver.SwapBuffers((void *)0x4);
 
   return CGL.CGLFlushDrawable(ctx);
@@ -186,7 +189,7 @@ void CGLHook::RegisterHooks()
 // register CGL hooks
 #define CGL_REGISTER(func)            \
   LibraryHooks::RegisterFunctionHook( \
-      "OpenGL", FunctionHook(STRINGIZE(func), (void **)&CGL.func, (void *)&GL_EXPORT_NAME(func)));
+      "OpenGL", FunctionHook(STRINGIZE(func), (void **)&CGL.func, (void *)&func));
   CGL_HOOKED_SYMBOLS(CGL_REGISTER)
 #undef CGL_REGISTER
 }
