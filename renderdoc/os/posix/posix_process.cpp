@@ -743,8 +743,6 @@ ExecuteResult Process::LaunchAndInjectIntoProcess(const char *app, const char *w
       EnvironmentModification(EnvMod::Append, EnvSep::Platform, LIB_PATH_ENV_VAR, binpath.c_str()));
   modifications.push_back(
       EnvironmentModification(EnvMod::Append, EnvSep::Platform, LIB_PATH_ENV_VAR, libpath.c_str()));
-  modifications.push_back(EnvironmentModification(EnvMod::Append, EnvSep::Platform,
-                                                  LIB_PATH_ENV_VAR, ownlibpath.c_str()));
   modifications.push_back(
       EnvironmentModification(EnvMod::Append, EnvSep::Platform, PRELOAD_ENV_VAR, libfile.c_str()));
   modifications.push_back(
