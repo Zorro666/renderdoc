@@ -125,7 +125,6 @@ void LibraryHooks::EndHookRegistration()
     if(hook.orig && *hook.orig == NULL)
     {
       *hook.orig = dlsym(RTLD_NEXT, hook.function.c_str());
-      RDCASSERT(*hook.orig != hook.hook, hook.function);
     }
   }
 }
