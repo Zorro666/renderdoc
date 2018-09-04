@@ -2087,9 +2087,10 @@ void GLDispatchTable::EmulateRequiredExtensions()
 
   if(!HasExt[ARB_program_interface_query])
   {
+    RDCLOG("Emulating ARB_program_interface_query");
     EMULATE_FUNC(glGetProgramInterfaceiv);
-    EMULATE_FUNC(glGetProgramResourceiv);
     EMULATE_FUNC(glGetProgramResourceName);
+    EMULATE_FUNC(glGetProgramResourceiv);
   }
 
   // APIs that are not available at all in GLES.
