@@ -148,6 +148,18 @@ CGLError GL_EXPORT_NAME(CGLFlushDrawable)(CGLContextObj ctx)
 
   SCOPED_LOCK(glLock);
 
+  GLint viewport[4];
+  GL.glGetIntegerv((RDCGLenum)GL_VIEWPORT, viewport);
+  // RDCLOG("viewport %d x %d %d x %d", viewport[0], viewport[1], viewport[2], viewport[3]);
+  uint32_t w = 800;
+  uint32_t h = 800;
+  if(viewport[2] != 0)
+    w = viewport[2];
+  if(viewport[3] != 0)
+    h = viewport[3];
+
+  cglhook.driver.WindowSize((void *)0x4, w, h);
+
   cglhook.driver.SwapBuffers((void *)0x4);
 
   return CGL.CGLFlushDrawable(ctx);
