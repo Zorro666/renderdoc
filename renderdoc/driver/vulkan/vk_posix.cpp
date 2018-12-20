@@ -114,7 +114,7 @@ void WrappedVulkan::AddRequiredExtensions(bool instance, vector<string> &extensi
     RDCASSERT(supportedExtensions.find(VK_KHR_ANDROID_SURFACE_EXTENSION_NAME) !=
               supportedExtensions.end());
 
-    m_SupportedWindowSystems.push_back(WindowingSystem::macOS);
+    m_SupportedWindowSystems.push_back(WindowingSystem::Android);
 
     // don't add duplicates, application will have added this but just be sure
     if(std::find(extensionList.begin(), extensionList.end(),
@@ -181,14 +181,22 @@ void WrappedVulkan::AddRequiredExtensions(bool instance, vector<string> &extensi
   }
 }
 
-// defined in vk_linux.cpp or vk_apple.cpp
-string GetThisLibPath();
-
 // embedded data file
 
 extern unsigned char driver_vulkan_renderdoc_json[];
 extern int driver_vulkan_renderdoc_json_len;
 
+#if ENABLED(RDOC_ANDROID)
+bool VulkanReplay::CheckVulkanLayer(VulkanLayerFlags &flags, std::vector<std::string> &myJSONs,
+                                    std::vector<std::string> &otherJSONs)
+{
+  return false;
+}
+
+void VulkanReplay::InstallVulkanLayer(bool systemLevel)
+{
+}
+#else
 static std::string GenerateJSON(const std::string &sopath)
 {
   char *txt = (char *)driver_vulkan_renderdoc_json;
@@ -293,7 +301,8 @@ string LayerRegistrationPath(LayerPath path)
       if(xdg && FileIO::exists(xdg))
         return string(xdg) + "/vulkan/implicit_layer.d/renderdoc_capture.json";
 
-      return string(getenv("HOME")) +
+      const char *home_path = getenv("HOME");
+      return string(home_path != NULL ? home_path : "") +
              "/.local/share/vulkan/implicit_layer.d/renderdoc_capture.json";
     }
     default: break;
@@ -322,7 +331,10 @@ bool VulkanReplay::CheckVulkanLayer(VulkanLayerFlags &flags, std::vector<std::st
 {
   // see if the user has suppressed all this checking as a "I know what I'm doing" measure
 
-  if(FileExists(string(getenv("HOME")) + "/.renderdoc/ignore_vulkan_layer_issues"))
+  const char *home_path = getenv("HOME");
+  if(home_path == NULL)
+    home_path = "";
+  if(FileExists(string(home_path) + "/.renderdoc/ignore_vulkan_layer_issues"))
   {
     flags = VulkanLayerFlags::ThisInstallRegistered;
     return false;
@@ -332,7 +344,8 @@ bool VulkanReplay::CheckVulkanLayer(VulkanLayerFlags &flags, std::vector<std::st
   // check that there's only one layer registered, and it points to the same .so file that
   // we are running with in this instance of renderdoccmd
 
-  string librenderdoc_path = GetThisLibPath();
+  string librenderdoc_path;
+  FileIO::GetLibraryFilename(librenderdoc_path);
 
   if(librenderdoc_path.empty() || !FileExists(librenderdoc_path))
   {
@@ -443,7 +456,8 @@ void VulkanReplay::InstallVulkanLayer(bool systemLevel)
 
   string jsonPath = LayerRegistrationPath(idx);
   string path = GetSOFromJSON(jsonPath);
-  string libPath = GetThisLibPath();
+  string libPath;
+  FileIO::GetLibraryFilename(libPath);
 
   if(path != libPath)
   {
@@ -464,3 +478,4 @@ void VulkanReplay::InstallVulkanLayer(bool systemLevel)
     }
   }
 }
+#endif

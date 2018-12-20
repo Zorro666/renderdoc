@@ -236,4 +236,6 @@ void VulkanReplay::GetOutputWindowDimensions(uint64_t id, int32_t &w, int32_t &h
 }
 
 void *LoadVulkanLibrary()
+{
   return Process::LoadModule("libvulkan.so.1");
+}

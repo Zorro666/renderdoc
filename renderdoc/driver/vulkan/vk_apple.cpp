@@ -87,15 +87,32 @@ void VulkanReplay::GetOutputWindowDimensions(uint64_t id, int32_t &w, int32_t &h
   h = getCALayerHeight(outw.wnd);
 }
 
-const char *VulkanLibraryName = "libvulkan.1.dylib";
+static const char *VulkanLibraryName = "libvulkan.1.dylib";
 
-string GetThisLibPath()
+void *LoadVulkanLibrary()
 {
-  Dl_info info;
-  if(dladdr(&VulkanLibraryName, &info))
+  // first try to load the module globally. If so we assume the user has a global (or at least
+  // user-wide) configuration that we should use.
+  void *ret = Process::LoadModule(VulkanLibraryName);
+
+  if(ret)
   {
-    RDCDEBUG("GetThisLibPath = '%s'", info.dli_fname);
-    return info.dli_fname;
+    RDCLOG("Loaded global libvulkan.1.dylib, using default MoltenVK environment");
+    return ret;
   }
-  return "";
+
+  // if not, we fall back to our embedded libvulkan and also force use of our embedded ICD.
+  std::string libpath;
+  FileIO::GetLibraryFilename(libpath);
+  libpath = dirname(libpath) + "/../MoltenVK/";
+
+  RDCLOG("Couldn't load global libvulkan.1.dylib, falling back to bundled MoltenVK in %s",
+         libpath.c_str());
+
+  Process::RegisterEnvironmentModification(EnvironmentModification(
+      EnvMod::Set, EnvSep::NoSep, "VK_ICD_FILENAMES", (libpath + "MoltenVK_icd.json").c_str()));
+
+  Process::ApplyEnvironmentModification();
+
+  return Process::LoadModule((libpath + VulkanLibraryName).c_str());
 }
