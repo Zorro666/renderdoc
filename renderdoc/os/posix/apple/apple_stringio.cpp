@@ -42,7 +42,17 @@ void Init()
 
 bool PlatformHasKeyInput()
 {
-  return false;
+  return true;
+}
+
+bool IsKeySupported(int key)
+{
+  switch(key)
+  {
+    case eRENDERDOC_Key_F11: return true;
+    case eRENDERDOC_Key_F12: return true;
+    default: return false;
+  }
 }
 
 void AddInputWindow(void *wnd)
@@ -53,9 +63,25 @@ void RemoveInputWindow(void *wnd)
 {
 }
 
+/*
+/System/Library/Frameworks/Carbon.framework/Versions/A/Frameworks/HIToolbox.framework/Versions/A/Headers/Events.h
+CGKeyCode's
+kVK_F11                       = 0x67,
+kVK_F12                       = 0x6F,
+*/
+
 bool GetKeyState(int key)
 {
-  return false;
+  int vk = 0;
+  switch(key)
+  {
+    case eRENDERDOC_Key_F11: vk = 0x67; break;
+    case eRENDERDOC_Key_F12: vk = 0x6F; break;
+    default: break;
+  }
+  if(vk == 0)
+    return false;
+  return IsKeyPressed(vk);
 }
 }
 

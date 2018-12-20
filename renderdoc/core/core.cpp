@@ -226,11 +226,20 @@ RenderDoc::RenderDoc()
   m_Cap = 0;
 
   m_FocusKeys.clear();
-  m_FocusKeys.push_back(eRENDERDOC_Key_F11);
+  if(Keyboard::IsKeySupported(eRENDERDOC_Key_F11))
+  {
+    m_FocusKeys.push_back(eRENDERDOC_Key_F11);
+  }
 
   m_CaptureKeys.clear();
-  m_CaptureKeys.push_back(eRENDERDOC_Key_F12);
-  m_CaptureKeys.push_back(eRENDERDOC_Key_PrtScrn);
+  if(Keyboard::IsKeySupported(eRENDERDOC_Key_F12))
+  {
+    m_CaptureKeys.push_back(eRENDERDOC_Key_F12);
+  }
+  if(Keyboard::IsKeySupported(eRENDERDOC_Key_PrtScrn))
+  {
+    m_CaptureKeys.push_back(eRENDERDOC_Key_PrtScrn);
+  }
 
   m_ExHandler = NULL;
 
