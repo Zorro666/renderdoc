@@ -22,6 +22,8 @@
  * THE SOFTWARE.
  ******************************************************************************/
 
+#define GL_SILENCE_DEPRECATION
+
 #include <dlfcn.h>
 #include "OpenGL/OpenGL.h"
 #include "hooks/hooks.h"
