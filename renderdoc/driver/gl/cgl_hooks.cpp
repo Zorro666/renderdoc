@@ -22,6 +22,8 @@
  * THE SOFTWARE.
  ******************************************************************************/
 
+#define GL_SILENCE_DEPRECATION
+
 #include <dlfcn.h>
 #include "hooks/hooks.h"
 #include "cgl_dispatch_table.h"
