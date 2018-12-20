@@ -80,6 +80,11 @@ bool PlatformHasKeyInput()
   return true;
 }
 
+bool IsKeySupported(int key)
+{
+  return true;
+}
+
 set<HWND> inputWindows;
 
 void AddInputWindow(void *wnd)
