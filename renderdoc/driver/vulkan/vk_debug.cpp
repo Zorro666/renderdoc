@@ -168,7 +168,7 @@ static void create(WrappedVulkan *driver, const char *objName, const int line, V
   VkResult vkr = driver->vkCreateComputePipelines(driver->GetDev(), VK_NULL_HANDLE, 1,
                                                   &compPipeInfo, NULL, pipe);
   if(vkr != VK_SUCCESS)
-    RDCWARN("Failed creating object %s at line %i, vkr was %s", objName, line, ToStr(vkr).c_str());
+    RDCERR("Failed creating object %s at line %i, vkr was %s", objName, line, ToStr(vkr).c_str());
 }
 
 // Create a compute pipeline with a SPIRV Blob (creates a temporary shader module)
@@ -211,7 +211,7 @@ static void create(WrappedVulkan *driver, const char *objName, const int line, V
   vkr = driver->vkCreateComputePipelines(driver->GetDev(), VK_NULL_HANDLE, 1, &compPipeInfo, NULL,
                                          pipe);
   if(vkr != VK_SUCCESS)
-    RDCWARN("Failed creating object %s at line %i, vkr was %s", objName, line, ToStr(vkr).c_str());
+    RDCERR("Failed creating object %s at line %i, vkr was %s", objName, line, ToStr(vkr).c_str());
 
   driver->vkDestroyShaderModule(driver->GetDev(), module, NULL);
 }
@@ -387,7 +387,7 @@ static void create(WrappedVulkan *driver, const char *objName, const int line, V
   VkResult vkr = driver->vkCreateGraphicsPipelines(driver->GetDev(), VK_NULL_HANDLE, 1,
                                                    &graphicsPipeInfo, NULL, pipe);
   if(vkr != VK_SUCCESS)
-    RDCWARN("Failed creating object %s at line %i, vkr was %s", objName, line, ToStr(vkr).c_str());
+    RDCERR("Failed creating object %s at line %i, vkr was %s", objName, line, ToStr(vkr).c_str());
 }
 
 // utility macro that lets us check for VkResult failures inside the utility helpers while
