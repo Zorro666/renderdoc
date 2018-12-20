@@ -1,0 +1,66 @@
+{
+	"folders":
+	[
+		{
+			"file_exclude_patterns": [ "*.swp", "*.swo", "*.orig" ],
+			"path": "../../../docs"
+		},
+		{
+			"path": "../../../qrenderdoc"
+		},
+		{
+			"file_exclude_patterns": [ "*.swp", "*.swo", "*.orig" ],
+			"path": "../../../renderdoc"
+		},
+		{
+			"file_exclude_patterns": [ "*.swp", "*.swo", "*.orig" ],
+			"path": "../../../renderdoccmd"
+		},
+		{
+			"file_exclude_patterns": [ "*.swp", "*.swo", "*.orig" ],
+			"path": "../../../renderdocshim"
+		},
+		{
+			"file_exclude_patterns": [ "*.swp", "*.swo", "*.orig" ],
+			"path": "../../../util"
+		}
+	],
+	"build_systems":
+	[
+		{
+			"name": "renderdoc",
+			"osx":     { "cmd": ["make", "-Cbuild", "-j8", "all" ] },
+			"linux":   { "cmd": ["make", "-Cbuild", "all" ] },
+			"windows": { "cmd": ["echo", "NEED TO SPECIFY HOW TO BUILD WINDOWS FROM COMMAND LINE" ] },
+			"file_regex": "^(..[^:]*):([0-9]+):?([0-9]+)?:? (.*)$",
+			"working_dir": "${project_path}/../../..",
+			"variants":
+			[
+				{
+					"name": "qrenderdoc (Run)",
+					"osx":     { "cmd": ["open" , "./build/bin/qrenderdoc.app" ] },
+					"linux":   { "cmd": ["echo", "NEED TO SPECIFY HOW TO RUN qrenderdoc FROM COMMAND LINE" ] },
+					"windows": { "cmd": ["echo", "NEED TO SPECIFY HOW TO RUN qrenderdoc FROM COMMAND LINE" ] }
+				},
+				{
+					"name": "CMake (Debug)",
+					"osx":     { "cmd": ["cmake", "-DCMAKE_BUILD_TYPE=Debug", "-Bbuild", "-H." ] },
+					"linux":   { "cmd": ["cmake", "-DCMAKE_BUILD_TYPE=Debug", "-Bbuild", "-H." ] },
+					"windows": { "cmd": ["echo", "NEED TO SPECIFY HOW TO BUILD WINDOWS FROM COMMAND LINE" ] }
+				},
+				{
+					"name": "renderdoccmd",
+					"osx":     { "cmd": ["make", "-Cbuild", "-j8", "renderdoccmd" ] },
+					"linux":   { "cmd": ["make", "-Cbuild", "renderdoccmd" ] },
+					"windows": { "cmd": ["echo", "NEED TO SPECIFY HOW TO BUILD WINDOWS FROM COMMAND LINE" ] },
+				},
+				{
+					"name": "qrenderdoc",
+					"osx":     { "cmd": ["make", "-Cbuild", "-j8", "build-qrenderdoc" ] },
+					"linux":   { "cmd": ["make", "-Cbuild", "build-qrenderdoc" ] },
+					"windows": { "cmd": ["echo", "NEED TO SPECIFY HOW TO BUILD WINDOWS FROM COMMAND LINE" ] },
+				},
+			],
+		}
+	]
+}
