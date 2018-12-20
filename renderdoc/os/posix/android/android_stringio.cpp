@@ -40,6 +40,11 @@ bool PlatformHasKeyInput()
   return false;
 }
 
+bool IsKeySupported(int key)
+{
+  return false;
+}
+
 void AddInputWindow(void *wnd)
 {
 }

@@ -29,7 +29,29 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <uuid/uuid.h>
+#include "api/app/renderdoc_app.h"
 #include "os/os_specific.h"
+
+extern bool IsKeyPressed(int key);
+/*
+#include <Carbon/Carbon.h>
+
+bool isPressed( unsigned short inKeyCode )
+{
+    unsigned char keyMap[16];
+    GetKeys((BigEndianUInt32*) &keyMap);
+    return (0 != ((keyMap[ inKeyCode >> 3] >> (inKeyCode & 7)) & 1));
+}
+*/
+/*
+bool CGEventSourceKeyState(CGEventSourceStateID stateID, CGKeyCode key);
+stateID = kCGEventSourceStateCombinedSessionState
+/System/Library/Frameworks/Carbon.framework/Versions/A/Frameworks/HIToolbox.framework/Versions/A/Headers/Events.h
+CGKeyCode's
+kVK_F12                       = 0x6F,
+
+
+*/
 
 namespace Keyboard
 {
@@ -39,7 +61,17 @@ void Init()
 
 bool PlatformHasKeyInput()
 {
-  return false;
+  return true;
+}
+
+bool IsKeySupported(int key)
+{
+  switch(key)
+  {
+    case eRENDERDOC_Key_F11: return true;
+    case eRENDERDOC_Key_F12: return true;
+    default: return false;
+  }
 }
 
 void AddInputWindow(void *wnd)
@@ -50,9 +82,25 @@ void RemoveInputWindow(void *wnd)
 {
 }
 
+/*
+/System/Library/Frameworks/Carbon.framework/Versions/A/Frameworks/HIToolbox.framework/Versions/A/Headers/Events.h
+CGKeyCode's
+kVK_F11                       = 0x67,
+kVK_F12                       = 0x6F,
+*/
+
 bool GetKeyState(int key)
 {
-  return false;
+  int vk = 0;
+  switch(key)
+  {
+    case eRENDERDOC_Key_F11: vk = 0x67; break;
+    case eRENDERDOC_Key_F12: vk = 0x6F; break;
+    default: break;
+  }
+  if(vk == 0)
+    return false;
+  return IsKeyPressed(vk);
 }
 }
 

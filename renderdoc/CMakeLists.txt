@@ -259,6 +259,7 @@ elseif(APPLE)
         os/posix/apple/apple_threading.cpp
         os/posix/apple/apple_hook.cpp
         os/posix/apple/apple_network.cpp
+        os/posix/apple/apple_helper.mm
         os/posix/posix_network.h
         os/posix/posix_network.cpp
         os/posix/posix_process.cpp
