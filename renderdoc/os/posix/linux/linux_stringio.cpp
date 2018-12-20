@@ -64,6 +64,15 @@ bool PlatformHasKeyInput()
 #endif
 }
 
+bool IsKeySupported(int key)
+{
+#if ENABLED(RDOC_XCB) || ENABLED(RDOC_XLIB)
+  return true;
+#else
+  return false;
+#endif
+}
+
 #if ENABLED(RDOC_XLIB)
 
 Display *CurrentXDisplay = NULL;

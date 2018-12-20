@@ -360,6 +360,7 @@ void AddInputWindow(void *wnd);
 void RemoveInputWindow(void *wnd);
 bool GetKeyState(int key);
 bool PlatformHasKeyInput();
+bool IsKeySupported(int key);
 };
 
 // implemented per-platform
