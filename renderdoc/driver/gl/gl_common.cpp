@@ -41,6 +41,7 @@ bool VendorCheck[VendorCheck_Count] = {};
 int GLCoreVersion = 0;
 bool GLIsCore = false;
 bool IsGLES = false;
+bool IsApple = false;
 
 template <>
 bool CheckConstParam(bool t)
@@ -456,9 +457,13 @@ void FetchEnabledExtensions()
 
     GLCoreVersion = RDCMAX(GLCoreVersion, mj * 10 + mn);
   }
+  if(GLCoreVersion == 41)
+  {
+    IsApple = true;
+  }
 
-  RDCLOG("Checking enabled extensions, running as %s %d.%d", IsGLES ? "OpenGL ES" : "OpenGL",
-         (GLCoreVersion / 10), (GLCoreVersion % 10));
+  RDCLOG("Checking enabled extensions, running as %s%s %d.%d", IsGLES ? "OpenGL ES" : "OpenGL",
+         IsApple ? "(Apple)" : "", (GLCoreVersion / 10), (GLCoreVersion % 10));
 
   if(GL.glGetStringi)
   {
