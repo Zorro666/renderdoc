@@ -2093,6 +2093,11 @@ void GLDispatchTable::EmulateRequiredExtensions()
     EMULATE_FUNC(glGetProgramResourceiv);
   }
 
+  if(IsApple)
+  {
+    RDCLOG("Emulating IsApple functions");
+  }
+
   // APIs that are not available at all in GLES.
   if(IsGLES)
   {

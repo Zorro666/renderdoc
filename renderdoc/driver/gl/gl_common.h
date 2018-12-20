@@ -613,6 +613,7 @@ DECLARE_REFLECTION_ENUM(GLframebufferbitfield);
 extern int GLCoreVersion;
 extern bool GLIsCore;
 extern bool IsGLES;
+extern bool IsApple;
 
 // List of extensions and the versions when they became core (first column for GL, second column for
 // GLES). In case of GLES compatible extensions and new features of the different versions are also
