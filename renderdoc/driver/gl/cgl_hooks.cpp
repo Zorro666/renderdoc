@@ -161,6 +161,10 @@ CGLError GL_EXPORT_NAME(CGLFlushDrawable)(CGLContextObj ctx)
   if(viewport[3] != 0)
     h = viewport[3];
 
+  GLint drawable = 0;
+  CGLGetParameter(ctx, kCGLCPHasDrawable, &drawable);
+  RDCLOG("drawwable %d", drawable);
+
   cglhook.driver.WindowSize((void *)0x4, w, h);
 
   cglhook.driver.SwapBuffers((void *)0x4);
