@@ -130,8 +130,17 @@ CGLError GL_EXPORT_NAME(CGLSetCurrentContext)(CGLContextObj ctx)
     if(data.ctx)
     {
       GLInitParams &params = cglhook.driver.GetInitParams(data);
-      params.width = 400;
-      params.height = 200;
+      GLint viewport[4];
+      GL.glGetIntegerv(eGL_VIEWPORT, viewport);
+      // RDCLOG("viewport %d x %d %d x %d", viewport[0], viewport[1], viewport[2], viewport[3]);
+      uint32_t w = 400;
+      uint32_t h = 200;
+      if(viewport[2] != 0)
+        w = viewport[2];
+      if(viewport[3] != 0)
+        h = viewport[3];
+      params.width = w;
+      params.height = h;
     }
   }
 
@@ -160,11 +169,11 @@ CGLError GL_EXPORT_NAME(CGLFlushDrawable)(CGLContextObj ctx)
   if(viewport[3] != 0)
     h = viewport[3];
 
-  GLint drawable = 0;
-  CGLGetParameter(ctx, kCGLCPHasDrawable, &drawable);
-  RDCLOG("drawwable %d", drawable);
-
-  cglhook.driver.WindowSize((void *)0x4, w, h);
+  GLWindowingData data;
+  GLInitParams &params = cglhook.driver.GetInitParams(data);
+  params.width = w;
+  params.height = h;
+  params.isSRGB = 0;
 
   cglhook.driver.SwapBuffers((void *)0x4);
 
