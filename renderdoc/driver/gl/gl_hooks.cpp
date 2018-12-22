@@ -158,6 +158,7 @@ void *HookedGetProcAddress(const char *func, void *realFunc)
 
 void *GLHook::GetUnsupportedFunction(const char *name)
 {
+  RDCLOG("GetUnsupportedFunction %s", name);
   void *ret = Process::GetFunctionAddress(handle, name);
   if(ret)
     return ret;
