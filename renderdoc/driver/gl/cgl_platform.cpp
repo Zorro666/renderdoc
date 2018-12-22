@@ -65,5 +65,5 @@ GLPlatform &GetGLPlatform()
 
 bool CGLDispatchTable::PopulateForReplay()
 {
-  return false;
+  return true;
 }
