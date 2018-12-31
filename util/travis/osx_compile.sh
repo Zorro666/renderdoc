@@ -4,3 +4,5 @@ mkdir build
 cd build
 cmake -DCMAKE_BUILD_TYPE=Debug ..
 make -j2
+
+trap 'exit' ERR
