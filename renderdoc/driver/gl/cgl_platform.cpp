@@ -50,7 +50,17 @@ class CGLPlatform : public GLPlatform
   bool PopulateForReplay() { return CGL.PopulateForReplay(); }
   ReplayStatus InitialiseAPI(GLWindowingData &replayContext, RDCDriver api)
   {
-    return ReplayStatus::APIUnsupported;
+    RDCASSERT(api == RDCDriver::OpenGL);
+
+    // NEED TO GET DISPLAY
+    // INITIALIZE
+    // CREATE WINDOW+SURFACE+CTX+etc.
+
+    //replayContext.dpy = dpy;
+    //replayContext.ctx = ctx;
+    //replayContext.wnd = pbuffer;
+
+    return ReplayStatus::Succeeded;
   }
 
   void DrawQuads(float width, float height, const std::vector<Vec4f> &vertices) {}
