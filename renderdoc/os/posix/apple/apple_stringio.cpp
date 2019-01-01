@@ -31,8 +31,11 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <uuid/uuid.h>
+#include "api/app/renderdoc_app.h"
 #include "common/threading.h"
 #include "os/os_specific.h"
+
+extern bool IsKeyPressed(int key);
 
 namespace Keyboard
 {
