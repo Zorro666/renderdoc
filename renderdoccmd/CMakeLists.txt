@@ -44,11 +44,6 @@ else()
     add_executable(renderdoccmd ${sources})
 endif()
 
-# On macOS set the rpath so that linked libraries are relative to the executable, not absolute
-if(APPLE)
-    set_target_properties(renderdoc PROPERTIES INSTALL_NAME_DIR "@executable_path")
-endif()
-
 target_include_directories(renderdoccmd ${includes})
 target_link_libraries(renderdoccmd ${libraries})
 
