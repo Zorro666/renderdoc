@@ -404,6 +404,9 @@ struct WindowingData
     struct
     {
       void *layer;
+      void* window_object;
+      void* window_view;
+      void* ctx_object;
     } macOS;
   };
 };
@@ -500,13 +503,15 @@ DOCUMENT(R"(Create a :class:`WindowingData` for an macOS ``CALayer`` handle (as 
 :return: A :class:`WindowingData` corresponding to the given window.
 :rtype: WindowingData
 )");
-inline const WindowingData CreateMacOSWindowingData(void *view)
+inline const WindowingData CreateMacOSWindowingData(void *layer, void *window_object, void *window_view, void *ctx_object)
 {
   WindowingData ret = {};
 
   ret.system = WindowingSystem::MacOS;
-  ret.macOS.layer = view;
-
+  ret.macOS.layer = layer;
+  ret.macOS.window_object = window_object;
+  ret.macOS.window_view = window_view;
+  ret.macOS.ctx_object = ctx_object;
   return ret;
 }
 

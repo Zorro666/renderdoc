@@ -1744,6 +1744,9 @@ int CaptureContext::ResourceNameCacheID()
 
 #if defined(RENDERDOC_PLATFORM_APPLE)
 extern "C" void *makeNSViewMetalCompatible(void *handle);
+typedef void* id;
+extern "C" void* JakeCreateNSOpenGLContext(id view);
+extern "C" id JakeMakeNSViewGLCompatible(id view);
 #endif
 
 WindowingData CaptureContext::CreateWindowingData(QWidget *window)
@@ -1766,9 +1769,14 @@ WindowingData CaptureContext::CreateWindowingData(QWidget *window)
 
   void *view = (void *)window->winId();
 
-  void *layer = makeNSViewMetalCompatible(view);
+  //void *layer = makeNSViewMetalCompatible(view);
+  void* layer = NULL;
 
-  return CreateMacOSWindowingData(layer);
+  void* window_view = view;
+  void* window_object = JakeMakeNSViewGLCompatible(window_view);
+  void* ctx_object = JakeCreateNSOpenGLContext(window_view);
+
+  return CreateMacOSWindowingData(layer, window_object, window_view, ctx_object);
 
 #elif defined(RENDERDOC_PLATFORM_APPLE)
 
