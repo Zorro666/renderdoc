@@ -55,7 +55,7 @@
 #else
 
 // we require these extensions to be able to set explicit layout bindings, etc
-//#extension_nongles GL_ARB_shading_language_420pack : require
+// JAKE : # extension_nongles GL_ARB_shading_language_420pack : require
 //#extension_nongles GL_ARB_separate_shader_objects : require
 //#extension_nongles GL_ARB_explicit_attrib_location : require
 
@@ -75,7 +75,8 @@
 #define OPENGL_ES 1
 #endif
 
-#define BINDING(b) layout(binding = b, std140)
+//JAKE:#define BINDING(b) layout(binding = b, std140)
+#define BINDING(b)
 #define VERTEX_ID gl_VertexID
 #define INSTANCE_ID gl_InstanceID
 

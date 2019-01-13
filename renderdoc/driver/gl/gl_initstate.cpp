@@ -2257,7 +2257,7 @@ void GLResourceManager::Apply_InitialState(GLResource live, GLInitialContents in
         else
           GL.glDisableVertexAttribArray(i);
 
-        GL.glVertexAttribBinding(i, attrib.vbslot);
+        //GL.glVertexAttribBinding(i, attrib.vbslot);
 
         if(attrib.size != 0)
         {
@@ -2272,8 +2272,8 @@ void GLResourceManager::Apply_InitialState(GLResource live, GLInitialContents in
 
         const VertexBufferInitialData &buf = data.VertexBuffers[i];
 
-        GL.glBindVertexBuffer(i, buf.Buffer.name, (GLintptr)buf.Offset, (GLsizei)buf.Stride);
-        GL.glVertexBindingDivisor(i, buf.Divisor);
+        //GL.glBindVertexBuffer(i, buf.Buffer.name, (GLintptr)buf.Offset, (GLsizei)buf.Stride);
+        //GL.glVertexBindingDivisor(i, buf.Divisor);
       }
 
       GLuint buffer = data.ElementArrayBuffer.name;

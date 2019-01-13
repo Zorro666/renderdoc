@@ -251,13 +251,15 @@ void GLReplay::InitDebugData()
   else
   {
     glslVersion = glslBaseVer = 150;
-    glslCSVer = 420;
+	  //JAKE:glslCSVer = 420;
+	  glslCSVer = 320;
     shaderType = eShaderGLSL;
   }
 
   GenerateGLSLShader(vs, shaderType, "", GetEmbeddedResource(glsl_blit_vert), glslBaseVer);
 
   // used to combine with custom shaders.
+  //JAKE:DebugData.texDisplayVertexShader = CreateShader(eGL_VERTEX_SHADER, vs);
   DebugData.texDisplayVertexShader = CreateShader(eGL_VERTEX_SHADER, vs);
 
   for(int i = 0; i < 3; i++)
@@ -268,7 +270,7 @@ void GLReplay::InitDebugData()
     GenerateGLSLShader(fs, shaderType, defines, GetEmbeddedResource(glsl_texdisplay_frag),
                        glslBaseVer);
 
-    DebugData.texDisplayProg[i] = CreateShaderProgram(vs, fs);
+    //JAKE:DebugData.texDisplayProg[i] = CreateShaderProgram(vs, fs);
   }
 
   RenderDoc::Inst().SetProgress(LoadProgress::DebugManagerInit, 0.2f);
@@ -316,7 +318,7 @@ void GLReplay::InitDebugData()
   {
     GenerateGLSLShader(fs, shaderType, "", GetEmbeddedResource(glsl_quadresolve_frag), glslBaseVer);
 
-    DebugData.quadoverdrawResolveProg = CreateShaderProgram(vs, fs);
+    //JAKE:DebugData.quadoverdrawResolveProg = CreateShaderProgram(vs, fs);
   }
   else
   {
@@ -330,6 +332,7 @@ void GLReplay::InitDebugData()
   }
 
   GenerateGLSLShader(fs, shaderType, "", GetEmbeddedResource(glsl_checkerboard_frag), glslBaseVer);
+  //JAKE:DebugData.checkerProg = CreateShaderProgram(vs, fs);
   DebugData.checkerProg = CreateShaderProgram(vs, fs);
 
   if(HasExt[ARB_geometry_shader4])
@@ -338,20 +341,20 @@ void GLReplay::InitDebugData()
     GenerateGLSLShader(fs, shaderType, "", GetEmbeddedResource(glsl_mesh_frag), glslBaseVer);
     GenerateGLSLShader(gs, shaderType, "", GetEmbeddedResource(glsl_mesh_geom), glslBaseVer);
 
-    DebugData.meshProg = CreateShaderProgram(vs, fs);
-    DebugData.meshgsProg = CreateShaderProgram(vs, fs, gs);
+    //JAKE:DebugData.meshProg = CreateShaderProgram(vs, fs);
+    //JAKE:DebugData.meshgsProg = CreateShaderProgram(vs, fs, gs);
 
     GenerateGLSLShader(fs, shaderType, "", GetEmbeddedResource(glsl_trisize_frag), glslBaseVer);
     GenerateGLSLShader(gs, shaderType, "", GetEmbeddedResource(glsl_trisize_geom), glslBaseVer);
 
-    DebugData.trisizeProg = CreateShaderProgram(vs, fs, gs);
+    //JAKE:DebugData.trisizeProg = CreateShaderProgram(vs, fs, gs);
   }
   else
   {
     GenerateGLSLShader(vs, shaderType, "", GetEmbeddedResource(glsl_mesh_vert), glslBaseVer);
     GenerateGLSLShader(fs, shaderType, "", GetEmbeddedResource(glsl_mesh_frag), glslBaseVer);
 
-    DebugData.meshProg = CreateShaderProgram(vs, fs);
+    //JAKE:DebugData.meshProg = CreateShaderProgram(vs, fs);
     DebugData.meshgsProg = 0;
     DebugData.trisizeProg = 0;
 
@@ -555,10 +558,10 @@ void GLReplay::InitDebugData()
     GenerateGLSLShader(vs, shaderType, "", GetEmbeddedResource(glsl_blit_vert), glslBaseVer);
 
     GenerateGLSLShader(fs, shaderType, "", GetEmbeddedResource(glsl_depthms2arr_frag), glslBaseVer);
-    DebugData.DepthMS2Array = CreateShaderProgram(vs, fs);
+    //JAKE:DebugData.DepthMS2Array = CreateShaderProgram(vs, fs);
 
     GenerateGLSLShader(fs, shaderType, "", GetEmbeddedResource(glsl_deptharr2ms_frag), glslBaseVer);
-    DebugData.DepthArray2MS = CreateShaderProgram(vs, fs);
+    //JAKE:DebugData.DepthArray2MS = CreateShaderProgram(vs, fs);
   }
   else
   {
@@ -666,7 +669,7 @@ void GLReplay::InitDebugData()
   GenerateGLSLShader(vs, shaderType, "", GetEmbeddedResource(glsl_blit_vert), glslBaseVer);
   GenerateGLSLShader(fs, shaderType, "", GetEmbeddedResource(glsl_outline_frag), glslBaseVer);
 
-  DebugData.outlineQuadProg = CreateShaderProgram(vs, fs);
+  //JAKE:DebugData.outlineQuadProg = CreateShaderProgram(vs, fs);
 
   MakeCurrentReplayContext(&m_ReplayCtx);
 

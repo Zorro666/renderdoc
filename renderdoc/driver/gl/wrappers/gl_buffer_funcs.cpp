@@ -3085,6 +3085,9 @@ bool WrappedOpenGL::Serialise_glVertexArrayVertexAttribOffsetEXT(
 
     GL.glBindVertexArray(vaobj.name);
 
+/* START JAKE */
+    GL.glVertexAttribPointer(index, size, type, normalized, stride, (void*)offset);
+/*
     // seems buggy when mixed and matched with new style vertex attrib binding, which we use for VAO
     // initial states. Since the spec defines how this function should work in terms of new style
     // bindings, just do that ourselves.
@@ -3105,6 +3108,8 @@ bool WrappedOpenGL::Serialise_glVertexArrayVertexAttribOffsetEXT(
       offset = 0;
     }
     GL.glVertexArrayBindVertexBufferEXT(vaobj.name, index, buffer.name, (GLintptr)offset, stride);
+*/
+/* END JAKE */
 
     GL.glBindVertexArray(prevVAO);
 

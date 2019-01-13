@@ -120,14 +120,14 @@ bool CheckReplayContext()
   // Pointer functions
   // Should be possible to remove by falling back to reflecting vertex bindings the old way only and
   // remapping to 'fake' new-style bindings for representing in the UI
-  REQUIRE_EXTENSION(ARB_vertex_attrib_binding);
+  //JAKE REQUIRE_EXTENSION(ARB_vertex_attrib_binding);
   // for program introspection, needed for shader reflection.
   // Possible to remove by compiling shaders to SPIR-V and reflecting ourselves.
-  REQUIRE_EXTENSION(ARB_program_interface_query);
+  //JAKE REQUIRE_EXTENSION(ARB_program_interface_query);
   // strangely, this is the extension needed for layout(binding = X) on uniforms, textures, etc.
   // Possible to remove by #defining out the layout specifiers and manually setting the uniform
   // values.
-  REQUIRE_EXTENSION(ARB_shading_language_420pack);
+  //JAKE REQUIRE_EXTENSION(ARB_shading_language_420pack);
   // needed for program pipelines, glProgramUniform*, and reflecting shaders on their own
   // Possible to remove this with self-compiled SPIR-V for reflection - see above. Likewise
   // convenience for our own pipelines when replacing single shaders or such.
@@ -202,7 +202,7 @@ bool ValidateFunctionPointers()
   CHECK_PRESENT(glBindSampler)
   CHECK_PRESENT(glBindTexture)
   CHECK_PRESENT(glBindVertexArray)
-  CHECK_PRESENT(glBindVertexBuffer)
+  //JAKE:CHECK_PRESENT(glBindVertexBuffer)
   CHECK_PRESENT(glBlendColor)
   CHECK_PRESENT(glBlendEquationSeparate)
   CHECK_PRESENT(glBlendFunc)
@@ -273,7 +273,7 @@ bool ValidateFunctionPointers()
   CHECK_PRESENT(glGetProgramInterfaceiv)
   CHECK_PRESENT(glGetProgramiv)
   CHECK_PRESENT(glGetProgramPipelineiv)
-  CHECK_PRESENT(glGetProgramResourceIndex)
+  //JAKE:CHECK_PRESENT(glGetProgramResourceIndex)
   CHECK_PRESENT(glGetProgramResourceiv)
   CHECK_PRESENT(glGetProgramResourceName)
   CHECK_PRESENT(glGetQueryObjectuiv)
@@ -348,11 +348,11 @@ bool ValidateFunctionPointers()
   CHECK_PRESENT(glUseProgram)
   CHECK_PRESENT(glUseProgramStages)
   CHECK_PRESENT(glVertexAttrib4fv)
-  CHECK_PRESENT(glVertexAttribBinding)
-  CHECK_PRESENT(glVertexAttribFormat)
-  CHECK_PRESENT(glVertexAttribIFormat)
+  //JAKE:CHECK_PRESENT(glVertexAttribBinding)
+  //JAKE:CHECK_PRESENT(glVertexAttribFormat)
+  //JAKE:CHECK_PRESENT(glVertexAttribIFormat)
   CHECK_PRESENT(glVertexAttribPointer)
-  CHECK_PRESENT(glVertexBindingDivisor)
+  //JAKE:CHECK_PRESENT(glVertexBindingDivisor)
   CHECK_PRESENT(glViewport)
 
   // GL only
@@ -384,7 +384,7 @@ bool ValidateFunctionPointers()
     CHECK_PRESENT(glProgramUniformMatrix4x2dv)
     CHECK_PRESENT(glProgramUniformMatrix4x3dv)
     CHECK_PRESENT(glProvokingVertex)
-    CHECK_PRESENT(glVertexAttribLFormat)
+    //JAKE:CHECK_PRESENT(glVertexAttribLFormat)
   }
 
   // other functions are either checked for presence explicitly (like
