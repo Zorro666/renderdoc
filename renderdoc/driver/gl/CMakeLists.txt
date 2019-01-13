@@ -53,9 +53,15 @@ list(APPEND sources gl_hooks.cpp)
 
 if(APPLE)
     list(APPEND sources
+        cgl_jake.cpp
+        cgl_jake_cocoa.mm
         cgl_dispatch_table.h
         cgl_platform.cpp
         cgl_hooks.cpp)
+    set_source_files_properties(cgl_jake.cpp
+        COMPILE_FLAGS "-Wno-deprecated-declarations")
+    set_source_files_properties(cgl_jake_cocoa.mm
+        COMPILE_FLAGS "-Wno-deprecated-declarations")
 else()
     if(ENABLE_GL)
         list(APPEND sources
