@@ -200,12 +200,12 @@ struct GLWindowingData
 {
   GLWindowingData()
   {
+    wnd = NULL;
     ctx = NULL;
-    wnd = 0;
   }
 
-  void *ctx;
-  void *wnd;
+  void* wnd; // JakeWindow
+  void* ctx; // JakeGLContext
 };
 
 #elif ENABLED(RDOC_ANDROID)
@@ -306,7 +306,7 @@ GLPlatform &GetEGLPlatform();
 
 #endif
 
-// on macOS we used compile time interposing to hook
+// on macOS we use compile time interposing to hook
 #if ENABLED(RDOC_APPLE)
 
 // never declare the actual raw function name as an export, declare the functions with a suffix that
