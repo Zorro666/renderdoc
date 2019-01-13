@@ -193,7 +193,7 @@ static void CGLHooked(void *handle)
   cglhook.handle = handle;
 
   // as a hook callback this is only called while capturing
-  RDCASSERT(!RenderDoc::Inst().IsReplayApp());
+  //JAKE:RDCASSERT(!RenderDoc::Inst().IsReplayApp());
 
 // fetch non-hooked functions into our dispatch table
 #define CGL_FETCH(func) CGL.func = &func;
