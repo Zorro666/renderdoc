@@ -1412,37 +1412,44 @@ void VulkanWindow::Present(VkQueue queue)
     CHECK_VKR(queuePresentError);
   }
 
-  std::set<VkFence> doneFences;
-  std::map<VkFence, VkResult> fenceStatus;
-
-  // only test each fence once so we avoid the problem of testing a fence once, finding it's not
-  // ready, then testing it again in a second use and finding that it's now ready, and deleting
-  // it
-  for(VkFence f : fences)
-    fenceStatus[f] = vkGetFenceStatus(m_Test->device, f);
-
-  for(int level = 0; level < 2; level++)
+  int pendingCount;
+  do
   {
-    for(auto it = pendingCommandBuffers[level].begin(); it != pendingCommandBuffers[level].end();)
+    std::set<VkFence> doneFences;
+    std::map<VkFence, VkResult> fenceStatus;
+
+    // only test each fence once so we avoid the problem of testing a fence once, finding it's not
+    // ready, then testing it again in a second use and finding that it's now ready, and deleting
+    // it
+    for(VkFence f : fences)
+      fenceStatus[f] = vkGetFenceStatus(m_Test->device, f);
+
+    pendingCount = 0;
+
+    for(int level = 0; level < 2; level++)
     {
-      if(fenceStatus[it->second] == VK_SUCCESS)
+      for(auto it = pendingCommandBuffers[level].begin(); it != pendingCommandBuffers[level].end();)
       {
-        freeCommandBuffers[level].push_back(it->first);
-        doneFences.insert(it->second);
-        it = pendingCommandBuffers[level].erase(it);
-      }
-      else
-      {
-        ++it;
+        if(fenceStatus[it->second] == VK_SUCCESS)
+        {
+          freeCommandBuffers[level].push_back(it->first);
+          doneFences.insert(it->second);
+          it = pendingCommandBuffers[level].erase(it);
+        }
+        else
+        {
+          ++pendingCount;
+          ++it;
+        }
       }
     }
-  }
 
-  for(auto it = doneFences.begin(); it != doneFences.end(); ++it)
-  {
-    vkDestroyFence(m_Test->device, *it, NULL);
-    fences.erase(*it);
-  }
+    for(auto it = doneFences.begin(); it != doneFences.end(); ++it)
+    {
+      vkDestroyFence(m_Test->device, *it, NULL);
+      fences.erase(*it);
+    }
+  } while(pendingCount > 0);
 
   Acquire();
 }
