@@ -404,6 +404,7 @@ class TestCase:
         if cast is None:
             cast = rd.CompType.Typeless
 
+        compCount = 4
         if tex_details is not None:
             if type(x) is float:
                 x = int(((tex_details.width >> sub.mip) - 1) * x)
@@ -418,6 +419,7 @@ class TestCase:
                 eps = (1.0 / 255.0)
             if tex_details.format.compByteWidth == 2 and eps == util.FLT_EPSILON:
                 eps = (1.0 / 16384.0)
+            compCount = tex_details.format.compCount
 
         picked: rd.PixelValue = self.controller.PickPixel(tex, x, y, sub, cast)
 
@@ -427,7 +429,7 @@ class TestCase:
         elif cast == rd.CompType.SInt:
             picked_value = picked.intValue
 
-        if not util.value_compare(picked_value, value, eps):
+        if not util.value_compare(picked_value[0:compCount], value[0:compCount], eps):
             save_data = rd.TextureSave()
             save_data.resourceId = tex
             save_data.destType = rd.FileType.PNG
