@@ -180,7 +180,7 @@ class Discard_Zoo(rdtest.TestCase):
                         # We also expect to have seen both colours. That means if we only saw black for example then we
                         # fail
                         if not seen[0] or not seen[1]:
-                            raise rdtest.TestFailureException('{} doesn\'t contain expected pattern'.format(name))
+                            raise rdtest.TestFailureException('{} doesn\'t contain expected pattern mip:{} slice:{} samp:{} seen:{}'.format(name, mip, slice, samp, seen))
 
         rdtest.log.success('{} is OK {} discarding'.format(name, "after" if discarded else "before"))
 
