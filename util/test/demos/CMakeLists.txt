@@ -113,7 +113,11 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${warning_flags}")
 endif()
 
-if(NOT APPLE AND UNIX)
+set(SHADERC_DIR "UNKNOWN_PLATFORM")
+
+if(APPLE)
+    add_executable(demos ${SRC} ${OPENGL_SRC})
+elseif(UNIX)
     list(APPEND OPENGL_SRC
         3rdparty/glad/glad_glx.c
         gl/gl_test_linux.cpp)
@@ -142,10 +146,17 @@ endif()
 
 find_package(Threads REQUIRED)
 
-target_include_directories(demos
-    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/vk/official
-    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-target_compile_definitions(demos PRIVATE -DVK_USE_PLATFORM_XCB_KHR=1)
-target_link_libraries(demos PRIVATE -lX11 -lxcb -lX11-xcb ${CMAKE_THREAD_LIBS_INIT} ${CMAKE_DL_LIBS})
-set_target_properties(demos PROPERTIES OUTPUT_NAME demos_${BIN_SUFFIX})
+if(APPLE)
+    find_library(OPENGL_LIBRARY OpenGL)
+    find_library(COCOA_LIBRARY Cocoa)
+    target_compile_definitions(demos PRIVATE -DGL_SILENCE_DEPRECATION)
+    set(LIBS ${COCOA_LIBRARY} ${OPENGL_LIBRARY})
+elseif(UNIX)
+    set(INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/vk/official)
+    target_compile_definitions(demos PRIVATE -DVK_USE_PLATFORM_XCB_KHR=1)
+    set(LIBS -lX11 -lxcb -lX11-xcb)
+endif()
 
+target_include_directories(demos PRIVATE ${INCLUDE_DIRS} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(demos PRIVATE ${LIBS} ${CMAKE_THREAD_LIBS_INIT} ${CMAKE_DL_LIBS})
+set_target_properties(demos PROPERTIES OUTPUT_NAME demos_${BIN_SUFFIX})
