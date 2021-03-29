@@ -452,6 +452,8 @@ public:
   }
 };
 
+extern void cocoa_windowPollMT();
+
 struct RemoteServerCommand : public Command
 {
 private:
@@ -513,8 +515,12 @@ public:
     if(DisplayRemoteServerPreview(false, {}).system != WindowingSystem::Unknown)
       previewWindow = &DisplayRemoteServerPreview;
 
-    RENDERDOC_BecomeRemoteServer(
-        conv(host), port, []() { return killSignal; }, previewWindow);
+    RENDERDOC_BecomeRemoteServer(conv(host), port,
+                                 []() {
+                                   cocoa_windowPollMT();
+                                   return killSignal;
+                                 },
+                                 previewWindow);
 
     std::cerr << std::endl << "Cleaning up from replay hosting." << std::endl;
 

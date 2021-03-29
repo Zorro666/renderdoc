@@ -151,9 +151,9 @@ bool cocoa_windowShouldClose(void *cocoaWindow)
   return window->shouldClose;
 }
 
-bool cocoa_windowPoll(unsigned short &appleKeyCode)
+static void cocoa_windowPollJAKE()
 {
-  bool keyUp = false;
+  // bool keyUp = false;
   @autoreleasepool
   {
     for(;;)
@@ -167,12 +167,29 @@ bool cocoa_windowPoll(unsigned short &appleKeyCode)
 
       if([event type] == NSEventTypeKeyUp)
       {
-        appleKeyCode = [event keyCode];
-        keyUp = true;
+        // appleKeyCode = [event keyCode];
+        // keyUp = true;
       }
 
       [NSApp sendEvent:event];
+      //[NSApp run];
     }
   }
-  return keyUp;
+  // return keyUp;
+}
+
+bool cocoa_windowPoll(unsigned short &appleKeyCode)
+{
+  dispatch_async(dispatch_get_main_queue(), ^(void) {
+    cocoa_windowPollJAKE();
+  });
+  return false;
+}
+
+void cocoa_windowPollMT()
+{
+  @autoreleasepool
+  {
+    CFRunLoopRunInMode(kCFRunLoopDefaultMode, 1.0, false);
+  }
 }

@@ -533,3 +533,7 @@ void android_main(struct android_app *state)
   ANDROID_LOG("android_main exiting");
   android_state = NULL;
 }
+
+void cocoa_windowPollMT()
+{
+}
