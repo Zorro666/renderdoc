@@ -34,6 +34,7 @@ extern void *cocoa_windowGetView(void *cocoaWindow);
 extern void *cocoa_windowGetLayer(void *cocoaWindow);
 extern bool cocoa_windowShouldClose(void *cocoaWindow);
 extern bool cocoa_windowPoll(unsigned short &appleKeyCode);
+extern void cocoa_windowPollMT();
 
 void Daemonise()
 {
@@ -41,14 +42,40 @@ void Daemonise()
 
 WindowingData DisplayRemoteServerPreview(bool active, const rdcarray<WindowingSystem> &systems)
 {
-  WindowingData ret = {WindowingSystem::Unknown};
-  return ret;
+  static WindowingData remoteServerPreview = {WindowingSystem::Unknown};
+
+  const int width = 1280;
+  const int height = 720;
+  static void *cocoaWindow =
+      cocoa_windowCreate(width, height, "renderdoccmd : Remote Server Preview");
+  static void *view = cocoa_windowGetView(cocoaWindow);
+  static void *layer = cocoa_windowGetLayer(cocoaWindow);
+
+  if(active)
+  {
+    if(remoteServerPreview.system == WindowingSystem::Unknown)
+    {
+      remoteServerPreview = CreateMacOSWindowingData(view, layer);
+    }
+    else
+    {
+      unsigned short appleKeyCode;
+      cocoa_windowPoll(appleKeyCode);
+    }
+  }
+  else
+  {
+    // reset the windowing data to 'no window'
+    remoteServerPreview = {WindowingSystem::Unknown};
+  }
+
+  return remoteServerPreview;
 }
 
 void DisplayRendererPreview(IReplayController *renderer, TextureDisplay &displayCfg, uint32_t width,
                             uint32_t height, uint32_t numLoops)
 {
-  void *cocoaWindow = cocoa_windowCreate(width, height, "renderdoccmd");
+  void *cocoaWindow = cocoa_windowCreate(width, height, "renderdoccmd : Local Server Preview");
   void *view = cocoa_windowGetView(cocoaWindow);
   void *layer = cocoa_windowGetLayer(cocoaWindow);
   IReplayOutput *out =
@@ -75,6 +102,7 @@ void DisplayRendererPreview(IReplayController *renderer, TextureDisplay &display
         break;
       }
     }
+    cocoa_windowPollMT();
 
     renderer->SetFrameEvent(10000000, true);
     out->Display();

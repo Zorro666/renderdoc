@@ -492,3 +492,7 @@ void android_main(struct android_app *state)
 
   ANDROID_LOG("android_main exiting");
 }
+
+void cocoa_windowPollMT()
+{
+}

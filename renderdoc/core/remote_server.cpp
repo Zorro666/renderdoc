@@ -306,6 +306,8 @@ static void ActiveRemoteClientThread(ClientThread *threadData,
     if(client == NULL)
       continue;
 
+    if(proxy)
+      proxy->RefreshPreviewWindow();
     if(type == eRemoteServer_Ping)
     {
       reader.EndChunk();
