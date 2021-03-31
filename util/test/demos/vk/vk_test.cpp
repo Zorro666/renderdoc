@@ -486,6 +486,8 @@ void VulkanGraphicsTest::Prepare(int argc, char **argv)
   std::vector<VkExtensionProperties> supportedExts;
   CHECK_VKR(vkh::enumerateDeviceExtensionProperties(supportedExts, phys, NULL));
 
+  optDevExts.push_back("VK_KHR_portability_subset");
+
   // add any optional extensions that are supported
   for(const char *search : optDevExts)
   {
