@@ -58,7 +58,9 @@ set(VULKAN_SRC
 
 set(OPENGL_SRC
         3rdparty/glad/glad.c
-        gl/gl_test.cpp
+        gl/gl_test.cpp)
+
+set(OPENGL_TESTS_SRC
         gl/gl_buffer_resizing.cpp
         gl/gl_buffer_spam.cpp
         gl/gl_buffer_truncation.cpp
@@ -116,20 +118,26 @@ endif()
 set(SHADERC_DIR "UNKNOWN_PLATFORM")
 
 if(APPLE)
+    list(APPEND OPENGL_SRC
+        gl/gl_test_apple.cpp
+        gl/gl_buffer_resizing.cpp
+        gl/gl_empty_capture.cpp
+        gl/gl_simple_triangle.cpp)
     list(APPEND SRC 
         apple/apple_platform.cpp
         apple/apple_window.cpp
         apple/apple_cocoa.mm)
-    add_executable(demos ${SRC} ${VULKAN_SRC})
 elseif(UNIX)
     list(APPEND OPENGL_SRC
         3rdparty/glad/glad_glx.c
         gl/gl_test_linux.cpp)
+    list(APPEND OPENGL_SRC ${OPENGL_TESTS_SRC})
     list(APPEND SRC 
         linux/linux_platform.cpp
         linux/linux_window.cpp)
-    add_executable(demos ${SRC} ${VULKAN_SRC} ${OPENGL_SRC})
 endif()
+
+add_executable(demos ${SRC} ${VULKAN_SRC} ${OPENGL_SRC})
 
 install(TARGETS demos DESTINATION .)
 
