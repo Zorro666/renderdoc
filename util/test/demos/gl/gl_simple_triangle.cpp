@@ -61,8 +61,11 @@ RD_TEST(GL_Simple_Triangle, OpenGLGraphicsTest)
     }
 
     GLuint texMS = MakeTexture();
-    glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, texMS);
-    glTexStorage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, 4, GL_RGBA16F, 4, 4, GL_TRUE);
+    if(glTexStorage2DMultisample)
+    {
+      glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, texMS);
+      glTexStorage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, 4, GL_RGBA16F, 4, 4, GL_TRUE);
+    }
 
     while(Running())
     {
@@ -71,7 +74,10 @@ RD_TEST(GL_Simple_Triangle, OpenGLGraphicsTest)
       glBindTexture(GL_TEXTURE_2D, tex);
       glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 4, 4, GL_RGBA, GL_FLOAT, textureColourData);
 
-      glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, texMS);
+      if(glTexStorage2DMultisample)
+      {
+        glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, texMS);
+      }
 
       glBindVertexArray(vao);
 

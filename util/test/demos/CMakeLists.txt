@@ -166,7 +166,9 @@ set(VULKAN_SRC
 set(OPENGL_SRC
         3rdparty/glad/glad.c
         gl/gl_test.cpp
-        gl/gl_test.h
+        gl/gl_test.h)
+
+set(OPENGL_TESTS_SRC
         gl/gl_buffer_resizing.cpp
         gl/gl_buffer_spam.cpp
         gl/gl_buffer_truncation.cpp
@@ -231,12 +233,16 @@ if(APPLE)
         apple/nuklear_appkit.h
         apple/official/metal-cpp.cpp
         apple/official/metal-cpp.h
+        gl/gl_test_apple.cpp
+        gl/gl_buffer_resizing.cpp
+        gl/gl_empty_capture.cpp
+        gl/gl_simple_triangle.cpp
         apple/apple_platform.cpp
         apple/apple_platform.h
         apple/apple_window.cpp
         apple/apple_window.h)
-    add_executable(demos ${SRC} ${VULKAN_SRC})
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -Wno-deprecated-declarations")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DGL_SILENCE_DEPRECATION")
 elseif(BUILD_ANDROID)
     string(REPLACE "\\" "/" GLUE_SOURCE "${ANDROID_NDK_ROOT_PATH}/sources/android/native_app_glue/android_native_app_glue.c")
     include_directories(${ANDROID_NDK_ROOT_PATH}/sources/android/native_app_glue)
@@ -255,13 +261,15 @@ elseif(UNIX)
     list(APPEND OPENGL_SRC
         3rdparty/glad/glad_glx.c
         gl/gl_test_linux.cpp)
+    list(APPEND OPENGL_SRC ${OPENGL_TESTS_SRC})
     list(APPEND SRC 
         linux/linux_platform.cpp
         linux/linux_platform.h
         linux/linux_window.cpp
         linux/linux_window.h)
-    add_executable(demos ${SRC} ${VULKAN_SRC} ${OPENGL_SRC})
 endif()
+
+add_executable(demos ${SRC} ${VULKAN_SRC} ${OPENGL_SRC})
 
 install(TARGETS demos DESTINATION .)
 
