@@ -116,7 +116,11 @@ endif()
 set(SHADERC_DIR "UNKNOWN_PLATFORM")
 
 if(APPLE)
-    add_executable(demos ${SRC} ${OPENGL_SRC})
+    list(APPEND SRC 
+        apple/apple_platform.cpp
+        apple/apple_window.cpp
+        apple/apple_cocoa.mm)
+    add_executable(demos ${SRC} ${VULKAN_SRC})
 elseif(UNIX)
     list(APPEND OPENGL_SRC
         3rdparty/glad/glad_glx.c

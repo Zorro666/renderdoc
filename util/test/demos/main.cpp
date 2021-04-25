@@ -37,6 +37,11 @@
 #define NK_IMPLEMENTATION
 #define NK_INCLUDE_FIXED_TYPES
 #define NK_INCLUDE_DEFAULT_ALLOCATOR
+#if defined(__APPLE__)
+#define NK_INCLUDE_FONT_BAKING
+#define NK_INCLUDE_DEFAULT_FONT
+#define NK_INCLUDE_VERTEX_BUFFER_OUTPUT
+#endif    // #if defined(__APPLE__)
 #define NK_ASSERT(expr) TEST_ASSERT(expr, "nuklear assertion failed")
 #include "3rdparty/nuklear/nuklear.h"
 
@@ -137,6 +142,74 @@ void NuklearShutdown()
   ReleaseDC(wnd, dc);
   DestroyWindow(wnd);
   UnregisterClassW(wc.lpszClassName, wc.hInstance);
+}
+
+#elif defined(__APPLE__)
+
+#define NK_COCOA_IMPLEMENTATION
+#include <OpenGL/gl3.h>
+#include "apple/nuklear_cocoa.h"
+
+struct nk_colorf bg;
+COCOAwindow *window;
+COCOAcontext *context;
+
+nk_context *NuklearInit(int width, int height, const char *title)
+{
+  if(!COCOA_Initialize())
+    exit(EXIT_FAILURE);
+
+  window = COCOA_NewWindow(width, height, title);
+  if(!window)
+    exit(EXIT_FAILURE);
+  context = COCOA_NewGLContext(window);
+  COCOA_SetGLContext(window, context);
+
+  nk_context *ctx = nk_cocoa_init(window, NK_COCOA_INSTALL_CALLBACKS);
+  nk_font_atlas *atlas;
+  nk_cocoa_font_stash_begin(&atlas);
+  nk_cocoa_font_stash_end();
+
+  bg.r = 0.10f, bg.g = 0.18f, bg.b = 0.24f, bg.a = 1.0f;
+
+  return ctx;
+}
+
+bool NuklearTick(nk_context *ctx)
+{
+  COCOA_Poll();
+  nk_cocoa_new_frame();
+  bg.r += 0.01f;
+  if(bg.r > 1.0f)
+  {
+    bg.r = 0.0f;
+  }
+
+  if(COCOA_WindowShouldClose(window))
+    return false;
+  return true;
+}
+
+void NuklearRender()
+{
+  const int max_vertex_buffer = 512 * 1024;
+  const int max_element_buffer = 128 * 1024;
+
+  int width;
+  int height;
+  COCOA_GetFrameBufferSize(window, &width, &height);
+  glViewport(0, 0, width, height);
+  glClear(GL_COLOR_BUFFER_BIT);
+  glClearColor(bg.r, bg.g, bg.b, bg.a);
+  nk_cocoa_render(NK_ANTI_ALIASING_OFF, max_vertex_buffer, max_element_buffer);
+  COCOA_SwapBuffers(window);
+}
+
+void NuklearShutdown()
+{
+  nk_cocoa_shutdown();
+  COCOA_DeleteWindow(window);
+  COCOA_Shutdown();
 }
 
 #elif defined(__linux__)
