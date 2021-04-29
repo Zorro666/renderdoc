@@ -30,10 +30,12 @@
 #include "apple_gl_hook_defs.h"
 
 // helpers defined in cgl_platform_helpers.mm
-void Apple_getWindowSize(void *view, int &width, int &height);
+void *Apple_getViewLayer(void *view);
+void Apple_getWindowSize(void *view, void *context, int &width, int &height);
 void Apple_stopTrackingWindowSize(void *view);
 void NSGL_init();
 void *NSGL_createContext(void *view, void *shareContext);
+void NSGL_setResizeCallback(void (*resizeCallback)(void *view));
 void NSGL_makeCurrentContext(void *context);
 void NSGL_update(void *context);
 void NSGL_flushBuffer(void *context);
@@ -164,7 +166,7 @@ class CGLPlatform : public GLPlatform
   {
     if(context.wnd)
     {
-      Apple_getWindowSize(context.wnd, w, h);
+      Apple_getWindowSize(context.wnd, context.nsgl_ctx, w, h);
     }
     else
     {
@@ -194,6 +196,7 @@ class CGLPlatform : public GLPlatform
     {
       RDCASSERT(window.macOS.layer && window.macOS.view);
 
+      NSGL_setResizeCallback(window.macOS.resizeCallback);
       ret.nsgl_ctx = NSGL_createContext(window.macOS.view, share_context.nsgl_ctx);
       ret.wnd = window.macOS.view;
 
