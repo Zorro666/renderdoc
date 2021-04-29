@@ -55,7 +55,7 @@ WindowingData DisplayRemoteServerPreview(bool active, const rdcarray<WindowingSy
   {
     if(remoteServerPreview.system == WindowingSystem::Unknown)
     {
-      remoteServerPreview = CreateMacOSWindowingData(view, layer);
+      remoteServerPreview = CreateMacOSWindowingData(view, layer, NULL);
     }
     else
     {
@@ -79,7 +79,7 @@ void DisplayRendererPreview(IReplayController *renderer, TextureDisplay &display
   void *view = cocoa_windowGetView(cocoaWindow);
   void *layer = cocoa_windowGetLayer(cocoaWindow);
   IReplayOutput *out =
-      renderer->CreateOutput(CreateMacOSWindowingData(view, layer), ReplayOutputType::Texture);
+      renderer->CreateOutput(CreateMacOSWindowingData(view, layer, NULL), ReplayOutputType::Texture);
 
   out->SetTextureDisplay(displayCfg);
 

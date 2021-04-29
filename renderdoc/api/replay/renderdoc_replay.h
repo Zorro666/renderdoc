@@ -214,13 +214,15 @@ and ``NSView`` handle (as void pointers).
 :return: A :class:`WindowingData` corresponding to the given window.
 :rtype: WindowingData
 )");
-inline const WindowingData CreateMacOSWindowingData(NSView view, CALayer layer)
+inline const WindowingData CreateMacOSWindowingData(NSView view, CALayer layer,
+                                                    RENDERDOC_MacOSResizeCallback resizeCallback)
 {
   WindowingData ret = {};
 
   ret.system = WindowingSystem::MacOS;
   ret.macOS.view = view;
   ret.macOS.layer = layer;
+  ret.macOS.resizeCallback = resizeCallback;
 
   return ret;
 }

@@ -2155,13 +2155,14 @@ void CaptureContext::SetResourceCustomName(ResourceId id, const rdcstr &name)
 }
 
 #if defined(RENDERDOC_PLATFORM_APPLE)
-extern "C" void *makeNSViewMetalCompatible(void *handle);
+extern "C" void *makeNSViewMetalCompatible(void *handle, bool useMetal);
+void macosResizeCallback(void *view);
 #endif
 
 WindowingData CaptureContext::CreateWindowingData(QWidget *window)
 {
   if(!GUIInvoke::onUIThread())
-    qCritical() << "CreateWindowingData called on non-UI thread";
+    qCritical() << "JAKE CreateWindowingData called on non-UI thread";
 
 #if defined(WIN32)
 
@@ -2194,9 +2195,10 @@ WindowingData CaptureContext::CreateWindowingData(QWidget *window)
 
   void *view = (void *)window->winId();
 
-  void *layer = makeNSViewMetalCompatible(view);
+  bool useMetal = (m_APIProps.localRenderer == GraphicsAPI::Vulkan);
+  void *layer = makeNSViewMetalCompatible(view, useMetal);
 
-  return CreateMacOSWindowingData(view, layer);
+  return CreateMacOSWindowingData(view, layer, macosResizeCallback);
 
 #elif defined(RENDERDOC_PLATFORM_GGP)
 

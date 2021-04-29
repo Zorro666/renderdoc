@@ -34,12 +34,14 @@
 
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
+static void (*s_ResizeCallback)(void *view);
 static uint64_t s_currentContextTLSkey;
 
 static Threading::CriticalSection s_WindowPtrsArrayLock;
 static rdcarray<NSView *> s_WindowPtrs;
 static rdcarray<int> s_WindowWidths;
 static rdcarray<int> s_WindowHeights;
+static rdcarray<CALayer *> s_WindowLayers;
 static int s_ReplaySalt = 0;
 
 static Threading::CriticalSection s_ContextPtrsArrayLock;
@@ -50,7 +52,8 @@ static rdcarray<int32_t> s_ContextLocksCount;
 #endif    // #if RD_USE_CONTEXT_LOCK_COUNTS
 
 static void scheduleContextSetView(int contextIndex, int replaySalt, NSView *view);
-static void scheduleContextUpdate(int contextIndex, int replaySalt);
+static void scheduleContextUpdate(int contextIndex, int windowIndex, int replaySalt);
+static void contextUpdateMT(int contextIndex, int windowIndex, int replaySalt);
 
 static void RandomSleep()
 {
@@ -147,6 +150,7 @@ static int getWindowIndex(NSView *nsView)
     s_WindowPtrs[index] = nsView;
     s_WindowWidths[index] = 0;
     s_WindowHeights[index] = 0;
+    s_WindowLayers[index] = nil;
   }
   else
   {
@@ -155,6 +159,7 @@ static int getWindowIndex(NSView *nsView)
     s_WindowPtrs.push_back(nsView);
     s_WindowWidths.push_back(0);
     s_WindowHeights.push_back(0);
+    s_WindowLayers.push_back(nil);
   }
   return index;
 }
@@ -234,7 +239,7 @@ static void viewSetWantBestResolutionMT(NSView *view)
   [view setWantsBestResolutionOpenGLSurface:true];
 }
 
-static void viewGetWindowSizeMT(int windowIndex, int replaySalt)
+static void viewGetWindowSizeMT(int windowIndex, int contextIndex, int replaySalt)
 {
   RandomSleep();
   const int currentReplaySalt = s_ReplaySalt;
@@ -242,23 +247,44 @@ static void viewGetWindowSizeMT(int windowIndex, int replaySalt)
   {
     return;
   }
-  SCOPED_LOCK(s_WindowPtrsArrayLock);
-  RDCASSERT(windowIndex >= 0 && windowIndex < s_WindowPtrs.count());
-  if(windowIndex >= 0 && windowIndex < s_WindowPtrs.count())
+  bool needsRepaint = false;
+  NSView *view = nil;
   {
-    NSView *view = s_WindowPtrs[windowIndex];
-    if(view)
+    SCOPED_LOCK(s_WindowPtrsArrayLock);
+    RDCASSERT(windowIndex >= 0 && windowIndex < s_WindowPtrs.count());
+    if(windowIndex >= 0 && windowIndex < s_WindowPtrs.count())
     {
-      const NSRect contentRect = [view frame];
-      CGSize viewSize = [view convertSizeToBacking:contentRect.size];
+      view = s_WindowPtrs[windowIndex];
+      if(view)
+      {
+        // s_WindowLayers[windowIndex] = view.layer;
+        const NSRect contentRect = [view frame];
+        CGSize viewSize = [view convertSizeToBacking:contentRect.size];
 
-      s_WindowWidths[windowIndex] = viewSize.width;
-      s_WindowHeights[windowIndex] = viewSize.height;
+        const int oldWidth = s_WindowWidths[windowIndex];
+        const int oldHeight = s_WindowHeights[windowIndex];
+        const int newWidth = viewSize.width;
+        const int newHeight = viewSize.height;
+        if(oldWidth != newWidth)
+        {
+          s_WindowWidths[windowIndex] = newWidth;
+          needsRepaint = true;
+        }
+        if(oldHeight != newHeight)
+        {
+          s_WindowHeights[windowIndex] = newHeight;
+          needsRepaint = true;
+        }
+      }
     }
+  }
+  if(needsRepaint)
+  {
+    contextUpdateMT(contextIndex, windowIndex, replaySalt);
   }
 }
 
-static void contextUpdateMT(int contextIndex, int replaySalt)
+static void contextUpdateMT(int contextIndex, int windowIndex, int replaySalt)
 {
   RandomSleep();
   const int currentReplaySalt = s_ReplaySalt;
@@ -271,10 +297,21 @@ static void contextUpdateMT(int contextIndex, int replaySalt)
   {
     [lockedContext update];
     UnLockContext(contextIndex);
+    if(windowIndex >= 0)
+    {
+      SCOPED_LOCK(s_WindowPtrsArrayLock);
+      RDCASSERT(windowIndex < s_WindowPtrs.count());
+      if(windowIndex < s_WindowPtrs.count())
+      {
+        NSView *view = s_WindowPtrs[windowIndex];
+        if(view && s_ResizeCallback)
+          s_ResizeCallback(view);
+      }
+    }
   }
   else
   {
-    scheduleContextUpdate(contextIndex, replaySalt);
+    scheduleContextUpdate(contextIndex, windowIndex, replaySalt);
   }
 }
 
@@ -297,6 +334,11 @@ static void contextSetViewMT(int contextIndex, int replaySalt, NSView *view)
   {
     scheduleContextSetView(contextIndex, replaySalt, view);
   }
+  if(view)
+  {
+    [view.layer setNeedsDisplayOnBoundsChange:YES];
+    [view.layer setNeedsDisplay];
+  }
 }
 
 static void scheduleContextSetView(int contextIndex, int replaySalt, NSView *view)
@@ -307,11 +349,11 @@ static void scheduleContextSetView(int contextIndex, int replaySalt, NSView *vie
   });
 }
 
-static void scheduleContextUpdate(int contextIndex, int replaySalt)
+static void scheduleContextUpdate(int contextIndex, int windowIndex, int replaySalt)
 {
   RandomSleep();
   dispatch_async(dispatch_get_main_queue(), ^(void) {
-    contextUpdateMT(contextIndex, replaySalt);
+    contextUpdateMT(contextIndex, windowIndex, replaySalt);
   });
 }
 
@@ -323,15 +365,21 @@ static void scheduleViewSetWantBestResolution(NSView *view)
   });
 }
 
-static void scheduleViewGetWindowSizeMT(int windowIndex, int replaySalt)
+static void scheduleViewGetWindowSizeMT(int windowIndex, int contextIndex, int replaySalt)
 {
   RandomSleep();
   dispatch_async(dispatch_get_main_queue(), ^(void) {
-    viewGetWindowSizeMT(windowIndex, replaySalt);
+    viewGetWindowSizeMT(windowIndex, contextIndex, replaySalt);
   });
 }
 
-void Apple_getWindowSize(void *view, int &width, int &height)
+void *Apple_getViewLayer(void *view)
+{
+  NSView *nsView = GetNSView(view);
+  return nsView.layer;
+}
+
+void Apple_getWindowSize(void *view, void *context, int &width, int &height)
 {
   RandomSleep();
   if(!view)
@@ -342,9 +390,31 @@ void Apple_getWindowSize(void *view, int &width, int &height)
   }
   NSView *nsView = GetNSView(view);
   const int windowIndex = getWindowIndex(nsView);
+  /*
+  CALayer *caLayer = s_WindowLayers[windowIndex];
+  if (!caLayer)
+  {
+    width = 0;
+    height = 0;
+    NSOpenGLContext *nsglContext = GetNSOpenGLContext(context);
+    const int contextIndex = getContextIndex(nsglContext);
+    scheduleViewGetWindowSizeMT(windowIndex, contextIndex, s_ReplaySalt);
+    return;
+  }
+  */
+
+  // assert([caLayer isKindOfClass:[CALayer class]]);
+  //[caLayer setNeedsDisplayOnBoundsChange:YES];
+  // caLayer.autoresizingMask = kCALayerWidthSizable | kCALayerHeightSizable;
+  // const CGFloat scaleFactor = caLayer.contentsScale;
+  // width = caLayer.bounds.size.width * scaleFactor;
+  // height = caLayer.bounds.size.height * scaleFactor;
+
   width = s_WindowWidths[windowIndex];
   height = s_WindowHeights[windowIndex];
-  scheduleViewGetWindowSizeMT(windowIndex, s_ReplaySalt);
+  NSOpenGLContext *nsglContext = GetNSOpenGLContext(context);
+  const int contextIndex = getContextIndex(nsglContext);
+  scheduleViewGetWindowSizeMT(windowIndex, contextIndex, s_ReplaySalt);
 }
 
 void Apple_stopTrackingWindowSize(void *view)
@@ -473,7 +543,7 @@ void NSGL_makeCurrentContext(void *context)
   SetCurrentContextIndexTLS(contextIndex);
   LockContext(contextIndex);
   [nsglContext makeCurrentContext];
-  scheduleContextUpdate(contextIndex, s_ReplaySalt);
+  scheduleContextUpdate(contextIndex, -1, s_ReplaySalt);
 }
 
 void NSGL_update(void *context)
@@ -481,7 +551,7 @@ void NSGL_update(void *context)
   RandomSleep();
   NSOpenGLContext *nsglContext = GetNSOpenGLContext(context);
   const int contextIndex = getContextIndex(nsglContext);
-  scheduleContextUpdate(contextIndex, s_ReplaySalt);
+  scheduleContextUpdate(contextIndex, -1, s_ReplaySalt);
 }
 
 void NSGL_flushBuffer(void *context)
@@ -522,5 +592,13 @@ void NSGL_destroyContext(void *context)
       RDCASSERT(0 == s_ContextLocksCount[contextIndex]);
 #endif    // #if RD_USE_CONTEXT_LOCK_COUNTS
     }
+  }
+}
+
+void NSGL_setResizeCallback(void (*resizeCallback)(void *view))
+{
+  if(s_ResizeCallback != resizeCallback)
+  {
+    s_ResizeCallback = resizeCallback;
   }
 }

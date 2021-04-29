@@ -207,6 +207,7 @@ struct GLWindowingData
   };
 
   void *wnd;    // during capture, this is the CGL window ID. During replay, it's the NSView
+  void *layer;
   CGLPixelFormatObj pix;
 };
 

@@ -1056,6 +1056,8 @@ struct WindowingData
 
 #else
 
+typedef void (*RENDERDOC_MacOSResizeCallback)(void *view);
+
 struct WindowingData
 {
   WindowingSystem system;
@@ -1099,6 +1101,7 @@ struct WindowingData
     {
       void *view;
       void *layer;
+      RENDERDOC_MacOSResizeCallback resizeCallback;
     } macOS;
   };
 };
