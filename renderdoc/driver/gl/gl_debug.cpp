@@ -1645,6 +1645,14 @@ void GLReplay::FillWithDiscardPattern(DiscardType type, ResourceId id, GLuint mi
 void GLReplay::PickPixel(ResourceId texture, uint32_t x, uint32_t y, const Subresource &sub,
                          CompType typeCast, float pixel[4])
 {
+  float *pixels = GetPixels(texture, x, y, 1, 1, sub, typeCast);
+  memcpy(pixel, pixels, sizeof(float) * 4);
+  delete[] pixels;
+}
+
+float *GLReplay::GetPixels(ResourceId texture, uint32_t x, uint32_t y, uint32_t w, uint32_t h,
+                           const Subresource &sub, CompType typeCast)
+{
   WrappedOpenGL &drv = *m_pDriver;
 
   MakeCurrentReplayContext(m_DebugCtx);
@@ -1652,13 +1660,35 @@ void GLReplay::PickPixel(ResourceId texture, uint32_t x, uint32_t y, const Subre
   drv.glBindFramebuffer(eGL_FRAMEBUFFER, DebugData.pickPixelFBO);
   drv.glBindFramebuffer(eGL_READ_FRAMEBUFFER, DebugData.pickPixelFBO);
 
-  pixel[0] = pixel[1] = pixel[2] = pixel[3] = 0.0f;
-  drv.glClearBufferfv(eGL_COLOR, 0, pixel);
+  GLuint getPixelsTex;
 
-  DebugData.outWidth = DebugData.outHeight = 1.0f;
-  drv.glViewport(0, 0, 1, 1);
+  if((w != 1) || (h != 1))
+  {
+    drv.glGenTextures(1, &getPixelsTex);
+    drv.glBindTexture(eGL_TEXTURE_2D, getPixelsTex);
 
-  TextureDisplay texDisplay;
+    drv.glTextureImage2DEXT(getPixelsTex, eGL_TEXTURE_2D, 0, eGL_RGBA32F, w, h, 0, eGL_RGBA,
+                            eGL_FLOAT, NULL);
+    drv.glTextureParameteriEXT(getPixelsTex, eGL_TEXTURE_2D, eGL_TEXTURE_MAX_LEVEL, 0);
+    drv.glTextureParameteriEXT(getPixelsTex, eGL_TEXTURE_2D, eGL_TEXTURE_MIN_FILTER, eGL_NEAREST);
+    drv.glTextureParameteriEXT(getPixelsTex, eGL_TEXTURE_2D, eGL_TEXTURE_MAG_FILTER, eGL_NEAREST);
+    drv.glTextureParameteriEXT(getPixelsTex, eGL_TEXTURE_2D, eGL_TEXTURE_WRAP_S, eGL_CLAMP_TO_EDGE);
+    drv.glTextureParameteriEXT(getPixelsTex, eGL_TEXTURE_2D, eGL_TEXTURE_WRAP_T, eGL_CLAMP_TO_EDGE);
+    drv.glFramebufferTexture2D(eGL_FRAMEBUFFER, eGL_COLOR_ATTACHMENT0, eGL_TEXTURE_2D, getPixelsTex,
+                               0);
+  }
+
+  uint32_t countPixels = w * h * 4;
+  float *pixels = new float[countPixels];
+  memset(pixels, 0, countPixels * sizeof(float));
+  drv.glClearBufferfv(eGL_COLOR, 0, pixels);
+  memset(pixels, 0xFF, countPixels * sizeof(float));
+
+  DebugData.outWidth = (float)w;
+  DebugData.outHeight = (float)h;
+  drv.glViewport(0, 0, w, h);
+
+  TextureDisplay texDisplay = {};
 
   texDisplay.red = texDisplay.green = texDisplay.blue = texDisplay.alpha = true;
   texDisplay.flipY = false;
@@ -1685,31 +1715,29 @@ void GLReplay::PickPixel(ResourceId texture, uint32_t x, uint32_t y, const Subre
 
   RenderTextureInternal(texDisplay, eTexDisplay_MipShift);
 
-  drv.glReadPixels(0, 0, 1, 1, eGL_RGBA, eGL_FLOAT, (void *)pixel);
+  PixelPackState pack;
+  pack.Fetch(true);
+  ResetPixelPackState(true, 1);
+  drv.glReadPixels(0, 0, w, h, eGL_RGBA, eGL_FLOAT, (void *)pixels);
+  pack.Apply(true);
 
   if(!HasExt[ARB_gpu_shader5])
   {
     if(IsSIntFormat(texDetails.internalFormat))
     {
-      int32_t casted[4] = {
-          (int32_t)pixel[0],
-          (int32_t)pixel[1],
-          (int32_t)pixel[2],
-          (int32_t)pixel[3],
-      };
-
-      memcpy(pixel, casted, sizeof(casted));
+      int32_t *casted = new int32_t[countPixels];
+      for(uint32_t i = 0; i < countPixels; ++i)
+        casted[i] = (int32_t)pixels[i];
+      memcpy(pixels, casted, sizeof(int32_t) * countPixels);
+      delete[] casted;
     }
     else if(IsUIntFormat(texDetails.internalFormat))
     {
-      uint32_t casted[4] = {
-          (uint32_t)pixel[0],
-          (uint32_t)pixel[1],
-          (uint32_t)pixel[2],
-          (uint32_t)pixel[3],
-      };
-
-      memcpy(pixel, casted, sizeof(casted));
+      uint32_t *casted = new uint32_t[countPixels];
+      for(uint32_t i = 0; i < countPixels; ++i)
+        casted[i] = (uint32_t)pixels[i];
+      memcpy(pixels, casted, sizeof(uint32_t) * countPixels);
+      delete[] casted;
     }
   }
 
@@ -1724,24 +1752,46 @@ void GLReplay::PickPixel(ResourceId texture, uint32_t x, uint32_t y, const Subre
 
       RenderTextureInternal(texDisplay, eTexDisplay_MipShift);
 
-      uint32_t stencilpixel[4];
-      drv.glReadPixels(0, 0, 1, 1, eGL_RGBA, eGL_FLOAT, (void *)stencilpixel);
+      uint32_t *stencilpixel = new uint32_t[countPixels];
+      drv.glReadPixels(0, 0, w, h, eGL_RGBA, eGL_FLOAT, (void *)stencilpixel);
 
       if(!HasExt[ARB_gpu_shader5])
       {
         // bits weren't aliased, so re-cast back to uint.
-        float fpix[4];
-        memcpy(fpix, stencilpixel, sizeof(fpix));
+        for(uint32_t i = 0; i < countPixels; i += 4)
+        {
+          float fpix[4];
+          memcpy(fpix, stencilpixel + i, sizeof(fpix));
 
-        stencilpixel[0] = (uint32_t)fpix[0];
-        stencilpixel[1] = (uint32_t)fpix[1];
+          stencilpixel[i] = (uint32_t)fpix[0];
+          stencilpixel[i + 1] = (uint32_t)fpix[1];
+        }
       }
 
-      // not sure whether [0] or [1] will return stencil values, so use
-      // max of two because other channel should be 0
-      pixel[1] = float(RDCMAX(stencilpixel[0], stencilpixel[1])) / 255.0f;
+      for(uint32_t i = 0; i < countPixels; i += 4)
+      {
+        // not sure whether [0] or [1] will return stencil values, so use
+        // max of two because other channel should be 0
+        pixels[i + 1] = float(RDCMAX(stencilpixel[i], stencilpixel[i + 1])) / 255.0f;
+
+        // the first depth read will have read stencil instead.
+        // NULL it out so the UI sees only stencil
+        if(texDetails.internalFormat == eGL_STENCIL_INDEX8)
+        {
+          pixels[i] = 0.0f;
+        }
+      }
+      delete[] stencilpixel;
     }
   }
+
+  if((w != 1) || (h != 1))
+  {
+    drv.glFramebufferTexture2D(eGL_FRAMEBUFFER, eGL_COLOR_ATTACHMENT0, eGL_TEXTURE_2D,
+                               DebugData.pickPixelTex, 0);
+    drv.glDeleteTextures(1, &getPixelsTex);
+  }
+  return pixels;
 }
 
 bool GLReplay::GetMinMax(ResourceId texid, const Subresource &sub, CompType typeCast, float *minval,
@@ -1802,12 +1852,38 @@ bool GLReplay::GetMinMax(ResourceId texid, const Subresource &sub, CompType type
   if(texid == ResourceId() || m_pDriver->m_Textures.find(texid) == m_pDriver->m_Textures.end())
     return false;
 
-  if(!HasExt[ARB_compute_shader] || !HasExt[ARB_shading_language_420pack])
-    return false;
-
   auto &texDetails = m_pDriver->m_Textures[texid];
 
   TextureDescription details = GetTexture(texid);
+
+  if(!HasExt[ARB_compute_shader] || !HasExt[ARB_shading_language_420pack])
+  {
+    uint32_t w = texDetails.width >> sub.mip;
+    uint32_t h = texDetails.height >> sub.mip;
+
+    float *pixels = GetPixels(texid, 0, 0, w, h, sub, typeCast);
+    uint32_t p = 0;
+    for(uint32_t c = 0; c < 4; ++c)
+    {
+      minval[c] = pixels[c];
+      maxval[c] = pixels[c];
+    }
+    for(uint32_t y = 0; y < h; ++y)
+    {
+      for(uint32_t x = 0; x < w; ++x)
+      {
+        for(uint32_t c = 0; c < 4; ++c)
+        {
+          float val = pixels[p];
+          minval[c] = RDCMIN(minval[c], val);
+          maxval[c] = RDCMAX(maxval[c], val);
+          ++p;
+        }
+      }
+    }
+    delete[] pixels;
+    return true;
+  }
 
   int texSlot = 0;
   int intIdx = 0;
@@ -2030,7 +2106,49 @@ bool GLReplay::GetHistogram(ResourceId texid, const Subresource &sub, CompType t
     return false;
 
   if(!HasExt[ARB_compute_shader] || !HasExt[ARB_shading_language_420pack])
-    return false;
+  {
+    auto &texDetails = m_pDriver->m_Textures[texid];
+
+    uint32_t w = texDetails.width >> sub.mip;
+    uint32_t h = texDetails.height >> sub.mip;
+    float *pixels = GetPixels(texid, 0, 0, w, h, sub, typeCast);
+    uint32_t p = 0;
+    histogram.clear();
+    histogram.resize(HGRAM_NUM_BUCKETS);
+
+    float histogramMin = minval;
+    float histogramMax = maxval + maxval * 1e-6f;
+    float range = histogramMax - histogramMin;
+
+    for(uint32_t y = 0; y < h; ++y)
+    {
+      for(uint32_t x = 0; x < w; ++x)
+      {
+        for(uint32_t c = 0; c < 4; ++c)
+        {
+          float val = pixels[p];
+          float normalised = 2.0f;
+          if(channels_[c])
+          {
+            normalised = (val - histogramMin) / range;
+            if(normalised < 0.0f)
+            {
+              normalised = 2.0f;
+            }
+          }
+
+          uint32_t bucketIdx = (uint32_t)(HGRAM_NUM_BUCKETS * normalised);
+          if(bucketIdx < HGRAM_NUM_BUCKETS)
+          {
+            ++histogram[bucketIdx];
+          }
+          ++p;
+        }
+      }
+    }
+    delete[] pixels;
+    return true;
+  }
 
   // take a local copy so we can modify it
   rdcfixedarray<bool, 4> channels = channels_;
