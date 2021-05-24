@@ -1590,6 +1590,14 @@ void GLReplay::FillWithDiscardPattern(DiscardType type, ResourceId id, GLuint mi
 void GLReplay::PickPixel(ResourceId texture, uint32_t x, uint32_t y, const Subresource &sub,
                          CompType typeCast, float pixel[4])
 {
+  float *pixels = GetPixels(texture, x, y, 1, 1, sub, typeCast);
+  memcpy(pixel, pixels, sizeof(float) * 4);
+  delete pixels;
+}
+
+float *GLReplay::GetPixels(ResourceId texture, uint32_t x, uint32_t y, uint32_t w, uint32_t h,
+                           const Subresource &sub, CompType typeCast)
+{
   WrappedOpenGL &drv = *m_pDriver;
 
   MakeCurrentReplayContext(m_DebugCtx);
@@ -1597,11 +1605,14 @@ void GLReplay::PickPixel(ResourceId texture, uint32_t x, uint32_t y, const Subre
   drv.glBindFramebuffer(eGL_FRAMEBUFFER, DebugData.pickPixelFBO);
   drv.glBindFramebuffer(eGL_READ_FRAMEBUFFER, DebugData.pickPixelFBO);
 
-  pixel[0] = pixel[1] = pixel[2] = pixel[3] = 0.0f;
-  drv.glClearBufferfv(eGL_COLOR, 0, pixel);
+  uint32_t countPixels = w * h * 4;
+  float *pixels = new float[countPixels];
+  memset(pixels, 0, countPixels * sizeof(float));
+  drv.glClearBufferfv(eGL_COLOR, 0, pixels);
 
-  DebugData.outWidth = DebugData.outHeight = 1.0f;
-  drv.glViewport(0, 0, 1, 1);
+  DebugData.outWidth = w;
+  DebugData.outHeight = h;
+  drv.glViewport(0, 0, w, h);
 
   TextureDisplay texDisplay;
 
@@ -1622,7 +1633,7 @@ void GLReplay::PickPixel(ResourceId texture, uint32_t x, uint32_t y, const Subre
 
   RenderTextureInternal(texDisplay, eTexDisplay_MipShift);
 
-  drv.glReadPixels(0, 0, 1, 1, eGL_RGBA, eGL_FLOAT, (void *)pixel);
+  drv.glReadPixels(0, 0, w, h, eGL_RGBA, eGL_FLOAT, (void *)pixel);
 
   if(!HasExt[ARB_gpu_shader5])
   {
@@ -1661,7 +1672,7 @@ void GLReplay::PickPixel(ResourceId texture, uint32_t x, uint32_t y, const Subre
       RenderTextureInternal(texDisplay, eTexDisplay_MipShift);
 
       uint32_t stencilpixel[4];
-      drv.glReadPixels(0, 0, 1, 1, eGL_RGBA, eGL_FLOAT, (void *)stencilpixel);
+      drv.glReadPixels(0, 0, w, h, eGL_RGBA, eGL_FLOAT, (void *)stencilpixel);
 
       if(!HasExt[ARB_gpu_shader5])
       {
@@ -1746,7 +1757,10 @@ bool GLReplay::GetMinMax(ResourceId texid, const Subresource &sub, CompType type
     return false;
 
   if(!HasExt[ARB_compute_shader] || !HasExt[ARB_shading_language_420pack])
+  {
+    auto pixels = GetPixels(texid, sub, typeCast);
     return false;
+  }
 
   auto &texDetails = m_pDriver->m_Textures[texid];
 

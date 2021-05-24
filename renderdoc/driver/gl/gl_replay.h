@@ -173,6 +173,7 @@ public:
 
   ResourceId GetLiveID(ResourceId id);
 
+  float *GetPixels(ResourceId texture, const Subresource &sub, CompType typeCast);
   void PickPixel(ResourceId texture, uint32_t x, uint32_t y, const Subresource &sub,
                  CompType typeCast, float pixel[4]);
   bool GetMinMax(ResourceId texid, const Subresource &sub, CompType typeCast, float *minval,
