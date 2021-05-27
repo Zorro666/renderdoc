@@ -1602,6 +1602,24 @@ float *GLReplay::GetPixels(ResourceId texture, uint32_t x, uint32_t y, uint32_t 
 
   MakeCurrentReplayContext(m_DebugCtx);
 
+  GLuint getPixelsTex;
+
+  if((w != 1) || (h != 1))
+  {
+    drv.glGenTextures(1, &getPixelsTex);
+    drv.glBindTexture(eGL_TEXTURE_2D, getPixelsTex);
+
+    drv.glTextureImage2DEXT(getPixelsTex, eGL_TEXTURE_2D, 0, eGL_RGBA32F, w, h, 0, eGL_RGBA,
+                            eGL_FLOAT, NULL);
+    drv.glTextureParameteriEXT(getPixelsTex, eGL_TEXTURE_2D, eGL_TEXTURE_MAX_LEVEL, 0);
+    drv.glTextureParameteriEXT(getPixelsTex, eGL_TEXTURE_2D, eGL_TEXTURE_MIN_FILTER, eGL_NEAREST);
+    drv.glTextureParameteriEXT(getPixelsTex, eGL_TEXTURE_2D, eGL_TEXTURE_MAG_FILTER, eGL_NEAREST);
+    drv.glTextureParameteriEXT(getPixelsTex, eGL_TEXTURE_2D, eGL_TEXTURE_WRAP_S, eGL_CLAMP_TO_EDGE);
+    drv.glTextureParameteriEXT(getPixelsTex, eGL_TEXTURE_2D, eGL_TEXTURE_WRAP_T, eGL_CLAMP_TO_EDGE);
+    drv.glFramebufferTexture2D(eGL_FRAMEBUFFER, eGL_COLOR_ATTACHMENT0, eGL_TEXTURE_2D, getPixelsTex,
+                               0);
+  }
+
   drv.glBindFramebuffer(eGL_FRAMEBUFFER, DebugData.pickPixelFBO);
   drv.glBindFramebuffer(eGL_READ_FRAMEBUFFER, DebugData.pickPixelFBO);
 
@@ -1609,6 +1627,7 @@ float *GLReplay::GetPixels(ResourceId texture, uint32_t x, uint32_t y, uint32_t 
   float *pixels = new float[countPixels];
   memset(pixels, 0, countPixels * sizeof(float));
   drv.glClearBufferfv(eGL_COLOR, 0, pixels);
+  memset(pixels, 0xFF, countPixels * sizeof(float));
 
   DebugData.outWidth = w;
   DebugData.outHeight = h;
@@ -1633,7 +1652,7 @@ float *GLReplay::GetPixels(ResourceId texture, uint32_t x, uint32_t y, uint32_t 
 
   RenderTextureInternal(texDisplay, eTexDisplay_MipShift);
 
-  drv.glReadPixels(0, 0, w, h, eGL_RGBA, eGL_FLOAT, (void *)pixel);
+  drv.glReadPixels(0, 0, w, h, eGL_RGBA, eGL_FLOAT, (void *)pixels);
 
   if(!HasExt[ARB_gpu_shader5])
   {
@@ -1642,18 +1661,18 @@ float *GLReplay::GetPixels(ResourceId texture, uint32_t x, uint32_t y, uint32_t 
     if(IsSIntFormat(texDetails.internalFormat))
     {
       int32_t casted[4] = {
-          (int32_t)pixel[0], (int32_t)pixel[1], (int32_t)pixel[2], (int32_t)pixel[3],
+          (int32_t)pixels[0], (int32_t)pixels[1], (int32_t)pixels[2], (int32_t)pixels[3],
       };
 
-      memcpy(pixel, casted, sizeof(casted));
+      memcpy(pixels, casted, sizeof(casted));
     }
     else if(IsUIntFormat(texDetails.internalFormat))
     {
       uint32_t casted[4] = {
-          (uint32_t)pixel[0], (uint32_t)pixel[1], (uint32_t)pixel[2], (uint32_t)pixel[3],
+          (uint32_t)pixels[0], (uint32_t)pixels[1], (uint32_t)pixels[2], (uint32_t)pixels[3],
       };
 
-      memcpy(pixel, casted, sizeof(casted));
+      memcpy(pixels, casted, sizeof(casted));
     }
   }
 
@@ -1686,17 +1705,23 @@ float *GLReplay::GetPixels(ResourceId texture, uint32_t x, uint32_t y, uint32_t 
 
       // not sure whether [0] or [1] will return stencil values, so use
       // max of two because other channel should be 0
-      pixel[1] = float(RDCMAX(stencilpixel[0], stencilpixel[1])) / 255.0f;
+      pixels[1] = float(RDCMAX(stencilpixel[0], stencilpixel[1])) / 255.0f;
 
       // the first depth read will have read stencil instead.
       // NULL it out so the UI sees only stencil
       if(texDetails.internalFormat == eGL_STENCIL_INDEX8)
       {
-        pixel[1] = float(RDCMAX(stencilpixel[0], stencilpixel[1])) / 255.0f;
-        pixel[0] = 0.0f;
+        pixels[1] = float(RDCMAX(stencilpixel[0], stencilpixel[1])) / 255.0f;
+        pixels[0] = 0.0f;
       }
     }
   }
+
+  if((w != 1) || (h != 1))
+  {
+    drv.glDeleteTextures(1, &getPixelsTex);
+  }
+  return pixels;
 }
 
 bool GLReplay::GetMinMax(ResourceId texid, const Subresource &sub, CompType typeCast, float *minval,
@@ -1756,15 +1781,37 @@ bool GLReplay::GetMinMax(ResourceId texid, const Subresource &sub, CompType type
   if(texid == ResourceId() || m_pDriver->m_Textures.find(texid) == m_pDriver->m_Textures.end())
     return false;
 
-  if(!HasExt[ARB_compute_shader] || !HasExt[ARB_shading_language_420pack])
-  {
-    auto pixels = GetPixels(texid, sub, typeCast);
-    return false;
-  }
-
   auto &texDetails = m_pDriver->m_Textures[texid];
 
   TextureDescription details = GetTexture(texid);
+
+  if(!HasExt[ARB_compute_shader] || !HasExt[ARB_shading_language_420pack])
+  {
+    uint32_t w = texDetails.width >> sub.mip;
+    uint32_t h = texDetails.height >> sub.mip;
+    float *pixels = GetPixels(texid, 0, 0, w, h, sub, typeCast);
+    uint32_t p = 0;
+    for(uint32_t c = 0; c < 4; ++c)
+    {
+      minval[c] = pixels[c];
+      maxval[c] = pixels[c];
+    }
+    for(uint32_t y = 0; y < h; ++y)
+    {
+      for(uint32_t x = 0; x < w; ++x)
+      {
+        for(uint32_t c = 0; c < 4; ++c)
+        {
+          float val = pixels[p];
+          minval[c] = RDCMIN(minval[c], val);
+          maxval[c] = RDCMAX(maxval[c], val);
+          ++p;
+        }
+      }
+    }
+    delete pixels;
+    return true;
+  }
 
   int texSlot = 0;
   int intIdx = 0;
