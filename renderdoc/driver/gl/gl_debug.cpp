@@ -2034,7 +2034,49 @@ bool GLReplay::GetHistogram(ResourceId texid, const Subresource &sub, CompType t
     return false;
 
   if(!HasExt[ARB_compute_shader] || !HasExt[ARB_shading_language_420pack])
-    return false;
+  {
+    auto &texDetails = m_pDriver->m_Textures[texid];
+
+    uint32_t w = texDetails.width >> sub.mip;
+    uint32_t h = texDetails.height >> sub.mip;
+    float *pixels = GetPixels(texid, 0, 0, w, h, sub, typeCast);
+    uint32_t p = 0;
+    histogram.clear();
+    histogram.resize(HGRAM_NUM_BUCKETS);
+
+    float histogramMin = minval;
+    float histogramMax = maxval + maxval * 1e-6f;
+    float range = histogramMax - histogramMin;
+
+    for(uint32_t y = 0; y < h; ++y)
+    {
+      for(uint32_t x = 0; x < w; ++x)
+      {
+        for(uint32_t c = 0; c < 4; ++c)
+        {
+          float val = pixels[p];
+          float normalised = 2.0f;
+          if(channels_[c])
+          {
+            normalised = (val - histogramMin) / range;
+            if(normalised < 0.0f)
+            {
+              normalised = 2.0f;
+            }
+          }
+
+          uint32_t bucketIdx = HGRAM_NUM_BUCKETS * normalised;
+          if(bucketIdx < HGRAM_NUM_BUCKETS)
+          {
+            ++histogram[bucketIdx];
+          }
+          ++p;
+        }
+      }
+    }
+    delete pixels;
+    return true;
+  }
 
   // take a local copy so we can modify it
   rdcfixedarray<bool, 4> channels = channels_;
