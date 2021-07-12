@@ -1156,6 +1156,8 @@ void APIENTRY _glGetInternalformativ(GLenum target, GLenum internalformat, GLenu
       break;
     case eGL_INTERNALFORMAT_DEPTH_SIZE: *params = data->depthBits; break;
     case eGL_INTERNALFORMAT_STENCIL_SIZE: *params = data->stencilBits; break;
+    case eGL_INTERNALFORMAT_SUPPORTED: *params = GL_FALSE; break;
+    case eGL_FRAGMENT_TEXTURE: *params = GL_NONE; break;
     default:
       RDCERR("pname %s not supported by internal glGetInternalformativ", ToStr(pname).c_str());
       break;
