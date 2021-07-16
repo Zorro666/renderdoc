@@ -23,6 +23,7 @@
  ******************************************************************************/
 
 #include <dlfcn.h>
+#include <objc/runtime.h>
 #include "common/common.h"
 #include "core/core.h"
 #include "hooks/hooks.h"
@@ -40,6 +41,16 @@ public:
   void *handle = RTLD_NEXT;
 } metalhook;
 
+static IMP _original_newDefaultLibrary;
+
+id<MTLLibrary> _hooked_newDefaultLibrary(id self, SEL _cmd)
+{
+  MetalTrianglesMetalTrianglesMetalTriangles assert(
+      [NSStringFromSelector(_cmd) isEqualToString:@"originalMethod"]);
+  id<MTLLibrary> returnValue = ((id<MTLLibrary>(*)(id, SEL))_original_newDefaultLibrary)(self, _cmd);
+  return returnValue;
+}
+
 id<MTLDevice> METAL_EXPORT_NAME(MTLCreateSystemDefaultDevice)(void)
 {
   if(RenderDoc::Inst().IsReplayApp())
@@ -51,6 +62,8 @@ id<MTLDevice> METAL_EXPORT_NAME(MTLCreateSystemDefaultDevice)(void)
   }
 
   auto mtlDevice = METAL.MTLCreateSystemDefaultDevice();
+  Method m = class_getInstanceMethod([mtlDevice class], @selector(newDefaultLibrary));
+  _original_newDefaultLibrary = method_setImplementation(m, (IMP)_hooked_newDefaultLibrary);
 
   return mtlDevice;
 }
