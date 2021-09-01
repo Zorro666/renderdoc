@@ -12,6 +12,12 @@ set(sources
   metal_library.h
   metal_library_bridge.mm
   metal_library_bridge.h
+  metal_render_pass_descriptor_bridge.mm
+  metal_render_pass_descriptor.cpp
+  metal_render_pass_descriptor.h
+  metal_render_pipeline_descriptor_bridge.mm
+  metal_render_pipeline_descriptor.cpp
+  metal_render_pipeline_descriptor.h
   metal_render_pipeline_state_bridge.mm
   metal_render_pipeline_state.cpp
   metal_render_pipeline_state.h
@@ -36,18 +42,39 @@ set(sources
   metal_function.h
   metal_function_bridge.mm
   metal_function_bridge.h
+  metal_texture.cpp
+  metal_texture.h
+  metal_texture_bridge.mm
+  metal_texture_bridge.h
+  metal_texture_descriptor.h
+  metal_texture_descriptor.cpp
+  metal_texture_descriptor_bridge.mm
   metal_common.cpp
   metal_common.h
+  metal_metal.h
   metal_core.cpp
   metal_core.h
+  metal_manager.cpp
   metal_manager.h
   metal_resources.cpp
   metal_resources.h
+  metal_init_state.cpp
+  metal_render_state.cpp
+  metal_render_state.h
+  metal_info.cpp
+  metal_info.h
   metal_replay.cpp
   metal_replay.h
+  metal_debug.cpp
+  metal_outputwindow.cpp
+  metal_rendertexture.cpp
   metal_stringise.cpp
   metal_stringise.h
+  metal_types.cpp
   metal_types.h
+  metal_types_bridge.mm
+  metal_shaders.h
+  metal_shaders.metal
   )
 
 add_library(rdoc_metal OBJECT ${sources})

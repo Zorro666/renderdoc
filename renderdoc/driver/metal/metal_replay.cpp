@@ -24,260 +24,633 @@
 
 #include "metal_replay.h"
 #include "serialise/rdcfile.h"
-#include "metal_core.h"
-#include "metal_device.h"
+#include "metal_metal.h"
 
-MetalReplay::MetalReplay()
+MetalReplay::MetalReplay(WrappedMTLDevice *wrappedMTLDevice)
 {
-  RDCWARN("MetalReplay::MetalReplay : Not implemented");
+  m_pDriver = wrappedMTLDevice;
+  m_Proxy = false;
+  m_MetalPipelineState = NULL;
+  m_debugLibrary = NULL;
+  m_checkerboardPipeline = id_MTLRenderPipelineState();
+
+  m_OutputWinID = 1;
+  m_ActiveWinID = 0;
+  m_BindDepth = false;
+
+  m_DebugWidth = m_DebugHeight = 1;
 }
 
 /* IRemoteDriver */
 void MetalReplay::Shutdown()
 {
-  RDCWARN("MetalReplay::Shutdown : Not implemented");
+  METAL_NOT_IMPLEMENTED();
 }
 
 APIProperties MetalReplay::GetAPIProperties()
 {
-  RDCWARN("Not implemented");
-  return APIProperties();
+  METAL_NOT_IMPLEMENTED("only partial implementation");
+  APIProperties ret;
+
+  ret.pipelineType = GraphicsAPI::Metal;
+  ret.localRenderer = GraphicsAPI::Metal;
+  ret.degraded = false;
+  ret.shadersMutable = false;
+  ret.rgpCapture = false;
+  ret.shaderDebugging = false;
+  ret.pixelHistory = false;
+
+  return ret;
+}
+
+ResourceDescription &MetalReplay::GetResourceDesc(ResourceId id)
+{
+  auto it = m_ResourceIdx.find(id);
+  if(it == m_ResourceIdx.end())
+  {
+    m_ResourceIdx[id] = m_Resources.size();
+    m_Resources.push_back(ResourceDescription());
+    m_Resources.back().resourceId = id;
+    return m_Resources.back();
+  }
+
+  return m_Resources[it->second];
 }
 
 rdcarray<ResourceDescription> MetalReplay::GetResources()
 {
-  RDCWARN("Not implemented");
-  return rdcarray<ResourceDescription>();
+  return m_Resources;
 }
 
 rdcarray<BufferDescription> MetalReplay::GetBuffers()
 {
-  RDCWARN("Not implemented");
+  METAL_NOT_IMPLEMENTED();
   return rdcarray<BufferDescription>();
 }
+
 BufferDescription MetalReplay::GetBuffer(ResourceId id)
 {
-  RDCWARN("Not implemented");
+  METAL_NOT_IMPLEMENTED();
   return BufferDescription();
 }
 
 rdcarray<TextureDescription> MetalReplay::GetTextures()
 {
-  RDCWARN("Not implemented");
-  return rdcarray<TextureDescription>();
+  rdcarray<TextureDescription> texs;
+
+  for(auto it = m_pDriver->m_ImageStates.begin(); it != m_pDriver->m_ImageStates.end(); ++it)
+  {
+    // skip textures that aren't from the capture
+    if(m_pDriver->GetResourceManager()->GetOriginalID(it->first) == it->first)
+      continue;
+
+    texs.push_back(GetTexture(it->first));
+  }
+
+  return texs;
 }
+
 TextureDescription MetalReplay::GetTexture(ResourceId id)
 {
-  RDCWARN("Not implemented");
-  return TextureDescription();
+  MetalCreationInfo::Texture &texInfo = m_pDriver->m_CreationInfo.m_Texture[id];
+
+  TextureDescription ret = {};
+  ret.resourceId = m_pDriver->GetResourceManager()->GetOriginalID(id);
+  ret.arraysize = texInfo.arrayLayers;
+  ret.creationFlags = texInfo.creationFlags;
+  ret.cubemap = texInfo.cube;
+  ret.width = texInfo.extent.width;
+  ret.height = texInfo.extent.height;
+  ret.depth = texInfo.extent.depth;
+  ret.mips = texInfo.mipLevels;
+
+  ret.byteSize = 0;
+  for(uint32_t s = 0; s < ret.mips; s++)
+    ret.byteSize += GetByteSize(ret.width, ret.height, ret.depth, texInfo.format, s);
+  ret.byteSize *= ret.arraysize;
+
+  ret.msQual = 0;
+  ret.msSamp = RDCMAX(1U, (uint32_t)texInfo.samples);
+
+  ret.byteSize *= ret.msSamp;
+
+  ret.format = MakeResourceFormat(texInfo.format);
+
+  switch(texInfo.type)
+  {
+    case MTLTextureType1D:
+      ret.type = texInfo.arrayLayers > 1 ? TextureType::Texture1DArray : TextureType::Texture1D;
+      ret.dimension = 1;
+      break;
+    case MTLTextureType2D:
+      if(ret.msSamp > 1)
+        ret.type = texInfo.arrayLayers > 1 ? TextureType::Texture2DMSArray : TextureType::Texture2DMS;
+      else if(ret.cubemap)
+        ret.type = texInfo.arrayLayers > 6 ? TextureType::TextureCubeArray : TextureType::TextureCube;
+      else
+        ret.type = texInfo.arrayLayers > 1 ? TextureType::Texture2DArray : TextureType::Texture2D;
+      ret.dimension = 2;
+      break;
+    case MTLTextureType3D:
+      ret.type = TextureType::Texture3D;
+      ret.dimension = 3;
+      break;
+    default:
+      ret.dimension = 2;
+      RDCERR("Unexpected image type");
+      break;
+  }
+
+  return ret;
 }
 
 rdcarray<DebugMessage> MetalReplay::GetDebugMessages()
 {
-  RDCWARN("Not implemented");
+  METAL_NOT_IMPLEMENTED_ONCE();
   return rdcarray<DebugMessage>();
 }
 
 rdcarray<ShaderEntryPoint> MetalReplay::GetShaderEntryPoints(ResourceId shader)
 {
-  RDCWARN("Not implemented");
+  METAL_NOT_IMPLEMENTED();
   return rdcarray<ShaderEntryPoint>();
 }
 
 ShaderReflection *MetalReplay::GetShader(ResourceId pipeline, ResourceId shader,
                                          ShaderEntryPoint entry)
 {
-  RDCWARN("Not implemented");
+  METAL_NOT_IMPLEMENTED();
   return NULL;
 }
 
 rdcarray<rdcstr> MetalReplay::GetDisassemblyTargets(bool withPipeline)
 {
-  RDCWARN("Not implemented");
+  METAL_NOT_IMPLEMENTED();
   return rdcarray<rdcstr>();
 }
 
 rdcstr MetalReplay::DisassembleShader(ResourceId pipeline, const ShaderReflection *refl,
                                       const rdcstr &target)
 {
-  RDCWARN("Not implemented");
+  METAL_NOT_IMPLEMENTED();
   return rdcstr();
 }
 
 rdcarray<EventUsage> MetalReplay::GetUsage(ResourceId id)
 {
-  RDCWARN("Not implemented");
-  return rdcarray<EventUsage>();
+  return m_pDriver->GetUsage(id);
 }
 
 void MetalReplay::SavePipelineState(uint32_t eventId)
 {
-  RDCWARN("Not implemented");
-}
+  if(!m_MetalPipelineState)
+    return;
 
-const D3D11Pipe::State *MetalReplay::GetD3D11PipelineState()
-{
-  RDCWARN("Not implemented");
-  return NULL;
-}
+  const MetalRenderState &state = m_pDriver->m_RenderState;
+  MetalCreationInfo &c = m_pDriver->m_CreationInfo;
 
-const D3D12Pipe::State *MetalReplay::GetD3D12PipelineState()
-{
-  RDCWARN("Not implemented");
-  return NULL;
-}
+  MetalPipe::State &ret = *m_MetalPipelineState;
 
-const GLPipe::State *MetalReplay::GetGLPipelineState()
-{
-  RDCWARN("Not implemented");
-  return NULL;
-}
-const VKPipe::State *MetalReplay::GetVulkanPipelineState()
-{
-  RDCWARN("Not implemented");
-  return NULL;
-}
-const MetalPipe::State *MetalReplay::GetMetalPipelineState()
-{
-  RDCWARN("Not implemented");
-  return NULL;
+  MetalResourceManager *rm = m_pDriver->GetResourceManager();
+
+  ret = MetalPipe::State();
+
+  // General pipeline properties
+  ret.compute.pipelineResourceId = ResourceId();
+  ret.graphics.pipelineResourceId = rm->GetUnreplacedOriginalID(state.graphics.pipeline);
+
+  {
+    ret.compute.pipelineLayoutResourceId = ResourceId();
+    ret.compute.flags = 0;
+    ret.computeShader = MetalPipe::Shader();
+  }
+
+  if(state.graphics.pipeline != ResourceId())
+  {
+    const MetalCreationInfo::Pipeline &p = c.m_Pipeline[state.graphics.pipeline];
+
+    // Viewport/Scissors
+    size_t numViewScissors = state.viewports.size();
+    ret.viewportScissor.viewportScissors.resize(numViewScissors);
+    for(size_t i = 0; i < numViewScissors; i++)
+    {
+      if(i < state.viewports.size())
+      {
+        ret.viewportScissor.viewportScissors[i].vp.x = state.viewports[i].originX;
+        ret.viewportScissor.viewportScissors[i].vp.y = state.viewports[i].originY;
+        ret.viewportScissor.viewportScissors[i].vp.width = state.viewports[i].width;
+        ret.viewportScissor.viewportScissors[i].vp.height = state.viewports[i].height;
+        ret.viewportScissor.viewportScissors[i].vp.minDepth = state.viewports[i].znear;
+        ret.viewportScissor.viewportScissors[i].vp.maxDepth = state.viewports[i].zfar;
+      }
+      else
+      {
+        RDCEraseEl(ret.viewportScissor.viewportScissors[i].vp);
+      }
+
+      if(i < state.scissors.size())
+      {
+        ret.viewportScissor.viewportScissors[i].scissor.x = state.scissors[i].x;
+        ret.viewportScissor.viewportScissors[i].scissor.y = state.scissors[i].y;
+        ret.viewportScissor.viewportScissors[i].scissor.width = state.scissors[i].width;
+        ret.viewportScissor.viewportScissors[i].scissor.height = state.scissors[i].height;
+      }
+      else
+      {
+        RDCEraseEl(ret.viewportScissor.viewportScissors[i].scissor);
+      }
+    }
+
+    // Rasterizer
+    ret.rasterizer.depthClampEnable = (state.depthClipMode == MTLDepthClipModeClamp);
+    ret.rasterizer.depthClipEnable = (state.depthClipMode == MTLDepthClipModeClip);
+    ret.rasterizer.rasterizerDiscardEnable = false;
+    ret.rasterizer.frontCCW = (state.frontFacingWinding == MTLWindingCounterClockwise);
+
+    ret.rasterizer.conservativeRasterization = ConservativeRaster::Disabled;
+    ret.rasterizer.lineRasterMode = LineRaster::Default;
+
+    switch(state.fillMode)
+    {
+      case MTLTriangleFillModeLines: ret.rasterizer.fillMode = FillMode::Wireframe; break;
+      case MTLTriangleFillModeFill: ret.rasterizer.fillMode = FillMode::Solid; break;
+      default:
+        ret.rasterizer.fillMode = FillMode::Solid;
+        RDCERR("Unexpected value for FillMode %x", state.fillMode);
+        break;
+    }
+
+    switch(state.cullMode)
+    {
+      case MTLCullModeNone: ret.rasterizer.cullMode = CullMode::NoCull; break;
+      case MTLCullModeFront: ret.rasterizer.cullMode = CullMode::Front; break;
+      case MTLCullModeBack: ret.rasterizer.cullMode = CullMode::Back; break;
+      default:
+        ret.rasterizer.cullMode = CullMode::NoCull;
+        RDCERR("Unexpected value for CullMode %x", state.cullMode);
+        break;
+    }
+
+    // Color Blend
+    ret.colorBlend.alphaToCoverageEnable = p.alphaToCoverageEnabled;
+    ret.colorBlend.alphaToOneEnable = p.alphaToOneEnabled;
+    ret.rasterizer.rasterizerDiscardEnable = !p.rasterizationEnabled;
+
+    ret.colorBlend.blends.resize(p.attachments.size());
+    for(size_t i = 0; i < p.attachments.size(); i++)
+    {
+      ret.colorBlend.blends[i].enabled = p.attachments[i].blendingEnabled;
+
+      // TODO: RenderDoc Metal support for logic operation
+      ret.colorBlend.blends[i].logicOperationEnabled = false;
+      ret.colorBlend.blends[i].logicOperation = LogicOperation::NoOp;
+
+      ret.colorBlend.blends[i].colorBlend.source =
+          MakeBlendMultiplier(p.attachments[i].sourceRGBBlendFactor);
+      ret.colorBlend.blends[i].colorBlend.destination =
+          MakeBlendMultiplier(p.attachments[i].destinationRGBBlendFactor);
+      ret.colorBlend.blends[i].colorBlend.operation = MakeBlendOp(p.attachments[i].rgbBlendOperation);
+
+      ret.colorBlend.blends[i].alphaBlend.source =
+          MakeBlendMultiplier(p.attachments[i].sourceAlphaBlendFactor);
+      ret.colorBlend.blends[i].alphaBlend.destination =
+          MakeBlendMultiplier(p.attachments[i].destinationAlphaBlendFactor);
+      ret.colorBlend.blends[i].alphaBlend.operation =
+          MakeBlendOp(p.attachments[i].alphaBlendOperation);
+
+      ret.colorBlend.blends[i].writeMask = MakeWriteMask(p.attachments[i].writeMask);
+    }
+
+    ret.colorBlend.blendFactor = state.blendColor;
+
+    // Depth Stencil
+    // TODO: Depth Stencil state saving
+    //    ret.depthStencil.depthTestEnable = state.depthTestEnable != VK_FALSE;
+    //    ret.depthStencil.depthWriteEnable = state.depthWriteEnable != VK_FALSE;
+    //    ret.depthStencil.depthBoundsEnable = state.depthBoundsTestEnable != VK_FALSE;
+    //    ret.depthStencil.depthFunction = MakeCompareFunc(state.depthCompareOp);
+    //    ret.depthStencil.stencilTestEnable = state.stencilTestEnable != VK_FALSE;
+    //
+    //    ret.depthStencil.frontFace.passOperation = MakeStencilOp(state.front.passOp);
+    //    ret.depthStencil.frontFace.failOperation = MakeStencilOp(state.front.failOp);
+    //    ret.depthStencil.frontFace.depthFailOperation = MakeStencilOp(state.front.depthFailOp);
+    //    ret.depthStencil.frontFace.function = MakeCompareFunc(state.front.compareOp);
+    //
+    //    ret.depthStencil.backFace.passOperation = MakeStencilOp(state.back.passOp);
+    //    ret.depthStencil.backFace.failOperation = MakeStencilOp(state.back.failOp);
+    //    ret.depthStencil.backFace.depthFailOperation = MakeStencilOp(state.back.depthFailOp);
+    //    ret.depthStencil.backFace.function = MakeCompareFunc(state.back.compareOp);
+
+    ret.depthStencil.minDepthBounds = 0.0f;
+    ret.depthStencil.maxDepthBounds = 1.0f;
+
+    //    ret.depthStencil.frontFace.reference = state.front.ref;
+    //    ret.depthStencil.frontFace.compareMask = state.front.readMask;
+    //    ret.depthStencil.frontFace.writeMask = state.front.writeMask;
+    //
+    //    ret.depthStencil.backFace.reference = state.back.ref;
+    //    ret.depthStencil.backFace.compareMask = state.back.compare;
+    //    ret.depthStencil.backFace.writeMask = state.back.write;
+  }
+  else
+  {
+    ret.graphics.pipelineLayoutResourceId = ResourceId();
+
+    ret.graphics.flags = 0;
+
+    ret.vertexInput.attributes.clear();
+    ret.vertexInput.bindings.clear();
+    ret.vertexInput.vertexBuffers.clear();
+
+    //    MetalPipe::Shader *stages[] = {
+    //        &ret.vertexShader,   &ret.tessControlShader, &ret.tessEvalShader,
+    //        &ret.geometryShader, &ret.fragmentShader,
+    //    };
+    //
+    //    for(size_t i = 0; i < ARRAY_COUNT(stages); i++)
+    //      *stages[i] = MetalPipe::Shader();
+
+    ret.viewportScissor.viewportScissors.clear();
+    ret.viewportScissor.discardRectangles.clear();
+    ret.viewportScissor.discardRectanglesExclusive = true;
+
+    ret.colorBlend.blends.clear();
+  }
+
+  if(state.renderPass != ResourceId())
+  {
+    // Renderpass
+    const MetalCreationInfo::RenderPass &rp = c.m_RenderPass[state.renderPass];
+    ret.currentPass.renderpass.resourceId = rm->GetOriginalID(state.renderPass);
+    ret.currentPass.renderpass.subpass = 0;
+    //      ret.currentPass.renderpass.inputAttachments = rp.inputAttachments;
+    ret.currentPass.renderpass.colorAttachments.resize(1);
+    ret.currentPass.renderpass.colorAttachments[0] = 0;
+    //      ret.currentPass.renderpass.resolveAttachments = rp.resolveAttachments;
+    //      ret.currentPass.renderpass.depthstencilAttachment = rp.depthstencilAttachment;
+    //      ret.currentPass.renderpass.fragmentDensityAttachment = rp.fragmentDensityAttachment;
+    //      ret.currentPass.renderpass.multiviews = rpmultiviews;
+
+    if(state.graphics.pipeline != ResourceId())
+    {
+      const MetalCreationInfo::Pipeline &p = c.m_Pipeline[state.graphics.pipeline];
+      //      ret.currentPass.framebuffer.width = c.m_Framebuffer[fb].width;
+      //      ret.currentPass.framebuffer.height = c.m_Framebuffer[fb].height;
+      //      ret.currentPass.framebuffer.layers = c.m_Framebuffer[fb].layers;
+
+      const uint32_t countAttachments = MAX_RENDER_PASS_COLOR_ATTACHMENTS;
+      ret.currentPass.framebuffer.attachments.resize(countAttachments);
+      for(size_t i = 0; i < countAttachments; i++)
+      {
+        ResourceId texID = rp.colorAttachments[i].texture;
+        //          ret.currentPass.framebuffer.attachments[i].viewResourceId =
+        //          rm->GetOriginalID(viewid);
+        ret.currentPass.framebuffer.attachments[i].imageResourceId = rm->GetOriginalID(texID);
+        ret.currentPass.framebuffer.attachments[i].viewFormat =
+            MakeResourceFormat(c.m_Texture[texID].format);
+        //          ret.currentPass.framebuffer.attachments[i].firstMip =
+        //              c.m_ImageView[viewid].range.baseMipLevel;
+        //          ret.currentPass.framebuffer.attachments[i].firstSlice =
+        //              c.m_ImageView[viewid].range.baseArrayLayer;
+        //          ret.currentPass.framebuffer.attachments[i].numMips =
+        //          c.m_ImageView[viewid].range.levelCount;
+        //          ret.currentPass.framebuffer.attachments[i].numSlices =
+        //              c.m_ImageView[viewid].range.layerCount;
+        //
+        //          Convert(ret.currentPass.framebuffer.attachments[i].swizzle,
+        //                  c.m_ImageView[viewid].componentMapping);
+      }
+    }
+    else
+    {
+      ret.currentPass.framebuffer.width = 0;
+      ret.currentPass.framebuffer.height = 0;
+      ret.currentPass.framebuffer.layers = 0;
+    }
+
+    //    ret.currentPass.renderArea.x = state.renderArea.offset.x;
+    //    ret.currentPass.renderArea.y = state.renderArea.offset.y;
+    //    ret.currentPass.renderArea.width = state.renderArea.extent.width;
+    //    ret.currentPass.renderArea.height = state.renderArea.extent.height;
+  }
+  else
+  {
+    ret.currentPass.renderpass.resourceId = ResourceId();
+    ret.currentPass.renderpass.subpass = 0;
+    ret.currentPass.renderpass.inputAttachments.clear();
+    ret.currentPass.renderpass.colorAttachments.clear();
+    ret.currentPass.renderpass.resolveAttachments.clear();
+    ret.currentPass.renderpass.depthstencilAttachment = -1;
+    ret.currentPass.renderpass.fragmentDensityAttachment = -1;
+
+    ret.currentPass.framebuffer.attachments.clear();
+  }
+
+  // image layouts
+  {
+    size_t i = 0;
+    ret.images.resize(m_pDriver->m_ImageStates.size());
+    for(auto it = m_pDriver->m_ImageStates.begin(); it != m_pDriver->m_ImageStates.end(); ++it)
+    {
+      MetalPipe::ImageData &img = ret.images[i];
+
+      if(rm->GetOriginalID(it->first) == it->first)
+        continue;
+
+      img.resourceId = rm->GetOriginalID(it->first);
+
+      MetalResources::LockedConstImageStateRef imState = it->second.LockRead();
+      img.layouts.push_back(MetalPipe::ImageLayout());
+      img.layouts[0].name = "Unknown";
+
+      i++;
+    }
+
+    ret.images.resize(i);
+  }
 }
 
 FrameRecord MetalReplay::GetFrameRecord()
 {
-  RDCWARN("Not implemented");
-  return FrameRecord();
+  return m_FrameRecord;
 }
 
 ReplayStatus MetalReplay::ReadLogInitialisation(RDCFile *rdc, bool storeStructuredBuffers)
 {
-  RDCWARN("Not implemented");
-  return ReplayStatus::APIUnsupported;
+  return m_pDriver->ReadLogInitialisation(rdc, storeStructuredBuffers);
 }
 
 void MetalReplay::ReplayLog(uint32_t endEventID, ReplayLogType replayType)
 {
-  RDCWARN("Not implemented");
+  m_pDriver->ReplayLog(0, endEventID, replayType);
 }
 
 SDFile *MetalReplay::GetStructuredFile()
 {
-  RDCWARN("Not implemented");
-  return m_wrappedMTLDevice->GetStructuredFile();
+  return m_pDriver->GetStructuredFile();
 }
 
 rdcarray<uint32_t> MetalReplay::GetPassEvents(uint32_t eventId)
 {
-  RDCWARN("Not implemented");
-  return rdcarray<uint32_t>();
+  rdcarray<uint32_t> passEvents;
+
+  const ActionDescription *action = m_pDriver->GetAction(eventId);
+
+  if(!action)
+    return passEvents;
+
+  // for Metal a pass == a render encoder scope ie. renderpass, if we're not inside a
+  // renderpass then there are no pass events.
+  const ActionDescription *start = action;
+  while(start)
+  {
+    // if we've come to the beginning of a pass, break out of the loop, we've
+    // found the start.
+    if(start->flags & ActionFlags::BeginPass)
+      break;
+
+    // if we come to the END of a pass, since we were iterating backwards that
+    // means we started outside of a pass, so return empty set.
+    // Note that vkCmdNextSubPass has both Begin and End flags set, so it will
+    // break out above before we hit this terminating case
+    if(start->flags & ActionFlags::EndPass)
+      return passEvents;
+
+    // if we've come to the start of the log we were outside of a render pass
+    // to start with
+    if(start->previous == NULL)
+      return passEvents;
+
+    // step back
+    start = start->previous;
+  }
+
+  // store all the action eventIDs up to the one specified at the start
+  while(start)
+  {
+    if(start->eventId >= action->eventId)
+      break;
+
+    // include pass boundaries, these will be filtered out later
+    // so we don't actually do anything (init postvs/action overlay)
+    // but it's useful to have the first part of the pass as part
+    // of the list
+    if(start->flags & (ActionFlags::Drawcall | ActionFlags::PassBoundary))
+      passEvents.push_back(start->eventId);
+
+    start = start->next;
+  }
+
+  return passEvents;
 }
 
 void MetalReplay::InitPostVSBuffers(uint32_t eventId)
 {
-  RDCWARN("Not implemented");
+  METAL_NOT_IMPLEMENTED();
 }
 
 void MetalReplay::InitPostVSBuffers(const rdcarray<uint32_t> &passEvents)
 {
-  RDCWARN("Not implemented");
+  METAL_NOT_IMPLEMENTED();
 }
 
 ResourceId MetalReplay::GetLiveID(ResourceId id)
 {
-  RDCWARN("Not implemented");
-  return ResourceId();
+  if(!m_pDriver->GetResourceManager()->HasLiveResource(id))
+    return ResourceId();
+  return m_pDriver->GetResourceManager()->GetLiveID(id);
 }
 
 MeshFormat MetalReplay::GetPostVSBuffers(uint32_t eventId, uint32_t instID, uint32_t viewID,
                                          MeshDataStage stage)
 {
-  RDCWARN("Not implemented");
+  METAL_NOT_IMPLEMENTED();
   return MeshFormat();
 }
 
 void MetalReplay::GetBufferData(ResourceId buff, uint64_t offset, uint64_t len, bytebuf &retData)
 {
-  RDCWARN("Not implemented");
+  METAL_NOT_IMPLEMENTED();
 }
 
 void MetalReplay::GetTextureData(ResourceId tex, const Subresource &sub,
                                  const GetTextureDataParams &params, bytebuf &data)
 {
-  RDCWARN("Not implemented");
+  METAL_NOT_IMPLEMENTED();
 }
 
 void MetalReplay::BuildTargetShader(ShaderEncoding sourceEncoding, const bytebuf &source,
                                     const rdcstr &entry, const ShaderCompileFlags &compileFlags,
                                     ShaderStage type, ResourceId &id, rdcstr &errors)
 {
-  RDCWARN("Not implemented");
+  METAL_NOT_IMPLEMENTED();
 }
 
 rdcarray<ShaderEncoding> MetalReplay::GetTargetShaderEncodings()
 {
-  RDCWARN("Not implemented");
+  METAL_NOT_IMPLEMENTED();
   return rdcarray<ShaderEncoding>();
 }
 
 void MetalReplay::ReplaceResource(ResourceId from, ResourceId to)
 {
-  RDCWARN("Not implemented");
+  METAL_NOT_IMPLEMENTED();
 }
 
 void MetalReplay::RemoveReplacement(ResourceId id)
 {
-  RDCWARN("Not implemented");
+  METAL_NOT_IMPLEMENTED();
 }
 
 void MetalReplay::FreeTargetResource(ResourceId id)
 {
-  RDCWARN("Not implemented");
+  METAL_NOT_IMPLEMENTED();
 }
 
 rdcarray<GPUCounter> MetalReplay::EnumerateCounters()
 {
-  RDCWARN("Not implemented");
+  METAL_NOT_IMPLEMENTED();
   return rdcarray<GPUCounter>();
 }
 
 CounterDescription MetalReplay::DescribeCounter(GPUCounter counterID)
 {
-  RDCWARN("Not implemented");
+  METAL_NOT_IMPLEMENTED();
   return CounterDescription();
 }
 
 rdcarray<CounterResult> MetalReplay::FetchCounters(const rdcarray<GPUCounter> &counterID)
 {
-  RDCWARN("Not implemented");
+  METAL_NOT_IMPLEMENTED();
   return rdcarray<CounterResult>();
 }
 
-void MetalReplay::FillCBufferVariables(ResourceId pipeline, ResourceId shader, rdcstr entryPoint,
-                                       uint32_t cbufSlot, rdcarray<ShaderVariable> &outvars,
-                                       const bytebuf &data)
+void MetalReplay::FillCBufferVariables(ResourceId pipeline, ResourceId shader, ShaderStage stage,
+                                       rdcstr entryPoint, uint32_t cbufSlot,
+                                       rdcarray<ShaderVariable> &outvars, const bytebuf &data)
 {
-  RDCWARN("Not implemented");
+  METAL_NOT_IMPLEMENTED();
 }
 
 rdcarray<PixelModification> MetalReplay::PixelHistory(rdcarray<EventUsage> events,
                                                       ResourceId target, uint32_t x, uint32_t y,
                                                       const Subresource &sub, CompType typeCast)
 {
-  RDCWARN("Not implemented");
+  METAL_NOT_IMPLEMENTED();
   return rdcarray<PixelModification>();
 }
 
 ShaderDebugTrace *MetalReplay::DebugVertex(uint32_t eventId, uint32_t vertid, uint32_t instid,
                                            uint32_t idx, uint32_t view)
 {
-  RDCWARN("Not implemented");
+  METAL_NOT_IMPLEMENTED();
   return NULL;
 }
 
 ShaderDebugTrace *MetalReplay::DebugPixel(uint32_t eventId, uint32_t x, uint32_t y, uint32_t sample,
                                           uint32_t primitive)
 {
-  RDCWARN("Not implemented");
+  METAL_NOT_IMPLEMENTED();
   return NULL;
 }
 
@@ -285,144 +658,96 @@ ShaderDebugTrace *MetalReplay::DebugThread(uint32_t eventId,
                                            const rdcfixedarray<uint32_t, 3> &groupid,
                                            const rdcfixedarray<uint32_t, 3> &threadid)
 {
-  RDCWARN("Not implemented");
+  METAL_NOT_IMPLEMENTED();
   return NULL;
 }
 
 rdcarray<ShaderDebugState> MetalReplay::ContinueDebug(ShaderDebugger *debugger)
 {
-  RDCWARN("Not implemented");
+  METAL_NOT_IMPLEMENTED();
   return rdcarray<ShaderDebugState>();
 }
 
 void MetalReplay::FreeDebugger(ShaderDebugger *debugger)
 {
-  RDCWARN("Not implemented");
+  METAL_NOT_IMPLEMENTED();
 }
 
 ResourceId MetalReplay::RenderOverlay(ResourceId texid, FloatVector clearCol, DebugOverlay overlay,
                                       uint32_t eventId, const rdcarray<uint32_t> &passEvents)
 {
-  RDCWARN("Not implemented");
+  METAL_NOT_IMPLEMENTED();
   return ResourceId();
 }
 
 bool MetalReplay::IsRenderOutput(ResourceId id)
 {
-  RDCWARN("Not implemented");
+  METAL_NOT_IMPLEMENTED();
   return false;
 }
 
 void MetalReplay::FileChanged()
 {
-  RDCWARN("Not implemented");
+  METAL_NOT_IMPLEMENTED();
 }
 
 ReplayStatus MetalReplay::FatalErrorCheck()
 {
-  RDCWARN("Not implemented");
-  return ReplayStatus::APIUnsupported;
+  return m_pDriver->FatalErrorCheck();
 }
 
 bool MetalReplay::NeedRemapForFetch(const ResourceFormat &format)
 {
-  RDCWARN("Not implemented");
+  METAL_NOT_IMPLEMENTED();
   return false;
 }
 
 DriverInformation MetalReplay::GetDriverInfo()
 {
-  RDCWARN("Not implemented");
+  METAL_NOT_IMPLEMENTED();
   return DriverInformation();
 }
 
 rdcarray<GPUDevice> MetalReplay::GetAvailableGPUs()
 {
-  RDCWARN("Not implemented");
-  return rdcarray<GPUDevice>();
+  METAL_NOT_IMPLEMENTED();
+  rdcarray<GPUDevice> ret;
+
+  /*  NSArray<id<MTLDevice>> * MTLCopyAllDevices(void); */
+  /* name */
+  /* uint64 registryID */
+  /* MTLDeviceLocation location */
+  /* NSUInteger locationNumber */
+  /* bool lowPower */
+  /* bool headless */
+  GPUDevice dev;
+  dev.vendor = GPUVendor::Unknown;
+  dev.deviceID = 0x1234;
+  dev.name = "M1";
+  dev.apis = {GraphicsAPI::Metal};
+  dev.driver = "Metal 1.x";
+
+  ret.push_back(dev);
+
+  return ret;
 }
 
 /* IReplayDriver */
 IReplayDriver *MetalReplay::MakeDummyDriver()
 {
-  RDCWARN("Not implemented");
+  METAL_NOT_IMPLEMENTED();
   return NULL;
-}
-
-rdcarray<WindowingSystem> MetalReplay::GetSupportedWindowSystems()
-{
-  RDCWARN("Not implemented");
-  return rdcarray<WindowingSystem>();
 }
 
 AMDRGPControl *MetalReplay::GetRGPControl()
 {
-  RDCWARN("Not implemented");
   return NULL;
-}
-
-uint64_t MetalReplay::MakeOutputWindow(WindowingData window, bool depth)
-{
-  RDCWARN("Not implemented");
-  return 0;
-}
-
-void MetalReplay::DestroyOutputWindow(uint64_t id)
-{
-  RDCWARN("Not implemented");
-}
-
-bool MetalReplay::CheckResizeOutputWindow(uint64_t id)
-{
-  RDCWARN("Not implemented");
-  return false;
-}
-
-void MetalReplay::SetOutputWindowDimensions(uint64_t id, int32_t w, int32_t h)
-{
-  RDCWARN("Not implemented");
-}
-
-void MetalReplay::GetOutputWindowDimensions(uint64_t id, int32_t &w, int32_t &h)
-{
-  RDCWARN("Not implemented");
-}
-
-void MetalReplay::GetOutputWindowData(uint64_t id, bytebuf &retData)
-{
-  RDCWARN("Not implemented");
-}
-
-void MetalReplay::ClearOutputWindowColor(uint64_t id, FloatVector col)
-{
-  RDCWARN("Not implemented");
-}
-
-void MetalReplay::ClearOutputWindowDepth(uint64_t id, float depth, uint8_t stencil)
-{
-  RDCWARN("Not implemented");
-}
-
-void MetalReplay::BindOutputWindow(uint64_t id, bool depth)
-{
-  RDCWARN("Not implemented");
-}
-
-bool MetalReplay::IsOutputWindowVisible(uint64_t id)
-{
-  RDCWARN("Not implemented");
-  return false;
-}
-
-void MetalReplay::FlipOutputWindow(uint64_t id)
-{
-  RDCWARN("Not implemented");
 }
 
 bool MetalReplay::GetMinMax(ResourceId texid, const Subresource &sub, CompType typeCast,
                             float *minval, float *maxval)
 {
-  RDCWARN("Not implemented");
+  METAL_NOT_IMPLEMENTED();
   return false;
 }
 
@@ -430,100 +755,89 @@ bool MetalReplay::GetHistogram(ResourceId texid, const Subresource &sub, CompTyp
                                float minval, float maxval, const rdcfixedarray<bool, 4> &channels,
                                rdcarray<uint32_t> &histogram)
 {
-  RDCWARN("Not implemented");
+  METAL_NOT_IMPLEMENTED();
   return false;
 }
 
 void MetalReplay::PickPixel(ResourceId texture, uint32_t x, uint32_t y, const Subresource &sub,
                             CompType typeCast, float pixel[4])
 {
-  RDCWARN("Not implemented");
+  METAL_NOT_IMPLEMENTED();
 }
 
 ResourceId MetalReplay::CreateProxyTexture(const TextureDescription &templateTex)
 {
-  RDCWARN("Not implemented");
+  METAL_NOT_IMPLEMENTED();
   return ResourceId();
 }
 
 void MetalReplay::SetProxyTextureData(ResourceId texid, const Subresource &sub, byte *data,
                                       size_t dataSize)
 {
-  RDCWARN("Not implemented");
+  METAL_NOT_IMPLEMENTED();
 }
 
 bool MetalReplay::IsTextureSupported(const TextureDescription &tex)
 {
-  RDCWARN("Not implemented");
+  METAL_NOT_IMPLEMENTED();
   return false;
 }
 
 ResourceId MetalReplay::CreateProxyBuffer(const BufferDescription &templateBuf)
 {
-  RDCWARN("Not implemented");
+  METAL_NOT_IMPLEMENTED();
   return ResourceId();
 }
 
 void MetalReplay::SetProxyBufferData(ResourceId bufid, byte *data, size_t dataSize)
 {
-  RDCWARN("Not implemented");
+  METAL_NOT_IMPLEMENTED();
 }
 
 void MetalReplay::RenderMesh(uint32_t eventId, const rdcarray<MeshFormat> &secondaryDraws,
                              const MeshDisplay &cfg)
 {
-  RDCWARN("Not implemented");
-}
-
-bool MetalReplay::RenderTexture(TextureDisplay cfg)
-{
-  RDCWARN("Not implemented");
-  return false;
+  METAL_NOT_IMPLEMENTED();
 }
 
 void MetalReplay::SetCustomShaderIncludes(const rdcarray<rdcstr> &directories)
 {
-  RDCWARN("Not implemented");
+  METAL_NOT_IMPLEMENTED();
 }
 
 void MetalReplay::BuildCustomShader(ShaderEncoding sourceEncoding, const bytebuf &source,
                                     const rdcstr &entry, const ShaderCompileFlags &compileFlags,
                                     ShaderStage type, ResourceId &id, rdcstr &errors)
 {
-  RDCWARN("Not implemented");
+  METAL_NOT_IMPLEMENTED();
 }
 
 rdcarray<ShaderEncoding> MetalReplay::GetCustomShaderEncodings()
 {
-  RDCWARN("Not implemented");
+  METAL_NOT_IMPLEMENTED();
   return rdcarray<ShaderEncoding>();
 }
 
 ResourceId MetalReplay::ApplyCustomShader(TextureDisplay &display)
 {
-  RDCWARN("Not implemented");
+  METAL_NOT_IMPLEMENTED();
   return ResourceId();
 }
 
 void MetalReplay::FreeCustomShader(ResourceId id)
 {
-  RDCWARN("Not implemented");
-}
-
-void MetalReplay::RenderCheckerboard(FloatVector dark, FloatVector light)
-{
-  RDCWARN("Not implemented");
+  METAL_NOT_IMPLEMENTED();
 }
 
 void MetalReplay::RenderHighlightBox(float w, float h, float scale)
 {
-  RDCWARN("Not implemented");
+  METAL_NOT_IMPLEMENTED();
 }
 
 uint32_t MetalReplay::PickVertex(uint32_t eventId, int32_t width, int32_t height,
                                  const MeshDisplay &cfg, uint32_t x, uint32_t y)
 {
-  RDCWARN("Not implemented");
+  METAL_NOT_IMPLEMENTED();
   return 0;
 }
 
@@ -577,18 +891,17 @@ ReplayStatus Metal_CreateReplayDevice(RDCFile *rdc, const ReplayOptions &opts, I
 
   const bool isProxy = (rdc == NULL);
 
-  WrappedMTLDevice *mtlDevice = new WrappedMTLDevice();
+  WrappedMTLDevice *wrappedMTLDevice = new WrappedMTLDevice();
 
-  MetalReplay *replay = mtlDevice->GetReplay();
+  MetalReplay *replay = wrappedMTLDevice->GetReplay();
   replay->SetProxy(isProxy);
 
   // TODO: implement RD MTL replay
-  // ReplayStatus status = mtlDevice->Initialise(initParams, ver, opts);
-  ReplayStatus status = ReplayStatus::APIUnsupported;
+  ReplayStatus status = wrappedMTLDevice->Initialise(initParams, ver, opts);
 
   if(status != ReplayStatus::Succeeded)
   {
-    delete mtlDevice;
+    delete wrappedMTLDevice;
     return status;
   }
 

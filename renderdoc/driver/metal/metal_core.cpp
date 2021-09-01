@@ -26,9 +26,8 @@
 #include "core/core.h"
 #include "core/settings.h"
 #include "serialise/rdcfile.h"
-#include "metal_common.h"
-#include "metal_device.h"
 #include "metal_manager.h"
+#include "metal_metal.h"
 #include "metal_replay.h"
 
 RDOC_EXTERN_CONFIG(bool, Metal_Debug_VerboseCommandRecording);
@@ -115,8 +114,15 @@ void WrappedMTLDevice::FirstFrame()
 template <typename SerialiserType>
 bool WrappedMTLDevice::Serialise_BeginCaptureFrame(SerialiserType &ser)
 {
-  // SCOPED_LOCK(m_ImageStatesLock);
-  // GetResourceManager()->SerialiseImageStates(ser, m_ImageStates);
+  SCOPED_LOCK(m_ImageStatesLock);
+
+  //  for(auto it = m_ImageStates.begin(); it != m_ImageStates.end(); ++it)
+  //  {
+  //    it->second.LockWrite()->FixupStorageReferences();
+  //  }
+
+  GetResourceManager()->SerialiseImageStates(ser, m_ImageStates);
+
   SERIALISE_CHECK_READ_ERRORS();
 
   return true;
@@ -201,15 +207,13 @@ void WrappedMTLDevice::StartFrameCapture(void *dev, void *wnd)
 
     RDCDEBUG("Attempting capture");
     m_FrameCaptureRecord->DeleteChunks();
-    /*
-     {
-        SCOPED_LOCK(m_ImageStatesLock);
-        for(auto it = m_ImageStates.begin(); it != m_ImageStates.end(); ++it)
-        {
-          it->second.LockWrite()->BeginCapture();
-        }
+    {
+      SCOPED_LOCK(m_ImageStatesLock);
+      for(auto it = m_ImageStates.begin(); it != m_ImageStates.end(); ++it)
+      {
+        it->second.LockWrite()->BeginCapture();
       }
-    */
+    }
     m_State = CaptureState::ActiveCapturing;
   }
 
@@ -783,6 +787,114 @@ const APIEvent &WrappedMTLDevice::GetEvent(uint32_t eventId)
   return m_Events[RDCMIN(idx, m_Events.size() - 1)];
 }
 
+const ActionDescription *WrappedMTLDevice::GetAction(uint32_t eventId)
+{
+  if(eventId >= m_Actions.size())
+    return NULL;
+
+  return m_Actions[eventId];
+}
+
+void WrappedMTLDevice::AddAction(const ActionDescription &a)
+{
+  m_AddedAction = true;
+
+  ActionDescription action = a;
+  /*
+  action.eventId = m_LastCmdBufferID != ResourceId()
+                       ? m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID
+                       : m_RootEventID;
+  action.actionId = m_LastCmdBufferID != ResourceId()
+                        ? m_BakedCmdBufferInfo[m_LastCmdBufferID].actionCount
+                        : m_RootActionID;
+*/
+  action.eventId = m_RootEventID;
+  action.actionId = m_RootActionID;
+  for(uint32_t i = 0; i < 8; i++)
+    action.outputs[i] = ResourceId();
+
+  action.depthOut = ResourceId();
+
+  /*
+   if(m_LastCmdBufferID != ResourceId())
+    {
+      ResourceId fb = m_BakedCmdBufferInfo[m_LastCmdBufferID].state.GetFramebuffer();
+      ResourceId rp = m_BakedCmdBufferInfo[m_LastCmdBufferID].state.renderPass;
+      uint32_t sp = m_BakedCmdBufferInfo[m_LastCmdBufferID].state.subpass;
+
+      if(fb != ResourceId() && rp != ResourceId())
+      {
+        const rdcarray<ResourceId> &atts =
+            m_BakedCmdBufferInfo[m_LastCmdBufferID].state.GetFramebufferAttachments();
+
+        RDCASSERT(sp < m_CreationInfo.m_RenderPass[rp].subpasses.size());
+
+        rdcarray<uint32_t> &colAtt = m_CreationInfo.m_RenderPass[rp].subpasses[sp].colorAttachments;
+        int32_t dsAtt = m_CreationInfo.m_RenderPass[rp].subpasses[sp].depthstencilAttachment;
+
+        RDCASSERT(colAtt.size() <= ARRAY_COUNT(action.outputs));
+
+        for(size_t i = 0; i < ARRAY_COUNT(action.outputs) && i < colAtt.size(); i++)
+        {
+          if(colAtt[i] == VK_ATTACHMENT_UNUSED)
+            continue;
+
+          RDCASSERT(colAtt[i] < atts.size());
+          action.outputs[i] =
+              GetResourceManager()->GetOriginalID(m_CreationInfo.m_ImageView[atts[colAtt[i]]].image);
+        }
+
+        if(dsAtt != -1)
+        {
+          RDCASSERT(dsAtt < (int32_t)atts.size());
+          action.depthOut =
+              GetResourceManager()->GetOriginalID(m_CreationInfo.m_ImageView[atts[dsAtt]].image);
+        }
+      }
+    }
+  */
+  // markers don't increment action ID
+  ActionFlags MarkerMask = ActionFlags::SetMarker | ActionFlags::PushMarker |
+                           ActionFlags::PopMarker | ActionFlags::PassBoundary;
+  if(!(action.flags & MarkerMask))
+  {
+    /*
+        if(m_LastCmdBufferID != ResourceId())
+          m_BakedCmdBufferInfo[m_LastCmdBufferID].actionCount++;
+        else
+    */
+    m_RootActionID++;
+  }
+
+  /*
+     action.events.swap(m_LastCmdBufferID != ResourceId()
+                           ? m_BakedCmdBufferInfo[m_LastCmdBufferID].curEvents
+                           : m_RootEvents);
+  */
+  action.events.swap(m_RootEvents);
+
+  // should have at least the root action here, push this action
+  // onto the back's children list.
+  if(!GetActionStack().empty())
+  {
+    /*
+    ActionDescription node(action);
+
+    node.resourceUsage.swap(m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage);
+
+    if(m_LastCmdBufferID != ResourceId())
+      AddUsage(node, m_BakedCmdBufferInfo[m_LastCmdBufferID].debugMessages);
+    node.children.reserve(action.children.size());
+    for(const ActionDescription &child : action.children)
+      node.children.push_back(ActionDescription(child));
+    GetActionStack().back()->children.push_back(node);
+     */
+    GetActionStack().back()->children.push_back(action);
+  }
+  else
+    RDCERR("Somehow lost action stack!");
+}
+
 void WrappedMTLDevice::AddEvent()
 {
   APIEvent apievent;
@@ -835,10 +947,6 @@ bool WrappedMTLDevice::ContextProcessChunk(ReadSerialiser &ser, MetalChunk chunk
     {
       // don't add these events - they will be handled when inserted in-line into queue submit
     }
-    else if(chunk == MetalChunk::vkQueueEndDebugUtilsLabelEXT)
-    {
-      // also ignore, this just pops the action stack
-    }
     else
      */
     {
@@ -858,36 +966,51 @@ bool WrappedMTLDevice::ProcessChunk(ReadSerialiser &ser, MetalChunk chunk)
   {
     case MetalChunk::MTLCreateSystemDefaultDevice:
       return Serialise_MTLCreateSystemDefaultDevice(ser, NULL);
-    case MetalChunk::mtlDevice_newBufferWithBytes:
-      return Serialise_mtlDevice_newBufferWithBytes(ser, NULL, NULL);
-    case MetalChunk::mtlDevice_newCommandQueue:
+    case MetalChunk::MTLBuffer_contents:
+      return m_DummyBuffer->Serialise_mtlBuffer_contents(ser, NULL);
+    case MetalChunk::MTLDevice_newBuffer:
+    case MetalChunk::MTLDevice_newBufferWithLength:
+      return Serialise_mtlDevice_newBuffer(ser, NULL, NULL, NULL, NSUInteger_Zero,
+                                           MTLResourceOptions_Zero);
+    case MetalChunk::MTLDevice_newCommandQueue:
       return Serialise_mtlDevice_newCommandQueue(ser, NULL, NULL);
-    case MetalChunk::mtlDevice_newDefaultLibrary:
-      return Serialise_mtlDevice_newDefaultLibrary(ser, NULL, NULL);
-    case MetalChunk::mtlDevice_newRenderPipelineStateWithDescriptor:
-      return Serialise_mtlDevice_newRenderPipelineStateWithDescriptor(ser, NULL, NULL);
-    case MetalChunk::mtlCommandBuffer_commit:
+    case MetalChunk::MTLDevice_newDefaultLibrary:
+      return Serialise_mtlDevice_newDefaultLibrary(ser, NULL, NULL, NULL, 0);
+    case MetalChunk::MTLDevice_newLibraryWithSource:
+      return Serialise_mtlDevice_newLibraryWithSource(ser, NULL, NULL, NULL, NULL);
+    case MetalChunk::MTLDevice_newRenderPipelineStateWithDescriptor:
+      return Serialise_mtlDevice_newRenderPipelineStateWithDescriptor(ser, NULL, NULL, NULL);
+    case MetalChunk::MTLDevice_newTextureWithDescriptor:
+      return Serialise_mtlDevice_newTextureWithDescriptor(ser, NULL, NULL, NULL, NULL,
+                                                          NSUInteger_Zero);
+    case MetalChunk::MTLCommandBuffer_commit:
       return m_DummyReplayCommandBuffer->Serialise_mtlCommandBuffer_commit(ser, NULL);
-    case MetalChunk::mtlCommandBuffer_presentDrawable:
+    case MetalChunk::MTLCommandBuffer_presentDrawable:
       return m_DummyReplayCommandBuffer->Serialise_mtlCommandBuffer_presentDrawable(
           ser, NULL, id_MTLDrawable());
-    case MetalChunk::mtlCommandBuffer_renderCommandEncoderWithDescriptor:
+    case MetalChunk::MTLCommandBuffer_renderCommandEncoderWithDescriptor:
       return m_DummyReplayCommandBuffer->Serialise_mtlCommandBuffer_renderCommandEncoderWithDescriptor(
-          ser, NULL, NULL);
-    case MetalChunk::mtlCommandQueue_commandBuffer:
+          ser, NULL, NULL, NULL);
+    case MetalChunk::MTLCommandQueue_commandBuffer:
       return m_DummyReplayCommandQueue->Serialise_mtlCommandQueue_commandBuffer(ser, NULL, NULL);
-    case MetalChunk::mtlLibrary_newFunctionWithName:
+    case MetalChunk::MTLLibrary_newFunctionWithName:
       return m_DummyReplayLibrary->Serialise_mtlLibrary_newFunctionWithName(ser, NULL, NULL, NULL);
-    case MetalChunk::mtlRenderCommandEncoder_drawPrimitives:
+    case MetalChunk::MTLRenderCommandEncoder_drawPrimitives:
       return m_DummyReplayRenderCommandEncoder->Serialise_mtlRenderCommandEncoder_drawPrimitives(
-          ser, NULL, (MTLPrimitiveType)0UL, 0UL, 0UL, 0UL);
-    case MetalChunk::mtlRenderCommandEncoder_endEncoding:
+          ser, NULL, MTLPrimitiveType_Zero, NSUInteger_Zero, NSUInteger_Zero, NSUInteger_Zero);
+    case MetalChunk::MTLRenderCommandEncoder_endEncoding:
       return m_DummyReplayRenderCommandEncoder->Serialise_mtlRenderCommandEncoder_endEncoding(ser,
                                                                                               NULL);
-    case MetalChunk::mtlRenderCommandEncoder_setVertexBuffer:
+    case MetalChunk::MTLRenderCommandEncoder_setFragmentBuffer:
+      return m_DummyReplayRenderCommandEncoder->Serialise_mtlRenderCommandEncoder_setFragmentBuffer(
+          ser, NULL, NULL, NSUInteger_Zero, NSUInteger_Zero);
+    case MetalChunk::MTLRenderCommandEncoder_setFragmentTexture:
+      return m_DummyReplayRenderCommandEncoder->Serialise_mtlRenderCommandEncoder_setFragmentTexture(
+          ser, NULL, NULL, NSUInteger_Zero);
+    case MetalChunk::MTLRenderCommandEncoder_setVertexBuffer:
       return m_DummyReplayRenderCommandEncoder->Serialise_mtlRenderCommandEncoder_setVertexBuffer(
-          ser, NULL, NULL, 0UL, 0UL);
-    case MetalChunk::mtlRenderCommandEncoder_setRenderPipelineState:
+          ser, NULL, NULL, NSUInteger_Zero, NSUInteger_Zero);
+    case MetalChunk::MTLRenderCommandEncoder_setRenderPipelineState:
       return m_DummyReplayRenderCommandEncoder->Serialise_mtlRenderCommandEncoder_setRenderPipelineState(
           ser, NULL, NULL);
 
@@ -908,14 +1031,20 @@ bool WrappedMTLDevice::ProcessChunk(ReadSerialiser &ser, MetalChunk chunk)
     {
       GetResourceManager()->CreateInitialContents(ser);
 
+      if(initStateCurCmd != NULL)
+      {
+        CloseInitStateCmd();
+        //        SubmitAndFlushImageStateBarriers(m_setupImageBarriers);
+        SubmitCmds();
+        FlushQ();
+        //        SubmitAndFlushImageStateBarriers(m_cleanupImageBarriers);
+      }
+
       SERIALISE_CHECK_READ_ERRORS();
     }
     else if(system == SystemChunk::InitialContents)
     {
-      RDCERR("Unexpected system chunk 'SystemChunk::InitialContents' in capture data: %u", system);
-      ser.SkipCurrentChunk();
-
-      SERIALISE_CHECK_READ_ERRORS();
+      return Serialise_InitialState(ser, ResourceId(), NULL, NULL);
     }
     else if(system == SystemChunk::CaptureScope)
     {
@@ -929,18 +1058,13 @@ bool WrappedMTLDevice::ProcessChunk(ReadSerialiser &ser, MetalChunk chunk)
 
       if(IsLoading(m_State))
       {
-        // TODO: implement RD MTL replay
-        /*
-                AddEvent();
+        AddEvent();
 
-                ActionDescription action;
-                action.customName = "End of Capture";
-                action.flags |= ActionFlags::Present;
-
-                action.copyDestination = m_LastPresentedImage;
-
-                AddAction(action);
-         */
+        ActionDescription action;
+        action.customName = "End of Capture";
+        action.flags |= ActionFlags::Present;
+        action.copyDestination = ResourceId();
+        AddAction(action);
       }
       return true;
     }
@@ -1003,12 +1127,12 @@ ReplayStatus WrappedMTLDevice::ReadLogInitialisation(RDCFile *rdc, bool storeStr
 
   ser.SetVersion(m_SectionVersion);
 
-  int chunkIdx = 0;
+  uint64_t chunkIdx = 0;
 
   struct chunkinfo
   {
     chunkinfo() : count(0), totalsize(0), total(0.0) {}
-    int count;
+    uint64_t count;
     uint64_t totalsize;
     double total;
   };
@@ -1114,15 +1238,161 @@ ReplayStatus WrappedMTLDevice::ReadLogInitialisation(RDCFile *rdc, bool storeStr
   RDCDEBUG("Allocating %llu persistant bytes of memory for the log.",
            GetReplay()->WriteFrameRecord().frameInfo.persistentSize);
 
-  // ensure the capture at least created a device and fetched a queue.
+  // ensure the capture at least created a device
   if(!IsStructuredExporting(m_State))
   {
     // TODO: implement RD MTL replay
+    RDCASSERT(real != NULL);
   }
 
   // TODO: FreeAllMemory(MemoryScope::IndirectReadback);
 
   return ReplayStatus::Succeeded;
+}
+
+void WrappedMTLDevice::ApplyInitialContents()
+{
+  RENDERDOC_PROFILEFUNCTION();
+  if(HasFatalError())
+    return;
+
+  //  VkMarkerRegion region("ApplyInitialContents");
+
+  initStateCurBatch = 0;
+  initStateCurCmd = NULL;
+
+  // check that we have all external queues necessary
+  //  for(size_t i = 0; i < m_ExternalQueues.size(); i++)
+  //  {
+  //    // if we created a pool (so this is a queue family we're using) but
+  //    // didn't get a queue at all, fetch our own queue for this family
+  //    if(m_ExternalQueues[i].queue != VK_NULL_HANDLE || m_ExternalQueues[i].pool ==
+  //    VK_NULL_HANDLE)
+  //      continue;
+  //
+  //    VkQueue queue;
+  //
+  //    ObjDisp(m_Device)->GetDeviceQueue(Unwrap(m_Device), (uint32_t)i, 0, &queue);
+  //
+  //    GetResourceManager()->WrapResource(Unwrap(m_Device), queue);
+  //    GetResourceManager()->AddLiveResource(ResourceIDGen::GetNewUniqueID(), queue);
+  //
+  //    m_ExternalQueues[i].queue = queue;
+  //  }
+
+  // add a global memory barrier to ensure all writes have finished and are synchronised
+  // add memory barrier to ensure this copy completes before any subsequent work
+  // this is a very blunt instrument but it ensures we don't get random artifacts around
+  // frame restart where we may be skipping a lot of important synchronisation
+  //  VkMemoryBarrier memBarrier = {
+  //      VK_STRUCTURE_TYPE_MEMORY_BARRIER, NULL, VK_ACCESS_ALL_WRITE_BITS, VK_ACCESS_ALL_READ_BITS,
+  //  };
+
+  WrappedMTLCommandBuffer *cmd = GetNextCmd();
+  if(cmd == NULL)
+    return;
+
+  // DoPipelineBarrier(cmd, 1, &memBarrier);
+
+  // sync all GPU work so we can also apply descriptor set initial contents
+  SubmitCmds();
+  FlushQ();
+
+  // actually apply the initial contents here
+  GetResourceManager()->ApplyInitialContents();
+
+  // close the final command buffer
+  if(initStateCurCmd != NULL)
+  {
+    CloseInitStateCmd();
+  }
+
+  initStateCurBatch = 0;
+  initStateCurCmd = NULL;
+
+  for(auto it = m_ImageStates.begin(); it != m_ImageStates.end(); ++it)
+  {
+    if(GetResourceManager()->HasCurrentResource(it->first))
+    {
+      //      it->second.LockWrite()->ResetToOldState(m_cleanupImageBarriers,
+      //      GetImageTransitionInfo());
+    }
+    else
+    {
+      it = m_ImageStates.erase(it);
+      --it;
+    }
+  }
+
+  // likewise again to make sure the initial states are all applied
+  cmd = GetNextCmd();
+  // DoPipelineBarrier(cmd, 1, &memBarrier);
+
+  //  SubmitAndFlushImageStateBarriers(m_setupImageBarriers);
+  SubmitCmds();
+  FlushQ();
+  //  SubmitAndFlushImageStateBarriers(m_cleanupImageBarriers);
+
+  // reset any queries to a valid copy-able state if they need to be copied.
+  //  if(!m_ResetQueries.empty())
+  //  {
+  //    // sort all pools together
+  //    std::sort(m_ResetQueries.begin(), m_ResetQueries.end(),
+  //              [](const ResetQuery &a, const ResetQuery &b) { return a.pool < b.pool; });
+  //
+  //    cmd = GetNextCmd();
+  //
+  //    if(cmd == VK_NULL_HANDLE)
+  //      return;
+  //
+  //    vkr = ObjDisp(cmd)->BeginCommandBuffer(Unwrap(cmd), &beginInfo);
+  //    CheckVkResult(vkr);
+  //
+  //    uint32_t i = 0;
+  //    for(const ResetQuery &r : m_ResetQueries)
+  //    {
+  //      ObjDisp(cmd)->CmdResetQueryPool(Unwrap(cmd), Unwrap(r.pool), r.firstQuery, r.queryCount);
+  //
+  //      for(uint32_t q = 0; q < r.queryCount; q++)
+  //      {
+  //        // Timestamps are easy - we can do these without needing to render
+  //        if(m_CreationInfo.m_QueryPool[GetResID(r.pool)].queryType == VK_QUERY_TYPE_TIMESTAMP)
+  //        {
+  //          ObjDisp(cmd)->CmdWriteTimestamp(Unwrap(cmd), VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+  //                                          Unwrap(r.pool), r.firstQuery + q);
+  //        }
+  //        else
+  //        {
+  //          ObjDisp(cmd)->CmdBeginQuery(Unwrap(cmd), Unwrap(r.pool), r.firstQuery + q, 0);
+  //          ObjDisp(cmd)->CmdEndQuery(Unwrap(cmd), Unwrap(r.pool), r.firstQuery + q);
+  //        }
+  //
+  //        i++;
+  //
+  //        // split the command buffer and flush if the number of queries is massive
+  //        if(i > 0 && (i % (128 * 1024)) == 0)
+  //        {
+  //          vkr = ObjDisp(cmd)->EndCommandBuffer(Unwrap(cmd));
+  //          CheckVkResult(vkr);
+  //
+  //          SubmitCmds();
+  //          FlushQ();
+  //
+  //          cmd = GetNextCmd();
+  //
+  //          if(cmd == VK_NULL_HANDLE)
+  //            return;
+  //
+  //          vkr = ObjDisp(cmd)->BeginCommandBuffer(Unwrap(cmd), &beginInfo);
+  //          CheckVkResult(vkr);
+  //        }
+  //      }
+  //    }
+
+  //  m_ResetQueries.clear();
+
+  SubmitCmds();
+  FlushQ();
 }
 
 ReplayStatus WrappedMTLDevice::ContextReplayLog(CaptureState readType, uint32_t startEventID,
@@ -1171,22 +1441,17 @@ ReplayStatus WrappedMTLDevice::ContextReplayLog(CaptureState readType, uint32_t 
 
   /*
    // TODO: implement RD MTL replay
-  if(!IsStructuredExporting(m_State))
-    ObjDisp(GetDev())->DeviceWaitIdle(Unwrap(GetDev()));
+   // Need to track each command buffer and wait for all of them to be completed
+    if(!IsStructuredExporting(m_State))
+      ObjDisp(GetDev())->DeviceWaitIdle(Unwrap(GetDev()));
+  */
 
   // apply initial contents here so that images are in the right layout
   // (not undefined)
   if(IsLoading(m_State))
   {
-    // temporarily disable the debug message sink, to ignore messages from initial contents apply
-    ScopedDebugMessageSink *sink = GetDebugMessageSink();
-    SetDebugMessageSink(NULL);
-
     ApplyInitialContents();
-
-    SetDebugMessageSink(sink);
   }
-  */
 
   m_RootEvents.clear();
 
@@ -1285,6 +1550,7 @@ ReplayStatus WrappedMTLDevice::ContextReplayLog(CaptureState readType, uint32_t 
                chunktype != MetalChunk::vkEndCommandBuffer)
               m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID++;
       */
+      m_RootEventID++;
     }
   }
 
@@ -1297,16 +1563,14 @@ ReplayStatus WrappedMTLDevice::ContextReplayLog(CaptureState readType, uint32_t 
 
   m_StructuredFile = prevFile;
 
-  /*
-   if(IsLoading(m_State))
+  if(IsLoading(m_State))
   {
-    GetReplay()->WriteFrameRecord().actionList = m_ParentAction.Bake();
+    GetReplay()->WriteFrameRecord().actionList = m_ParentAction.children;
 
     SetupActionPointers(m_Actions, GetReplay()->WriteFrameRecord().actionList);
 
-    m_ParentAction.children.clear();
+    // m_ParentAction.children.clear();
   }
-*/
   /*
   if(!IsStructuredExporting(m_State))
   {
@@ -1352,6 +1616,154 @@ ReplayStatus WrappedMTLDevice::ContextReplayLog(CaptureState readType, uint32_t 
   return ReplayStatus::Succeeded;
 }
 
+void WrappedMTLDevice::ReplayLog(uint32_t startEventID, uint32_t endEventID, ReplayLogType replayType)
+{
+  bool partial = true;
+
+  if(startEventID == 0 && (replayType == eReplay_WithoutDraw || replayType == eReplay_Full))
+  {
+    startEventID = 1;
+    partial = false;
+  }
+
+  if(!partial)
+  {
+    // VkMarkerRegion::Begin("!!!!RenderDoc Internal: ApplyInitialContents");
+    ApplyInitialContents();
+    // VkMarkerRegion::End();
+  }
+
+  m_State = CaptureState::ActiveReplaying;
+
+  //  VkMarkerRegion::Set(StringFormat::Fmt("!!!!RenderDoc Internal: RenderDoc Replay %d (%d):
+  //  %u->%u",
+  //                                        (int)replayType, (int)partial, startEventID,
+  //                                        endEventID));
+
+  {
+    if(!partial)
+    {
+      m_Partial[Primary].Reset();
+      m_Partial[Secondary].Reset();
+      m_RenderState = MetalRenderState();
+      //      for(auto it = m_BakedCmdBufferInfo.begin(); it != m_BakedCmdBufferInfo.end(); it++)
+      //        it->second.state = MetalRenderState();
+    }
+    else
+    {
+      // Copy the state in case m_RenderState was modified externally for the partial replay.
+      //      m_BakedCmdBufferInfo[GetPartialCommandBuffer()].state = m_RenderState;
+    }
+
+    bool rpWasActive = false;
+
+    // we'll need our own command buffer if we're replaying just a subsection
+    // of events within a single command buffer record - always if it's only
+    // one action, or if start event ID is > 0 we assume the outside code
+    // has chosen a subsection that lies within a command buffer
+    if(partial)
+    {
+      WrappedMTLCommandBuffer *cmd = m_OutsideCmdBuffer = GetNextCmd();
+
+      if(cmd == NULL)
+        return;
+
+      // we'll explicitly submit this when we're ready
+      RemovePendingCommandBuffer(cmd);
+
+      rpWasActive = m_Partial[Primary].renderPassActive;
+
+      if(m_Partial[Primary].renderPassActive)
+      {
+        const ActionDescription *action = GetAction(endEventID);
+
+        bool rpUnneeded = false;
+
+        // if we're only replaying an action, and it's not an draw or dispatch, don't try and bind
+        // all the replay state as we don't know if it will be valid.
+        if(replayType == eReplay_OnlyDraw)
+        {
+          if(!action)
+          {
+            rpUnneeded = true;
+          }
+          else if(!(action->flags & (ActionFlags::Drawcall | ActionFlags::Dispatch)))
+          {
+            rpUnneeded = true;
+          }
+        }
+
+        // if we have an indirect action with one action, the subcommand will have an event which
+        // isn't a ActionDescription and selecting it will still replay that indirect action. We
+        // need to detect this case and ensure we prepare the RP. This doesn't happen for
+        // multi-action indirects because there each subcommand has an actual ActionDescription
+        //        if(rpUnneeded)
+        //        {
+        //          APIEvent ev = GetEvent(endEventID);
+        //          if(m_StructuredFile->chunks[ev.chunkIndex]->metadata.chunkID ==
+        //             (uint32_t)VulkanChunk::vkCmdIndirectSubCommand)
+        //            rpUnneeded = false;
+        //        }
+
+        // if a render pass was active, begin it and set up the partial replay state
+        m_RenderState.BeginRenderPassAndApplyState(
+            this, cmd, rpUnneeded ? MetalRenderState::BindNone : MetalRenderState::BindGraphics);
+      }
+      else
+      {
+        // even outside of render passes, we need to restore the state
+        m_RenderState.BindPipeline(this, cmd, MetalRenderState::BindInitial, false);
+      }
+    }
+
+    ReplayStatus status = ReplayStatus::Succeeded;
+
+    if(replayType == eReplay_Full)
+      status = ContextReplayLog(m_State, startEventID, endEventID, partial);
+    else if(replayType == eReplay_WithoutDraw)
+      status = ContextReplayLog(m_State, startEventID, RDCMAX(1U, endEventID) - 1, partial);
+    else if(replayType == eReplay_OnlyDraw)
+      status = ContextReplayLog(m_State, endEventID, endEventID, partial);
+    else
+      RDCFATAL("Unexpected replay type");
+
+    RDCASSERTEQUAL(status, ReplayStatus::Succeeded);
+
+    if(m_OutsideCmdBuffer != NULL)
+    {
+      WrappedMTLCommandBuffer *cmd = m_OutsideCmdBuffer;
+
+      // end any active XFB
+      //      if(!m_RenderState.xfbcounters.empty())
+      //        m_RenderState.EndTransformFeedback(this, cmd);
+
+      // end any active conditional rendering
+      //      if(m_RenderState.IsConditionalRenderingEnabled())
+      //        m_RenderState.EndConditionalRendering(cmd);
+
+      // check if the render pass is active - it could have become active
+      // even if it wasn't before (if the above event was a CmdBeginRenderEncoder).
+      // If we began our own custom single-action loadrp, and it was ended by a CmdEndRenderEncoder,
+      // we need to reverse the virtual transitions we did above, as it won't happen otherwise
+      if(m_Partial[Primary].renderPassActive)
+        m_RenderState.EndRenderPass(cmd);
+
+      // we might have replayed a CmdBeginRenderEncoder or CmdEndRenderEncoder,
+      // but we want to keep the partial replay data state intact, so restore
+      // whether or not a render pass was active.
+      m_Partial[Primary].renderPassActive = rpWasActive;
+
+      AddPendingCommandBuffer(cmd);
+
+      SubmitCmds();
+
+      m_OutsideCmdBuffer = NULL;
+    }
+  }
+
+  //  VkMarkerRegion::Set("!!!!RenderDoc Internal: Done replay");
+}
+
 rdcstr WrappedMTLDevice::GetChunkName(uint32_t idx)
 {
   if((SystemChunk)idx == SystemChunk::DriverInit)
@@ -1373,6 +1785,171 @@ void WrappedMTLDevice::AddCommandBufferRecord(MetalResourceRecord *record)
   SCOPED_LOCK(m_CmdBufferRecordsLock);
   m_CmdBufferRecords.push_back(record);
   RDCDEBUG("Adding CommandBufferRecord Count %zu", m_CmdBufferRecords.size());
+}
+
+void WrappedMTLDevice::AddResource(ResourceId id, ResourceType type, const char *defaultNamePrefix)
+{
+  ResourceDescription &descr = GetReplay()->GetResourceDesc(id);
+
+  uint64_t num;
+  memcpy(&num, &id, sizeof(uint64_t));
+  descr.name = defaultNamePrefix + (" " + ToStr(num));
+  descr.autogeneratedName = true;
+  descr.type = type;
+  AddResourceCurChunk(descr);
+}
+
+void WrappedMTLDevice::DerivedResource(ResourceId parentLive, ResourceId child)
+{
+  ResourceId parentId = GetResourceManager()->GetOriginalID(parentLive);
+
+  GetReplay()->GetResourceDesc(parentId).derivedResources.push_back(child);
+  GetReplay()->GetResourceDesc(child).parentResources.push_back(parentId);
+}
+
+void WrappedMTLDevice::AddResourceCurChunk(ResourceDescription &descr)
+{
+  descr.initialisationChunks.push_back((uint32_t)m_StructuredFile->chunks.size() - 1);
+}
+
+void WrappedMTLDevice::AddResourceCurChunk(ResourceId id)
+{
+  AddResourceCurChunk(GetReplay()->GetResourceDesc(id));
+}
+
+WrappedMTLCommandBuffer *WrappedMTLDevice::GetInitStateCmd()
+{
+  if(initStateCurBatch >= initialStateMaxBatch)
+  {
+    CloseInitStateCmd();
+  }
+
+  if(initStateCurCmd == NULL)
+  {
+    initStateCurCmd = GetNextCmd();
+
+    if(initStateCurCmd == NULL)
+      return NULL;
+
+    if(IsReplayMode(m_State))
+    {
+      //      VkMarkerRegion::Begin("!!!!RenderDoc Internal: ApplyInitialContents batched list",
+      //                            initStateCurCmd);
+    }
+  }
+
+  initStateCurBatch++;
+
+  return initStateCurCmd;
+}
+
+void WrappedMTLDevice::CloseInitStateCmd()
+{
+  if(initStateCurCmd == NULL)
+    return;
+
+  //  VkMarkerRegion::End(initStateCurCmd);
+
+  initStateCurCmd->commit();
+
+  initStateCurCmd = NULL;
+  initStateCurBatch = 0;
+}
+
+WrappedMTLCommandBuffer *WrappedMTLDevice::GetNextCmd()
+{
+  WrappedMTLCommandBuffer *cmd = GetWrapped(m_ReplayCommandQueue->commandBuffer());
+  // cmd->enqueue();
+  AddPendingCommandBuffer(cmd);
+  return cmd;
+}
+
+void WrappedMTLDevice::RemovePendingCommandBuffer(WrappedMTLCommandBuffer *cmd)
+{
+  m_InternalCmds.pendingcmds.removeOne(cmd);
+}
+
+void WrappedMTLDevice::AddPendingCommandBuffer(WrappedMTLCommandBuffer *cmd)
+{
+  m_InternalCmds.pendingcmds.push_back(cmd);
+}
+
+void WrappedMTLDevice::SubmitCmds()
+{
+  RENDERDOC_PROFILEFUNCTION();
+  if(HasFatalError())
+    return;
+
+  // nothing to do
+  if(m_InternalCmds.pendingcmds.empty())
+    return;
+
+  for(size_t i = 0; i < m_InternalCmds.pendingcmds.size(); i++)
+  {
+    m_InternalCmds.pendingcmds[i]->commit();
+  }
+
+  m_InternalCmds.submittedcmds.append(m_InternalCmds.pendingcmds);
+  m_InternalCmds.pendingcmds.clear();
+}
+
+void WrappedMTLDevice::FlushQ()
+{
+  RENDERDOC_PROFILEFUNCTION();
+
+  if(HasFatalError())
+    return;
+
+  for(size_t i = 0; i < m_InternalCmds.submittedcmds.size(); i++)
+  {
+    WrappedMTLCommandBuffer *cmd = m_InternalCmds.submittedcmds[i];
+    cmd->waitUntilCompleted();
+  }
+  if(!m_InternalCmds.submittedcmds.empty())
+  {
+    m_InternalCmds.submittedcmds.clear();
+  }
+}
+
+MetalResources::LockedImageStateRef WrappedMTLDevice::FindImageState(ResourceId id)
+{
+  SCOPED_LOCK(m_ImageStatesLock);
+  auto it = m_ImageStates.find(id);
+  if(it != m_ImageStates.end())
+    return it->second.LockWrite();
+  else
+    return MetalResources::LockedImageStateRef();
+}
+
+MetalResources::LockedConstImageStateRef WrappedMTLDevice::FindConstImageState(ResourceId id)
+{
+  SCOPED_LOCK(m_ImageStatesLock);
+  auto it = m_ImageStates.find(id);
+  if(it != m_ImageStates.end())
+    return it->second.LockRead();
+  else
+    return MetalResources::LockedConstImageStateRef();
+}
+
+MetalResources::LockedImageStateRef WrappedMTLDevice::InsertImageState(
+    id_MTLTexture wrappedHandle, ResourceId id, const MetalResources::ImageInfo &info,
+    FrameRefType refType, bool *inserted)
+{
+  SCOPED_LOCK(m_ImageStatesLock);
+  auto it = m_ImageStates.find(id);
+  if(it != m_ImageStates.end())
+  {
+    if(inserted != NULL)
+      *inserted = false;
+    return it->second.LockWrite();
+  }
+  else
+  {
+    if(inserted != NULL)
+      *inserted = true;
+    it = m_ImageStates.insert({id, MetalResources::LockingImageState(wrappedHandle, info, refType)}).first;
+    return it->second.LockWrite();
+  }
 }
 
 void Metal_ProcessStructured(RDCFile *rdc, SDFile &output)

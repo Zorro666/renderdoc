@@ -28,7 +28,65 @@
 
 WrappedMTLBuffer::WrappedMTLBuffer(id_MTLBuffer realMTLBuffer, ResourceId objId,
                                    WrappedMTLDevice *wrappedMTLDevice)
-    : WrappedMTLObject(realMTLBuffer, objId, wrappedMTLDevice)
+    : WrappedMTLObject(realMTLBuffer, objId, wrappedMTLDevice),
+      m_State(wrappedMTLDevice->GetStateRef())
 {
-  m_ObjCWrappedMTLBuffer = CreateObjWrappedMTLBuffer();
+  objc = CreateObjWrappedMTLBuffer();
 }
+
+WrappedMTLBuffer::WrappedMTLBuffer(WrappedMTLDevice *wrappedMTLDevice)
+    : WrappedMTLObject(wrappedMTLDevice), m_State(wrappedMTLDevice->GetStateRef())
+{
+  objc = CreateObjWrappedMTLBuffer();
+}
+
+void *WrappedMTLBuffer::contents()
+{
+  void *data;
+  SERIALISE_TIME_CALL(data = real_contents());
+
+  if(IsCaptureMode(m_State))
+  {
+    Chunk *chunk = NULL;
+    {
+      CACHE_THREAD_SERIALISER();
+      SCOPED_SERIALISE_CHUNK(MetalChunk::MTLBuffer_contents);
+      Serialise_mtlBuffer_contents(ser, this);
+      chunk = scope.Get();
+    }
+    m_WrappedMTLDevice->AddFrameCaptureRecordChunk(chunk);
+  }
+  else
+  {
+    // TODO: implement RD MTL replay
+  }
+  return data;
+}
+
+void WrappedMTLBuffer::didModifyRange(NSRange &range)
+{
+  SERIALISE_TIME_CALL(real_didModifyRange(range));
+  if(IsCaptureMode(m_State))
+  {
+  }
+  else
+  {
+    // TODO: implement RD MTL replay
+  }
+}
+
+template <typename SerialiserType>
+bool WrappedMTLBuffer::Serialise_mtlBuffer_contents(SerialiserType &ser, WrappedMTLBuffer *buffer)
+{
+  SERIALISE_ELEMENT_LOCAL(Buffer, GetResID(buffer)).TypedAs("MTLBuffer"_lit);
+
+  SERIALISE_CHECK_READ_ERRORS();
+
+  // TODO: implement RD MTL replay
+  if(IsReplayingAndReading())
+  {
+  }
+  return true;
+}
+
+INSTANTIATE_FUNCTION_SERIALISED(bool, WrappedMTLBuffer, mtlBuffer_contents, WrappedMTLBuffer *buffer);

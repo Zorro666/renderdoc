@@ -32,20 +32,65 @@
 enum class MetalChunk : uint32_t
 {
   MTLCreateSystemDefaultDevice = (uint32_t)SystemChunk::FirstDriverChunk,
-  mtlDevice_newBufferWithBytes,
-  mtlDevice_newCommandQueue,
-  mtlDevice_newDefaultLibrary,
-  mtlDevice_newRenderPipelineStateWithDescriptor,
-  mtlCommandBuffer_commit,
-  mtlCommandBuffer_presentDrawable,
-  mtlCommandBuffer_renderCommandEncoderWithDescriptor,
-  mtlCommandQueue_commandBuffer,
-  mtlLibrary_newFunctionWithName,
-  mtlRenderCommandEncoder_drawPrimitives,
-  mtlRenderCommandEncoder_endEncoding,
-  mtlRenderCommandEncoder_setRenderPipelineState,
-  mtlRenderCommandEncoder_setVertexBuffer,
+  MTLBuffer_contents,
+  MTLDevice_newBuffer,
+  MTLDevice_newBufferWithLength,
+  MTLDevice_newCommandQueue,
+  MTLDevice_newDefaultLibrary,
+  MTLDevice_newLibraryWithSource,
+  MTLDevice_newRenderPipelineStateWithDescriptor,
+  MTLDevice_newTextureWithDescriptor,
+  MTLCommandBuffer_commit,
+  MTLCommandBuffer_presentDrawable,
+  MTLCommandBuffer_renderCommandEncoderWithDescriptor,
+  MTLCommandQueue_commandBuffer,
+  MTLLibrary_newFunctionWithName,
+  MTLRenderCommandEncoder_drawPrimitives,
+  MTLRenderCommandEncoder_endEncoding,
+  MTLRenderCommandEncoder_setRenderPipelineState,
+  MTLRenderCommandEncoder_setFragmentBuffer,
+  MTLRenderCommandEncoder_setVertexBuffer,
+  MTLRenderCommandEncoder_setFragmentTexture,
   Max
 };
 
 DECLARE_REFLECTION_ENUM(MetalChunk);
+
+#define GETSET_PROPERTY(STRUCT, TYPE, PROPERTY) \
+  TYPE Get_##PROPERTY(STRUCT *pStruct);         \
+  void Set_##PROPERTY(STRUCT *pStruct, TYPE PROPERTY);
+
+#define GETSET_PROPERTY_INHERITED(STRUCT, BASE, TYPE, PROPERTY)                            \
+  inline TYPE Get_##PROPERTY(STRUCT *pStruct) { return Get_##PROPERTY((BASE *)pStruct); }; \
+  inline void Set_##PROPERTY(STRUCT *pStruct, TYPE PROPERTY)                               \
+  {                                                                                        \
+    Set_##PROPERTY((BASE *)pStruct, PROPERTY);                                             \
+  };
+
+#define MTL_GET(STRUCT, PROPERTY, ...) MTL::Get_##PROPERTY(STRUCT, ##__VA_ARGS__)
+#define MTL_SET(STRUCT, PROPERTY, VALUE, ...) MTL::Set_##PROPERTY(STRUCT, VALUE, ##__VA_ARGS__)
+
+// similar to RDCUNIMPLEMENTED but without the debugbreak
+#define METAL_NOT_IMPLEMENTED(...)                                            \
+  do                                                                          \
+  {                                                                           \
+    RDCWARN("Metal '%s' not implemented -" __VA_ARGS__, __PRETTY_FUNCTION__); \
+  } while((void)0, 0)
+
+// similar to RDCUNIMPLEMENTED but for things that are hit often so we don't want to fire the
+// debugbreak.
+#define METAL_NOT_IMPLEMENTED_ONCE(...)                                           \
+  do                                                                              \
+  {                                                                               \
+    static bool msgprinted = false;                                               \
+    if(!msgprinted)                                                               \
+      RDCDEBUG("Metal '%s' not implemented - " __VA_ARGS__, __PRETTY_FUNCTION__); \
+    msgprinted = true;                                                            \
+  } while((void)0, 0)
+
+BlendMultiplier MakeBlendMultiplier(MTLBlendFactor blend);
+BlendOperation MakeBlendOp(MTLBlendOperation op);
+byte MakeWriteMask(MTLColorWriteMask mask);
+ResourceFormat MakeResourceFormat(MTLPixelFormat format);
+uint32_t GetByteSize(uint32_t width, uint32_t height, uint32_t depth, MTLPixelFormat format,
+                     uint32_t mip);

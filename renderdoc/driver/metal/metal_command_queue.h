@@ -35,8 +35,6 @@ public:
                          WrappedMTLDevice *wrappedMTLDevice);
   WrappedMTLCommandQueue(WrappedMTLDevice *wrappedMTLDevice);
 
-  id_MTLCommandQueue GetObjCWrappedMTLCommandQueue();
-
   DECLARE_WRAPPED_API(id_MTLCommandBuffer, commandBuffer);
 
   DECLARE_FUNCTION_SERIALISED(mtlCommandQueue_commandBuffer, WrappedMTLCommandQueue *queue,
@@ -49,11 +47,5 @@ public:
 
 private:
   id_MTLCommandQueue CreateObjCWrappedMTLCommandQueue();
-  id_MTLCommandQueue m_ObjCWrappedMTLCommandQueue;
   CaptureState &m_State;
 };
-
-inline id_MTLCommandQueue WrappedMTLCommandQueue::GetObjCWrappedMTLCommandQueue()
-{
-  return m_ObjCWrappedMTLCommandQueue;
-}

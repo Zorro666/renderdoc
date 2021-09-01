@@ -27,9 +27,17 @@
 #include "metal_command_buffer_bridge.h"
 #include "metal_command_queue.h"
 
+WrappedMTLCommandQueue *GetWrapped(id_MTLCommandQueue queue)
+{
+  RDCASSERT([queue isKindOfClass:[ObjCWrappedMTLCommandQueue class]]);
+
+  ObjCWrappedMTLCommandQueue *objCWrappedMTLCommandQueue = (ObjCWrappedMTLCommandQueue *)queue;
+  return [objCWrappedMTLCommandQueue wrappedMTLCommandQueue];
+}
+
 id_MTLCommandQueue WrappedMTLCommandQueue::CreateObjCWrappedMTLCommandQueue()
 {
-  ObjCWrappedMTLCommandQueue *objCWrappedMTLCommandQueue = [ObjCWrappedMTLCommandQueue alloc];
+  ObjCWrappedMTLCommandQueue *objCWrappedMTLCommandQueue = [ObjCWrappedMTLCommandQueue new];
   objCWrappedMTLCommandQueue.wrappedMTLCommandQueue = this;
   return objCWrappedMTLCommandQueue;
 }
@@ -75,18 +83,24 @@ id_MTLCommandBuffer WrappedMTLCommandQueue::real_commandBuffer()
 - (nullable id<MTLCommandBuffer>)commandBufferWithDescriptor:(MTLCommandBufferDescriptor *)descriptor
     API_AVAILABLE(macos(11.0), ios(14.0))
 {
+  NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
   return [self.realMTLCommandQueue commandBufferWithDescriptor:descriptor];
 }
 
 - (nullable id<MTLCommandBuffer>)commandBufferWithUnretainedReferences
 {
+  NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
   return [self.realMTLCommandQueue commandBufferWithUnretainedReferences];
 }
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-implementations"
 - (void)insertDebugCaptureBoundary
     API_DEPRECATED("Use MTLCaptureScope instead", macos(10.11, 10.13), ios(8.0, 11.0))
 {
+  NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
   return [self.realMTLCommandQueue insertDebugCaptureBoundary];
 }
+#pragma clang diagnostic pop
 
 @end

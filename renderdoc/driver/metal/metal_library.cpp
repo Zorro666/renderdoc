@@ -31,13 +31,13 @@ WrappedMTLLibrary::WrappedMTLLibrary(id_MTLLibrary realMTLLibrary, ResourceId ob
     : WrappedMTLObject(realMTLLibrary, objId, wrappedMTLDevice),
       m_State(wrappedMTLDevice->GetStateRef())
 {
-  m_ObjCWrappedMTLLibrary = CreateObjCWrappedMTLLibrary();
+  objc = CreateObjCWrappedMTLLibrary();
 }
 
 WrappedMTLLibrary::WrappedMTLLibrary(WrappedMTLDevice *wrappedMTLDevice)
     : WrappedMTLObject(wrappedMTLDevice), m_State(wrappedMTLDevice->GetStateRef())
 {
-  m_ObjCWrappedMTLLibrary = CreateObjCWrappedMTLLibrary();
+  objc = CreateObjCWrappedMTLLibrary();
 }
 
 id_MTLFunction WrappedMTLLibrary::newFunctionWithName(NSString *functionName)
@@ -53,7 +53,7 @@ id_MTLFunction WrappedMTLLibrary::newFunctionWithName(NSString *functionName)
     Chunk *chunk = NULL;
     {
       CACHE_THREAD_SERIALISER();
-      SCOPED_SERIALISE_CHUNK(MetalChunk::mtlLibrary_newFunctionWithName);
+      SCOPED_SERIALISE_CHUNK(MetalChunk::MTLLibrary_newFunctionWithName);
       Serialise_mtlLibrary_newFunctionWithName(ser, this, functionName, wrappedMTLFunction);
       chunk = scope.Get();
     }
@@ -66,25 +66,31 @@ id_MTLFunction WrappedMTLLibrary::newFunctionWithName(NSString *functionName)
   {
     // TODO: implement RD MTL replay
   }
-  return wrappedMTLFunction->GetObjCWrappedMTLFunction();
+  return wrappedMTLFunction->objc;
 }
 
 template <typename SerialiserType>
 bool WrappedMTLLibrary::Serialise_mtlLibrary_newFunctionWithName(SerialiserType &ser,
                                                                  WrappedMTLLibrary *library,
-                                                                 NSString *functionName,
+                                                                 NSString *FunctionName,
                                                                  WrappedMTLFunction *function)
 {
   SERIALISE_ELEMENT_LOCAL(Library, GetResID(library)).TypedAs("MTLLibrary"_lit);
-  SERIALISE_ELEMENT_LOCAL(FunctionName, apple_GetUTF8CStringFromNSString(functionName))
-      .TypedAs("NSString"_lit);
   SERIALISE_ELEMENT_LOCAL(Function, GetResID(function)).TypedAs("MTLFunction"_lit);
+  SERIALISE_ELEMENT(FunctionName).Important();
 
   SERIALISE_CHECK_READ_ERRORS();
 
   // TODO: implement RD MTL replay
   if(IsReplayingAndReading())
   {
+    library = (WrappedMTLLibrary *)GetResourceManager()->GetLiveResource(Library);
+    id_MTLFunction realMTLFunction = library->real_newFunctionWithName(FunctionName);
+    MetalResourceManager::UnwrapHelper<id_MTLFunction>::Outer *wrappedMTLFunction;
+    GetResourceManager()->WrapResource(realMTLFunction, wrappedMTLFunction);
+    GetResourceManager()->AddLiveResource(Function, wrappedMTLFunction);
+    m_WrappedMTLDevice->AddResource(Function, ResourceType::Shader, "Function");
+    m_WrappedMTLDevice->DerivedResource(library, Function);
   }
   return true;
 }

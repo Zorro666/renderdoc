@@ -25,14 +25,31 @@
 #pragma once
 
 #include "replay/replay_driver.h"
+#include "metal_resources.h"
+#include "metal_shaders.h"
 #include "metal_types.h"
+
+enum TexDisplayFlags
+{
+  eTexDisplay_16Render = 0x1,
+  eTexDisplay_32Render = 0x2,
+  eTexDisplay_BlendAlpha = 0x4,
+  eTexDisplay_MipShift = 0x8,
+  eTexDisplay_GreenOnly = 0x10,
+  eTexDisplay_RemapFloat = 0x20,
+  eTexDisplay_RemapUInt = 0x40,
+  eTexDisplay_RemapSInt = 0x80,
+};
 
 class MetalReplay : public IReplayDriver
 {
 public:
-  MetalReplay();
+  MetalReplay(WrappedMTLDevice *wrappedMTLDevice);
   virtual ~MetalReplay() {}
   void SetProxy(bool p) { m_Proxy = p; }
+  ResourceDescription &GetResourceDesc(ResourceId id);
+  void CreateResources();
+  WrappedMTLLibrary *GetDebugShaderLibrary() { return m_debugLibrary; }
   /* IRemoteDriver */
   void Shutdown();
 
@@ -63,11 +80,6 @@ public:
   rdcarray<EventUsage> GetUsage(ResourceId id);
 
   void SavePipelineState(uint32_t eventId);
-  const D3D11Pipe::State *GetD3D11PipelineState();
-  const D3D12Pipe::State *GetD3D12PipelineState();
-  const GLPipe::State *GetGLPipelineState();
-  const VKPipe::State *GetVulkanPipelineState();
-  const MetalPipe::State *GetMetalPipelineState();
 
   FrameRecord GetFrameRecord();
 
@@ -101,8 +113,8 @@ public:
   CounterDescription DescribeCounter(GPUCounter counterID);
   rdcarray<CounterResult> FetchCounters(const rdcarray<GPUCounter> &counterID);
 
-  void FillCBufferVariables(ResourceId pipeline, ResourceId shader, rdcstr entryPoint,
-                            uint32_t cbufSlot, rdcarray<ShaderVariable> &outvars,
+  void FillCBufferVariables(ResourceId pipeline, ResourceId shader, ShaderStage stage,
+                            rdcstr entryPoint, uint32_t cbufSlot, rdcarray<ShaderVariable> &outvars,
                             const bytebuf &data);
 
   rdcarray<PixelModification> PixelHistory(rdcarray<EventUsage> events, ResourceId target, uint32_t x,
@@ -188,8 +200,89 @@ public:
 
   FrameRecord &WriteFrameRecord() { return m_FrameRecord; }
 private:
-  WrappedMTLDevice *m_wrappedMTLDevice;
+  void InitDebugRenderer();
+  bool RenderTextureInternal(TextureDisplay cfg, const MetalResources::ImageState &imageState,
+                             MTLRenderPassDescriptor *renderPass, id_MTLDrawable drawable,
+                             id_MTLBuffer debugUBOBuffer, int flags);
+
+  WrappedMTLDevice *m_pDriver = NULL;
   MetalPipe::State *m_MetalPipelineState = NULL;
+
+  rdcarray<ResourceDescription> m_Resources;
+  std::map<ResourceId, size_t> m_ResourceIdx;
+
+  struct OutputWindow
+  {
+    OutputWindow();
+
+    void Create(WrappedMTLDevice *device, bool depth);
+    void Destroy(WrappedMTLDevice *device);
+
+    void CreateSurface(WrappedMTLDevice *device);
+    void SetWindowHandle(WindowingData window);
+    bool NoOutput();
+
+    WindowingSystem m_WindowSystem;
+
+    void *view;
+    void *layer;
+
+    id_CAMetalDrawable drawable;
+    id_MTLTexture fb;
+    id_MTLBuffer m_debugUBOBuffer[3];
+
+    int failures = 0;
+    int recreatePause = 0;
+    uint32_t width, height;
+
+    bool fresh = true;
+    bool outofdate = false;
+    bool hasDepth = false;
+
+    /*
+        VkSurfaceKHR surface;
+        VkSwapchainKHR swap;
+        uint32_t numImgs;
+        VkImage colimg[8];
+        VkImageMemoryBarrier colBarrier[8];
+
+        VkImage bb;
+        VkImageView bbview;
+        VkDeviceMemory bbmem;
+        VkImageMemoryBarrier bbBarrier;
+        VkFramebuffer fb, fbdepth;
+        VkRenderPass rp, rpdepth;
+        uint32_t curidx;
+
+        VkImage resolveimg;
+        VkDeviceMemory resolvemem;
+
+        VkImage dsimg;
+        VkDeviceMemory dsmem;
+        VkImageView dsview;
+        VkImageMemoryBarrier depthBarrier;
+     */
+
+    MetalResourceManager *GetResourceManager() { return m_ResourceManager; }
+    MetalResourceManager *m_ResourceManager;
+  };
+
+  struct TextureRendering
+  {
+    void Init(WrappedMTLDevice *driver);
+    void Destroy(WrappedMTLDevice *driver);
+    id_MTLRenderPipelineState Pipeline = id_MTLRenderPipelineState();
+  } m_TexRender;
+
+  std::map<uint64_t, OutputWindow> m_OutputWindows;
+  uint64_t m_OutputWinID;
+  uint64_t m_ActiveWinID;
+  bool m_BindDepth;
+  uint32_t m_DebugWidth, m_DebugHeight;
+
+  WrappedMTLLibrary *m_debugLibrary;
+  id_MTLRenderPipelineState m_checkerboardPipeline;
+
   FrameRecord m_FrameRecord;
-  bool m_Proxy;
+  bool m_Proxy = false;
 };

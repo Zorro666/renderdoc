@@ -1,24 +1,103 @@
 ## TODO
-- Need to wrap MTLRenderPipelineDescriptor 
-- Capture Changes
-	- Add mtlDevice_newLibrary to creation chunks
-	- Add mtlLibrary_newFunctionWithName to creation chunks
-- Objects/APIs to serialise
-	- MTLRenderPipelineDescriptor
-	- MTLPrimitiveType 
-	- MTLResourceOptions
-	- newRenderPipelineStateWithDescriptor : serialise MTLRenderPipelineDescriptor
+- Need to implement : ResourceManager::ResourceTypeRelease
+
 - Need to capture buffer data in setVertexData
+- Do I need to implement and call : ResourceManager::AddWrapper
+- Should add specific serialisation for WrappedTypes instead of hard coded serialise by RefId
+-- MTLRenderCommandEncoder
+-- MTLCommandBuffer
+-- MTLFunction
+- Need to implement replay
+-- MTLCommandBuffer presentDrawable
+- Need to serialise presentDrawable with more details
+
+- Need to investigate how to associate the window/drawable with the device
+-- Wrap MTLDrawable properly
 
 - Need to hook into Metal present : no MTL command except this
-		[commandBuffer presentDrawable:drawable];
-		[commandBuffer commit];
-- Need to investigate how to associate the window/drawable with the device
+	[commandBuffer presentDrawable:drawable];
+	[commandBuffer commit];
+
 - Add ser.SetActionChunk() to Metal captures
 - Choose correct FrameRefType properly for Metal captures (right now defaulting to eFrameRef_Read)
+- Add .Important() to Metal serialisation
 
 ## Questions 
 - Does MTLRenderPassDescriptor::renderPassDescriptor static method need hooking?
+
+## Currently Hooked APIs
+id_MTLLibrary = MTLDevice::newDefaultLibrary()
+* id MTLLibrary
+* uint32_t bytesCount
+* void* pData
+
+id_MTLBuffer = MTLDevice::newBufferWithBytes(const void *pointer, NSUInteger length, MTLResourceOptions options);
+* id MTLBuffer
+* NSUInteger length
+* MTLResourceOptions options
+
+id_MTLRenderPipelineState = MTLDevice::newRenderPipelineStateWithDescriptor(MTLRenderPipelineDescriptor *descriptor, NSError **error);
+* id RenderPipelineState
+* MTLRenderPipelineDescriptor descriptor
+
+id_MTLCommandQueue = MTLDevice::newCommandQueue();
+* id MTLCommandQueue
+
+id_MTLTexture = MTLDevice::newTextureWithDescriptor(MTLTextureDescriptor *descriptor, IOSurfaceRef iosurface, NSUInteger plane);
+* id MTLTexture
+* MTLTextureDescriptor descriptor
+* uint64_t iosurface
+* NSUInteger plane
+
+id_MTLTexture MTLDevice::newTextureWithDescriptor(MTLTextureDescriptor *descriptor);
+* id MTLTexture
+* MTLTextureDescriptor descriptor
+* uint64_t iosurface = 0x0
+* NSUInteger plane = ~0
+
+// This is the only way to create a MTLRenderCommandEncoder
+// This should be serialisation of MTLRenderCommandEncoder not hardcoded
+id_MTLRenderCommandEncoder = MTLCommandBuffer::renderCommandEncoderWithDescriptor(MTLRenderPassDescriptor *);
+* id MTLCommandBuffer
+* id MTLRenderCommandEncoder
+* MTLRenderPassDescriptor descriptor
+
+MTLCommandBuffer::presentDrawable(id_MTLDrawable drawable);
+* id MTLCommandBuffer
+
+MTLCommandBuffer::commit();
+* id MTLCommandBuffer
+
+// This is the only way to create a MTLCommandBuffer
+// This should be serialisation of MTLCommandBuffer not hardcoded
+id_MTLCommandBuffer = MTLCommandQueue::commandBuffer();
+* id MTLCommandQueue
+* id MTLCommandBuffer
+
+id_MTLFunction = MTLLibrary::newFunctionWithName(NSString *functionName);
+* id MTLLibrary
+* id MTLFunction
+* NSString functionName
+
+MTLRenderCommandEncoder::setRenderPipelineState(id_MTLRenderPipelineState pipelineState);
+* id MTLRenderCommandEncoder
+* MTLRenderPipelineState pipelineState
+
+MTLRenderCommandEncoder::setVertexBuffer(id_MTLBuffer buffer, NSUInteger offset, NSUInteger index);
+* id MTLRenderCommandEncoder
+* id Buffer
+* NSUInteger offset
+* NSUInteger index
+
+MTLRenderCommandEncoder::drawPrimitives(MTLPrimitiveType primitiveType, NSUInteger vertexStart, NSUInteger vertexCount, NSUInteger instanceCount);
+* id MTLRenderCommandEncoder
+* MTLPrimitiveType primitiveType
+* NSUInteger vertexStart
+* NSUInteger vertexCount
+* NSUInteger instanceCount
+
+MTLRenderCommandEncoder::endEncoding();
+* id MTLRenderCommandEncoder
 
 ## Questions to discuss with Baldur
 
@@ -28,15 +107,12 @@
 - ObjCWrappedMTLBuffer.remoteStorageBuffer should return an obj-c wrapped buffer
 - Need to investigate these types for wrapping
 	- MTLResource
-	- MTLResourceOptions
 	- MTLCommandEncoder
 	- From MTLCommandBuffer
 		- MTLCommandBufferHandler
 		- MTLDrawable
 		- CFTimeInterval
 		- MTLBlitCommandEncoder
-		- MTLRenderCommandEncoder
-		- MTLRenderPassDescriptor
 		- MTLComputeCommandEncoder
 		- MTLComputePassDescriptor
 		- MTLBlitPassDescriptor
@@ -47,11 +123,9 @@
 		- MTLAccelerationStructureCommandEncoder
 		- MTLResourceStatePassDescriptor
 	- From MTLRenderCommandEncoder
-		- MTLTexture
 		- MTLSamplerState
 		- NSRange
 		- MTLViewport
-		- MTLWinding
 		- MTLVertexAmplificationViewMapping
 		- MTLCullMode
 		- MTLDepthClipMode
@@ -59,8 +133,6 @@
 		- MTLTriangleFillMode
 		- MTLDepthStencilState
 		- MTLVisibilityResultMode
-		- MTLStoreAction
-		- MTLStoreActionOptions
 		- MTLIndexType
 		- MTLRenderStages
 		- MTLResource
@@ -131,14 +203,6 @@ Global resources like the MTLDevice, it's kind of up to you. You could make them
 
 Personally for objects like that, I just explicitly have the start of frame capture function mark them referenced, it seems easier that way. But most objects can be pulled in either because they're explicitly mentioned in the capture or because they are one-step indirected. E.g. on Vulkan I think the only AddParents I do are things like buffers/images have the memory bound as a parent. Or pipelines have the shader object as a parent
 
-## How much more do I need to do before I can open a capture in RenderDoc and see the event browser populated : getting tired of convert to XML phase
-
-As to what you'd need to get to the event browser. 
-Need a bit more replay boilerplate but not a ton necessarily
-Need to be able to spin up a replay from the capture and return a IReplayDriver with at least some methods non-stubbed
-in particular you'll need to form the list of ActionDescription in FrameRecord at least, which contains things like command buffer begin/end and draws etc
-For Vulkan look at AddEvent() and AddAction()
-
 # Metal MTLDevice.h documentation errors
 
 Should this be @method ?
@@ -161,3 +225,5 @@ Why normal comments and not the /*! .... !*/ form?
 	*/
 	- (nullable id <MTLLibrary>)newDefaultLibraryWithBundle:(NSBundle *)bundle error:(__autoreleasing NSError **)error API_AVAILABLE(macos(10.12), ios(10.0));
 
+# Notes
+- RenderDoc Metal started on 14th July 2021

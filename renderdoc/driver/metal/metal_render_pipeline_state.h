@@ -34,10 +34,7 @@ public:
   WrappedMTLRenderPipelineState(id_MTLRenderPipelineState realMTLRenderPipelineState,
                                 ResourceId objId, WrappedMTLDevice *wrappedMTLDevice);
 
-  id_MTLRenderPipelineState GetObjCWrappedMTLRenderPipelineState();
-
-  DECLARE_WRAPPED_API(NSUInteger, imageblockMemoryLengthForDimensions,
-                      RD_MTLSize imageblockDimensions);
+  DECLARE_WRAPPED_API(NSUInteger, imageblockMemoryLengthForDimensions, MTLSize imageblockDimensions);
 
   enum
   {
@@ -46,10 +43,4 @@ public:
 
 private:
   id_MTLRenderPipelineState CreateObjCWrappedMTLRenderPipelineState();
-  id_MTLRenderPipelineState m_ObjCWrappedMTLRenderPipelineState;
 };
-
-inline id_MTLRenderPipelineState WrappedMTLRenderPipelineState::GetObjCWrappedMTLRenderPipelineState()
-{
-  return m_ObjCWrappedMTLRenderPipelineState;
-}

@@ -25,19 +25,47 @@
 #include "metal_buffer_bridge.h"
 #include "metal_buffer.h"
 
-WrappedMTLBuffer *GetWrappedFromObjC(id_MTLBuffer buffer)
+static ObjCWrappedMTLBuffer *GetObjC(id_MTLBuffer buffer)
 {
+  if(buffer == NULL)
+  {
+    return NULL;
+  }
   RDCASSERT([buffer isKindOfClass:[ObjCWrappedMTLBuffer class]]);
+  ObjCWrappedMTLBuffer *objC = (ObjCWrappedMTLBuffer *)buffer;
+  return objC;
+}
 
-  ObjCWrappedMTLBuffer *objCWrappedMTLBuffer = (ObjCWrappedMTLBuffer *)buffer;
-  return [objCWrappedMTLBuffer wrappedMTLBuffer];
+id_MTLBuffer GetReal(id_MTLBuffer buffer)
+{
+  ObjCWrappedMTLBuffer *objC = GetObjC(buffer);
+  id_MTLBuffer realBuffer = objC.realMTLBuffer;
+  return realBuffer;
+}
+
+WrappedMTLBuffer *GetWrapped(id_MTLBuffer buffer)
+{
+  ObjCWrappedMTLBuffer *objC = GetObjC(buffer);
+  return [objC wrappedMTLBuffer];
 }
 
 id_MTLBuffer WrappedMTLBuffer::CreateObjWrappedMTLBuffer()
 {
-  ObjCWrappedMTLBuffer *objCWrappedMTLBuffer = [ObjCWrappedMTLBuffer alloc];
+  ObjCWrappedMTLBuffer *objCWrappedMTLBuffer = [ObjCWrappedMTLBuffer new];
   objCWrappedMTLBuffer.wrappedMTLBuffer = this;
   return objCWrappedMTLBuffer;
+}
+
+void *WrappedMTLBuffer::real_contents()
+{
+  id_MTLBuffer realMTLBuffer = Unwrap<id_MTLBuffer>(this);
+  return [realMTLBuffer contents];
+}
+
+void WrappedMTLBuffer::real_didModifyRange(NSRange &range)
+{
+  id_MTLBuffer realMTLBuffer = Unwrap<id_MTLBuffer>(this);
+  return [realMTLBuffer didModifyRange:range];
 }
 
 // Wrapper for MTLBuffer
@@ -103,16 +131,19 @@ id_MTLBuffer WrappedMTLBuffer::CreateObjWrappedMTLBuffer()
 
 - (MTLPurgeableState)setPurgeableState:(MTLPurgeableState)state
 {
+  NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
   return [self.realMTLBuffer setPurgeableState:state];
 }
 
 - (void)makeAliasable API_AVAILABLE(macos(10.13), ios(10.0))
 {
+  NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
   return [self.realMTLBuffer makeAliasable];
 }
 
 - (BOOL)isAliasable API_AVAILABLE(macos(10.13), ios(10.0))
 {
+  NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
   return [self.realMTLBuffer isAliasable];
 }
 
@@ -130,13 +161,13 @@ id_MTLBuffer WrappedMTLBuffer::CreateObjWrappedMTLBuffer()
 
 - (void *)contents NS_RETURNS_INNER_POINTER
 {
-  return [self.realMTLBuffer contents];
+  return self.wrappedMTLBuffer->contents();
 }
 
 - (void)didModifyRange:(NSRange)range API_AVAILABLE(macos(10.11), macCatalyst(13.0))
                            API_UNAVAILABLE(ios)
 {
-  return [self.realMTLBuffer didModifyRange:range];
+  return self.wrappedMTLBuffer->didModifyRange(range);
 }
 
 - (nullable id<MTLTexture>)newTextureWithDescriptor:(MTLTextureDescriptor *)descriptor
@@ -144,6 +175,7 @@ id_MTLBuffer WrappedMTLBuffer::CreateObjWrappedMTLBuffer()
                                         bytesPerRow:(NSUInteger)bytesPerRow
     API_AVAILABLE(macos(10.13), ios(8.0))
 {
+  NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
   return [self.realMTLBuffer newTextureWithDescriptor:descriptor
                                                offset:offset
                                           bytesPerRow:bytesPerRow];
@@ -152,17 +184,20 @@ id_MTLBuffer WrappedMTLBuffer::CreateObjWrappedMTLBuffer()
 - (void)addDebugMarker:(NSString *)marker
                  range:(NSRange)range API_AVAILABLE(macos(10.12), ios(10.0))
 {
+  NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
   return [self.realMTLBuffer addDebugMarker:marker range:range];
 }
 
 - (void)removeAllDebugMarkers API_AVAILABLE(macos(10.12), ios(10.0))
 {
+  NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
   return [self.realMTLBuffer removeAllDebugMarkers];
 }
 
 - (nullable id<MTLBuffer>)newRemoteBufferViewForDevice:(id<MTLDevice>)device
     API_AVAILABLE(macos(10.15))API_UNAVAILABLE(ios)
 {
+  NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
   return [self.realMTLBuffer newRemoteBufferViewForDevice:device];
 }
 

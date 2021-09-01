@@ -26,9 +26,33 @@
 #import <Metal/MTLLibrary.h>
 #include "metal_library.h"
 
+static ObjCWrappedMTLLibrary *GetObjC(id_MTLLibrary library)
+{
+  if(library == NULL)
+  {
+    return NULL;
+  }
+  RDCASSERT([library isKindOfClass:[ObjCWrappedMTLLibrary class]]);
+  ObjCWrappedMTLLibrary *objC = (ObjCWrappedMTLLibrary *)library;
+  return objC;
+}
+
+id_MTLLibrary GetReal(id_MTLLibrary library)
+{
+  ObjCWrappedMTLLibrary *objC = GetObjC(library);
+  id_MTLLibrary realLibrary = objC.realMTLLibrary;
+  return realLibrary;
+}
+
+WrappedMTLLibrary *GetWrapped(id_MTLLibrary library)
+{
+  ObjCWrappedMTLLibrary *objC = GetObjC(library);
+  return [objC wrappedMTLLibrary];
+}
+
 id_MTLLibrary WrappedMTLLibrary::CreateObjCWrappedMTLLibrary()
 {
-  ObjCWrappedMTLLibrary *objCWrappedMTLLibrary = [ObjCWrappedMTLLibrary alloc];
+  ObjCWrappedMTLLibrary *objCWrappedMTLLibrary = [ObjCWrappedMTLLibrary new];
   objCWrappedMTLLibrary.wrappedMTLLibrary = this;
   return objCWrappedMTLLibrary;
 }
@@ -99,6 +123,7 @@ id_MTLFunction WrappedMTLLibrary::real_newFunctionWithName(NSString *functionNam
                                           error:(__autoreleasing NSError **)error
     API_AVAILABLE(macos(10.12), ios(10.0))
 {
+  NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
   return [self.realMTLLibrary newFunctionWithName:name constantValues:constantValues error:error];
 }
 
@@ -108,6 +133,7 @@ id_MTLFunction WrappedMTLLibrary::real_newFunctionWithName(NSString *functionNam
                                       NSError *__nullable error))completionHandler
     API_AVAILABLE(macos(10.12), ios(10.0))
 {
+  NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
   return [self.realMTLLibrary newFunctionWithName:name
                                    constantValues:constantValues
                                 completionHandler:completionHandler];
@@ -118,6 +144,7 @@ id_MTLFunction WrappedMTLLibrary::real_newFunctionWithName(NSString *functionNam
                                             NSError *__nullable error))completionHandler
     API_AVAILABLE(macos(11.0), ios(14.0))
 {
+  NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
   return [self.realMTLLibrary newFunctionWithDescriptor:descriptor
                                       completionHandler:completionHandler];
 }
@@ -126,6 +153,7 @@ id_MTLFunction WrappedMTLLibrary::real_newFunctionWithName(NSString *functionNam
                                                 error:(__autoreleasing NSError **)error
     API_AVAILABLE(macos(11.0), ios(14.0))
 {
+  NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
   return [self.realMTLLibrary newFunctionWithDescriptor:descriptor error:error];
 }
 
@@ -134,6 +162,7 @@ id_MTLFunction WrappedMTLLibrary::real_newFunctionWithName(NSString *functionNam
                                                         NSError *__nullable error))completionHandler
     API_AVAILABLE(macos(11.0), ios(14.0))
 {
+  NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
   return [self.realMTLLibrary newIntersectionFunctionWithDescriptor:descriptor
                                                   completionHandler:completionHandler];
 }
@@ -143,6 +172,7 @@ id_MTLFunction WrappedMTLLibrary::real_newFunctionWithName(NSString *functionNam
                                                             error:(__autoreleasing NSError **)error
     API_AVAILABLE(macos(11.0), ios(14.0))
 {
+  NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
   return [self.realMTLLibrary newIntersectionFunctionWithDescriptor:descriptor error:error];
 }
 

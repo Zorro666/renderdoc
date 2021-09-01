@@ -34,8 +34,6 @@ public:
                     WrappedMTLDevice *wrappedMTLDevice);
   WrappedMTLLibrary(WrappedMTLDevice *wrappedMTLDevice);
 
-  id_MTLLibrary GetObjCWrappedMTLLibrary();
-
   DECLARE_WRAPPED_API(id_MTLFunction, newFunctionWithName, NSString *functionName);
 
   DECLARE_FUNCTION_SERIALISED(mtlLibrary_newFunctionWithName, WrappedMTLLibrary *library,
@@ -48,11 +46,5 @@ public:
 
 private:
   id_MTLLibrary CreateObjCWrappedMTLLibrary();
-  id_MTLLibrary m_ObjCWrappedMTLLibrary;
   CaptureState &m_State;
 };
-
-inline id_MTLLibrary WrappedMTLLibrary::GetObjCWrappedMTLLibrary()
-{
-  return m_ObjCWrappedMTLLibrary;
-}

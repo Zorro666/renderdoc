@@ -26,17 +26,33 @@
 #import <Metal/MTLLibrary.h>
 #include "metal_function.h"
 
-WrappedMTLFunction *GetWrappedFromObjC(id_MTLFunction function)
+static ObjCWrappedMTLFunction *GetObjC(id_MTLFunction function)
 {
+  if(function == NULL)
+  {
+    return NULL;
+  }
   RDCASSERT([function isKindOfClass:[ObjCWrappedMTLFunction class]]);
-
   ObjCWrappedMTLFunction *objCWrappedMTLFunction = (ObjCWrappedMTLFunction *)function;
+  return objCWrappedMTLFunction;
+}
+
+id_MTLFunction GetReal(id_MTLFunction function)
+{
+  ObjCWrappedMTLFunction *objCWrappedMTLFunction = GetObjC(function);
+  id_MTLFunction realFunction = objCWrappedMTLFunction.realMTLFunction;
+  return realFunction;
+}
+
+WrappedMTLFunction *GetWrapped(id_MTLFunction function)
+{
+  ObjCWrappedMTLFunction *objCWrappedMTLFunction = GetObjC(function);
   return [objCWrappedMTLFunction wrappedMTLFunction];
 }
 
 id_MTLFunction WrappedMTLFunction::CreateObjCWrappedMTLFunction()
 {
-  ObjCWrappedMTLFunction *objCWrappedMTLFunction = [ObjCWrappedMTLFunction alloc];
+  ObjCWrappedMTLFunction *objCWrappedMTLFunction = [ObjCWrappedMTLFunction new];
   objCWrappedMTLFunction.wrappedMTLFunction = this;
   return objCWrappedMTLFunction;
 }
@@ -44,7 +60,7 @@ id_MTLFunction WrappedMTLFunction::CreateObjCWrappedMTLFunction()
 // Wrapper for MTLFunction
 @implementation ObjCWrappedMTLFunction
 
-// ObjCWrappedMTLLibrary specific
+// ObjCWrappedMTLFunction specific
 - (id<MTLFunction>)realMTLFunction
 {
   id_MTLFunction realMTLFunction = Unwrap<id_MTLFunction>(self.wrappedMTLFunction);
@@ -104,12 +120,14 @@ id_MTLFunction WrappedMTLFunction::CreateObjCWrappedMTLFunction()
 
 - (id<MTLArgumentEncoder>)newArgumentEncoderWithBufferIndex:(NSUInteger)bufferIndex
 {
+  NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
   return [self.realMTLFunction newArgumentEncoderWithBufferIndex:bufferIndex];
 }
 
 - (id<MTLArgumentEncoder>)newArgumentEncoderWithBufferIndex:(NSUInteger)bufferIndex
                                                  reflection:(MTLAutoreleasedArgument *__nullable)reflection
 {
+  NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
   return [self.realMTLFunction newArgumentEncoderWithBufferIndex:bufferIndex reflection:reflection];
 }
 

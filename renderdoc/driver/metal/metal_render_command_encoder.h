@@ -35,12 +35,15 @@ public:
                                  ResourceId objId, WrappedMTLDevice *wrappedMTLDevice);
   WrappedMTLRenderCommandEncoder(WrappedMTLDevice *wrappedMTLDevice);
 
-  id_MTLRenderCommandEncoder GetObjCWrappedMTLRenderCommandEncoder();
   void SetWrappedMTLCommandBuffer(WrappedMTLCommandBuffer *wrappedMTLCommandBuffer);
 
   DECLARE_WRAPPED_API(void, setRenderPipelineState, id_MTLRenderPipelineState pipelineState);
   DECLARE_WRAPPED_API(void, setVertexBuffer, id_MTLBuffer buffer, NSUInteger offset,
                       NSUInteger index);
+  DECLARE_WRAPPED_API(void, setFragmentBuffer, id_MTLBuffer buffer, NSUInteger offset,
+                      NSUInteger index);
+  DECLARE_WRAPPED_API(void, setFragmentTexture, id_MTLTexture texture, NSUInteger index);
+  DECLARE_WRAPPED_API(void, setViewport, MTLViewport &viewport);
   DECLARE_WRAPPED_API(void, drawPrimitives, MTLPrimitiveType primitiveType, NSUInteger vertexStart,
                       NSUInteger vertexCount, NSUInteger instanceCount);
   DECLARE_WRAPPED_API(void, endEncoding);
@@ -57,20 +60,20 @@ public:
                               WrappedMTLRenderPipelineState *pipelineState);
   DECLARE_FUNCTION_SERIALISED(mtlRenderCommandEncoder_setVertexBuffer,
                               WrappedMTLRenderCommandEncoder *encoder, WrappedMTLBuffer *buffer,
-                              NSUInteger offset, NSUInteger index);
+                              NSUInteger_objc offset, NSUInteger_objc index);
+  DECLARE_FUNCTION_SERIALISED(mtlRenderCommandEncoder_setFragmentBuffer,
+                              WrappedMTLRenderCommandEncoder *encoder, WrappedMTLBuffer *buffer,
+                              NSUInteger_objc offset, NSUInteger_objc index);
+  DECLARE_FUNCTION_SERIALISED(mtlRenderCommandEncoder_setFragmentTexture,
+                              WrappedMTLRenderCommandEncoder *encoder, WrappedMTLTexture *texture,
+                              NSUInteger_objc index);
   DECLARE_FUNCTION_SERIALISED(mtlRenderCommandEncoder_drawPrimitives,
                               WrappedMTLRenderCommandEncoder *encoder,
-                              MTLPrimitiveType primitiveType, NSUInteger vertexStart,
-                              NSUInteger vertexCount, NSUInteger instanceCount);
+                              MTLPrimitiveType_objc primitiveType, NSUInteger_objc vertexStart,
+                              NSUInteger_objc vertexCount, NSUInteger_objc instanceCount);
 
 private:
   id_MTLRenderCommandEncoder CreateObjCWrappedMTLRenderCommandEncoder();
-  id_MTLRenderCommandEncoder m_ObjCWrappedMTLRenderCommandEncoder;
   WrappedMTLCommandBuffer *m_WrappedMTLCommandBuffer;
   CaptureState &m_State;
 };
-
-inline id_MTLRenderCommandEncoder WrappedMTLRenderCommandEncoder::GetObjCWrappedMTLRenderCommandEncoder()
-{
-  return m_ObjCWrappedMTLRenderCommandEncoder;
-}

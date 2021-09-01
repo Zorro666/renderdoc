@@ -24,4 +24,11 @@
 
 #include "metal_types.h"
 
-extern const char *apple_GetUTF8CStringFromNSString(NSString *nsString);
+namespace MTL
+{
+const char *GetUTF8CString(NSString *nsString);
+NSString *NewNSStringFromUTF8(const char *cStr);
+const char *Get_localizedDescription(NSError *error);
+const char *Get_localizedRecoverySuggestion(NSError *error);
+const char *Get_localizedFailureReason(NSError *error);
+}

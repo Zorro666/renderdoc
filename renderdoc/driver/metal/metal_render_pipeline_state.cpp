@@ -30,11 +30,10 @@ WrappedMTLRenderPipelineState::WrappedMTLRenderPipelineState(
     WrappedMTLDevice *wrappedMTLDevice)
     : WrappedMTLObject(realMTLRenderPipelineState, objId, wrappedMTLDevice)
 {
-  m_ObjCWrappedMTLRenderPipelineState = CreateObjCWrappedMTLRenderPipelineState();
+  objc = CreateObjCWrappedMTLRenderPipelineState();
 }
 
-NSUInteger WrappedMTLRenderPipelineState::imageblockMemoryLengthForDimensions(
-    RD_MTLSize imageblockDimensions)
+NSUInteger WrappedMTLRenderPipelineState::imageblockMemoryLengthForDimensions(MTLSize imageblockDimensions)
 {
   RDCASSERTMSG("WrappedMTLRenderPipelineState::imageblockMemoryLengthForDimensions is not tested",
                false);

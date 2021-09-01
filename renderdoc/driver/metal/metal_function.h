@@ -31,7 +31,6 @@ class WrappedMTLFunction : public WrappedMTLObject
 public:
   WrappedMTLFunction(id_MTLFunction realMTLFunction, ResourceId objId,
                      WrappedMTLDevice *wrappedMTLDevice);
-  id_MTLFunction GetObjCWrappedMTLFunction();
 
   enum
   {
@@ -40,11 +39,5 @@ public:
 
 private:
   id_MTLFunction CreateObjCWrappedMTLFunction();
-  id_MTLFunction m_ObjCWrappedMTLFunction;
   CaptureState &m_State;
 };
-
-inline id_MTLFunction WrappedMTLFunction::GetObjCWrappedMTLFunction()
-{
-  return m_ObjCWrappedMTLFunction;
-}

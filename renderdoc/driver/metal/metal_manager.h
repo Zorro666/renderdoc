@@ -25,25 +25,34 @@
 #pragma once
 
 #include "core/resource_manager.h"
-#include "metal_buffer.h"
-#include "metal_command_buffer.h"
-#include "metal_command_queue.h"
-#include "metal_core.h"
-#include "metal_function.h"
-#include "metal_library.h"
-#include "metal_render_command_encoder.h"
-#include "metal_render_pipeline_state.h"
 #include "metal_resources.h"
 
 struct MetalInitialContents
 {
-  MetalInitialContents() {}
+  MetalInitialContents()
+  {
+    RDCCOMPILE_ASSERT(std::is_standard_layout<MetalInitialContents>::value,
+                      "MetalInitialContents must be POD");
+    memset(this, 0, sizeof(*this));
+  }
+
+  MetalInitialContents(MetalResourceType t)
+  {
+    memset(this, 0, sizeof(*this));
+    type = t;
+  }
+
   template <typename Configuration>
   void Free(ResourceManager<Configuration> *rm)
   {
     RDCASSERT(false);
   }
   bytebuf resourceContents;
+
+  // for plain resources, we store the resource type
+  MetalResourceType type;
+  // id_MTLBuffer buf;
+  // id_MTLTexture img;
 };
 
 struct MetalResourceManagerConfiguration
@@ -58,7 +67,7 @@ class MetalResourceManager : public ResourceManager<MetalResourceManagerConfigur
 {
 public:
   MetalResourceManager(CaptureState &state, WrappedMTLDevice *device)
-      : ResourceManager(state), m_Device(device)
+      : ResourceManager(state), m_WrappedMTLDevice(device)
   {
   }
   void SetState(CaptureState state) { m_State = state; }
@@ -103,18 +112,18 @@ public:
     typedef CONCAT(Wrapped, TYPE) Outer; \
   };
 
-  METAL_WRAPPED_TYPES(UNWRAP_HELPER)
+  METAL_WRAPPED_PROTOCOLS(UNWRAP_HELPER)
 #undef UNWRAP_HELPER
 
   template <typename realtype>
   ResourceId WrapResource(realtype obj, typename UnwrapHelper<realtype>::Outer *&wrapped)
   {
     RDCASSERT(obj != NULL);
-    RDCASSERT(m_Device != NULL);
+    RDCASSERT(m_WrappedMTLDevice != NULL);
 
     ResourceId id = ResourceIDGen::GetNewUniqueID();
     using WrappedType = typename UnwrapHelper<realtype>::Outer;
-    wrapped = new WrappedType(obj, id, m_Device);
+    wrapped = new WrappedType(obj, id, m_WrappedMTLDevice);
     AddCurrentResource(id, wrapped);
 
     // TODO: implement RD MTL replay
@@ -172,18 +181,36 @@ public:
   }
 
   void SetInternalResource(ResourceId id) {}
+  InitPolicy GetInitPolicy() { return m_InitPolicy; }
+  void SetOptimisationLevel(ReplayOptimisationLevel level)
+  {
+    switch(level)
+    {
+      case ReplayOptimisationLevel::Count:
+        RDCERR("Invalid optimisation level specified");
+        m_InitPolicy = eInitPolicy_NoOpt;
+        break;
+      case ReplayOptimisationLevel::NoOptimisation: m_InitPolicy = eInitPolicy_NoOpt; break;
+      case ReplayOptimisationLevel::Conservative: m_InitPolicy = eInitPolicy_CopyAll; break;
+      case ReplayOptimisationLevel::Balanced: m_InitPolicy = eInitPolicy_ClearUnread; break;
+      case ReplayOptimisationLevel::Fastest: m_InitPolicy = eInitPolicy_Fastest; break;
+    }
+  }
+
+  template <typename SerialiserType>
+  void SerialiseImageStates(SerialiserType &ser,
+                            std::map<ResourceId, MetalResources::LockingImageState> &states);
+
 private:
   bool ResourceTypeRelease(WrappedMTLObject *res) { return false; }
-  bool Prepare_InitialState(WrappedMTLObject *res) { return false; }
-  uint64_t GetSize_InitialState(ResourceId id, const MetalInitialContents &initial) { return 128; }
+  bool Prepare_InitialState(WrappedMTLObject *res);
+  uint64_t GetSize_InitialState(ResourceId id, const MetalInitialContents &initial);
   bool Serialise_InitialState(WriteSerialiser &ser, ResourceId id, MetalResourceRecord *record,
-                              const MetalInitialContents *initial)
-  {
-    return false;
-  }
-  void Create_InitialState(ResourceId id, WrappedMTLObject *live, bool hasData) {}
-  void Apply_InitialState(WrappedMTLObject *live, const MetalInitialContents &initial) {}
-  rdcarray<ResourceId> InitialContentResources() { return {}; }
-  WrappedMTLDevice *m_Device;
-  // InitPolicy m_InitPolicy = eInitPolicy_CopyAll;
+                              const MetalInitialContents *initial);
+  void Create_InitialState(ResourceId id, WrappedMTLObject *live, bool hasData);
+  void Apply_InitialState(WrappedMTLObject *live, const MetalInitialContents &initial);
+  rdcarray<ResourceId> InitialContentResources();
+
+  WrappedMTLDevice *m_WrappedMTLDevice;
+  InitPolicy m_InitPolicy = eInitPolicy_CopyAll;
 };

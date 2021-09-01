@@ -35,13 +35,13 @@ WrappedMTLCommandQueue::WrappedMTLCommandQueue(id_MTLCommandQueue realMTLCommand
     : WrappedMTLObject(realMTLCommandQueue, objId, wrappedMTLDevice),
       m_State(wrappedMTLDevice->GetStateRef())
 {
-  m_ObjCWrappedMTLCommandQueue = CreateObjCWrappedMTLCommandQueue();
+  objc = CreateObjCWrappedMTLCommandQueue();
 }
 
 WrappedMTLCommandQueue::WrappedMTLCommandQueue(WrappedMTLDevice *wrappedMTLDevice)
     : WrappedMTLObject(wrappedMTLDevice), m_State(wrappedMTLDevice->GetStateRef())
 {
-  m_ObjCWrappedMTLCommandQueue = CreateObjCWrappedMTLCommandQueue();
+  objc = CreateObjCWrappedMTLCommandQueue();
 }
 
 id_MTLCommandBuffer WrappedMTLCommandQueue::commandBuffer()
@@ -57,7 +57,7 @@ id_MTLCommandBuffer WrappedMTLCommandQueue::commandBuffer()
     Chunk *chunk = NULL;
     {
       CACHE_THREAD_SERIALISER();
-      SCOPED_SERIALISE_CHUNK(MetalChunk::mtlCommandQueue_commandBuffer);
+      SCOPED_SERIALISE_CHUNK(MetalChunk::MTLCommandQueue_commandBuffer);
       Serialise_mtlCommandQueue_commandBuffer(ser, this, wrappedMTLCommandBuffer);
       chunk = scope.Get();
     }
@@ -73,7 +73,7 @@ id_MTLCommandBuffer WrappedMTLCommandQueue::commandBuffer()
              ToStr(queueRecord->GetResourceID()).c_str());
     }
 
-    bufferRecord->cmdInfo = new CmdBufferRecordingInfo();
+    bufferRecord->cmdInfo = new MetalResources::CmdBufferRecordingInfo();
     bufferRecord->cmdInfo->allocPool = new ChunkPagePool(32 * 1024);
     bufferRecord->cmdInfo->alloc = new ChunkAllocator(*bufferRecord->cmdInfo->allocPool);
     bufferRecord->cmdInfo->queue = this;
@@ -89,7 +89,7 @@ id_MTLCommandBuffer WrappedMTLCommandQueue::commandBuffer()
     GetResourceManager()->AddLiveResource(id, wrappedMTLCommandBuffer);
   }
 
-  return wrappedMTLCommandBuffer->GetObjCWrappedMTLCommandBuffer();
+  return wrappedMTLCommandBuffer->objc;
 }
 
 template <typename SerialiserType>
@@ -105,6 +105,23 @@ bool WrappedMTLCommandQueue::Serialise_mtlCommandQueue_commandBuffer(SerialiserT
   // TODO: implement RD MTL replay
   if(IsReplayingAndReading())
   {
+    WrappedMTLCommandQueue *queue =
+        (WrappedMTLCommandQueue *)GetResourceManager()->GetLiveResource(CommandQueue);
+
+    id_MTLCommandBuffer realMTLCommandBuffer = queue->real_commandBuffer();
+
+    MetalResourceManager::UnwrapHelper<id_MTLCommandBuffer>::Outer *wrappedMTLCommandBuffer;
+    GetResourceManager()->WrapResource(realMTLCommandBuffer, wrappedMTLCommandBuffer);
+
+    if(GetResourceManager()->HasLiveResource(CommandBuffer))
+    {
+      // TODO: we are leaking the original WrappedMTLCommandBuffer
+      GetResourceManager()->EraseLiveResource(CommandBuffer);
+    }
+    GetResourceManager()->AddLiveResource(CommandBuffer, wrappedMTLCommandBuffer);
+
+    m_WrappedMTLDevice->AddResource(CommandBuffer, ResourceType::CommandBuffer, "Command Buffer");
+    m_WrappedMTLDevice->DerivedResource(queue, CommandBuffer);
   }
   return true;
 }

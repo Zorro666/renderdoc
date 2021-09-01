@@ -26,25 +26,36 @@
 #import <Metal/MTLRenderPipeline.h>
 #include "metal_render_pipeline_state.h"
 
-WrappedMTLRenderPipelineState *GetWrappedFromObjC(id_MTLRenderPipelineState pipelineState)
+static ObjCWrappedMTLRenderPipelineState *GetObjC(id_MTLRenderPipelineState pipelineState)
 {
   RDCASSERT([pipelineState isKindOfClass:[ObjCWrappedMTLRenderPipelineState class]]);
+  ObjCWrappedMTLRenderPipelineState *objC = (ObjCWrappedMTLRenderPipelineState *)pipelineState;
+  return objC;
+}
 
-  ObjCWrappedMTLRenderPipelineState *objCWrappedMTLRenderPipelineState =
-      (ObjCWrappedMTLRenderPipelineState *)pipelineState;
-  return [objCWrappedMTLRenderPipelineState wrappedMTLRenderPipelineState];
+id_MTLRenderPipelineState GetReal(id_MTLRenderPipelineState pipelineState)
+{
+  ObjCWrappedMTLRenderPipelineState *objC = GetObjC(pipelineState);
+  id_MTLRenderPipelineState realRenderPipelineState = objC.realMTLRenderPipelineState;
+  return realRenderPipelineState;
+}
+
+WrappedMTLRenderPipelineState *GetWrapped(id_MTLRenderPipelineState pipelineState)
+{
+  ObjCWrappedMTLRenderPipelineState *objC = GetObjC(pipelineState);
+  return [objC wrappedMTLRenderPipelineState];
 }
 
 id_MTLRenderPipelineState WrappedMTLRenderPipelineState::CreateObjCWrappedMTLRenderPipelineState()
 {
   ObjCWrappedMTLRenderPipelineState *objCWrappedMTLRenderPipelineState =
-      [ObjCWrappedMTLRenderPipelineState alloc];
+      [ObjCWrappedMTLRenderPipelineState new];
   objCWrappedMTLRenderPipelineState.wrappedMTLRenderPipelineState = this;
   return objCWrappedMTLRenderPipelineState;
 }
 
 NSUInteger WrappedMTLRenderPipelineState::real_imageblockMemoryLengthForDimensions(
-    RD_MTLSize imageblockDimensions)
+    MTLSize imageblockDimensions)
 {
   if(@available(macOS 11.0, *))
   {

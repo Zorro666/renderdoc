@@ -32,20 +32,19 @@ class WrappedMTLBuffer : public WrappedMTLObject
 {
 public:
   WrappedMTLBuffer(id_MTLBuffer realMTLBuffer, ResourceId objId, WrappedMTLDevice *wrappedMTLDevice);
+  WrappedMTLBuffer(WrappedMTLDevice *wrappedMTLDevice);
 
-  id_MTLBuffer GetObjCWrappedMTLBuffer();
+  DECLARE_WRAPPED_API(void *, contents);
+  DECLARE_WRAPPED_API(void, didModifyRange, NSRange &range);
 
   enum
   {
     TypeEnum = eResBuffer
   };
 
+  DECLARE_FUNCTION_SERIALISED(mtlBuffer_contents, WrappedMTLBuffer *buffer);
+
 private:
   id_MTLBuffer CreateObjWrappedMTLBuffer();
-  id_MTLBuffer m_ObjCWrappedMTLBuffer;
+  CaptureState &m_State;
 };
-
-inline id_MTLBuffer WrappedMTLBuffer::GetObjCWrappedMTLBuffer()
-{
-  return m_ObjCWrappedMTLBuffer;
-}

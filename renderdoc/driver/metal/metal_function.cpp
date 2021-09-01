@@ -30,5 +30,5 @@ WrappedMTLFunction::WrappedMTLFunction(id_MTLFunction realMTLFunction, ResourceI
     : WrappedMTLObject(realMTLFunction, objId, wrappedMTLDevice),
       m_State(wrappedMTLDevice->GetStateRef())
 {
-  m_ObjCWrappedMTLFunction = CreateObjCWrappedMTLFunction();
+  objc = CreateObjCWrappedMTLFunction();
 }

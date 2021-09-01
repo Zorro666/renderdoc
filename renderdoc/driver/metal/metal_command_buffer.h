@@ -38,18 +38,21 @@ public:
 
   void SetWrappedMTLCommandQueue(WrappedMTLCommandQueue *wrappedMTLCommandQueue);
 
-  id_MTLCommandBuffer GetObjCWrappedMTLCommandBuffer();
   id_MTLCommandQueue GetObjCWrappedMTLCommandQueue();
 
   DECLARE_WRAPPED_API(id_MTLRenderCommandEncoder, renderCommandEncoderWithDescriptor,
                       MTLRenderPassDescriptor *);
   DECLARE_WRAPPED_API(void, presentDrawable, id_MTLDrawable drawable);
   DECLARE_WRAPPED_API(void, commit);
+  DECLARE_WRAPPED_API(void, enqueue);
+  DECLARE_WRAPPED_API(void, waitUntilCompleted);
+  DECLARE_WRAPPED_API(void, label, const char *label);
 
   DECLARE_FUNCTION_SERIALISED(mtlCommandBuffer_commit, WrappedMTLCommandBuffer *buffer);
   DECLARE_FUNCTION_SERIALISED(mtlCommandBuffer_renderCommandEncoderWithDescriptor,
                               WrappedMTLCommandBuffer *buffer,
-                              WrappedMTLRenderCommandEncoder *encoder);
+                              WrappedMTLRenderCommandEncoder *encoder,
+                              MTLRenderPassDescriptor *descriptor);
   DECLARE_FUNCTION_SERIALISED(mtlCommandBuffer_presentDrawable, WrappedMTLCommandBuffer *buffer,
                               id_MTLDrawable drawable);
 
@@ -62,16 +65,16 @@ private:
   id_MTLCommandBuffer CreateObjCWrappedMTLCommandBuffer();
 
   WrappedMTLCommandQueue *m_WrappedMTLCommandQueue;
-  id_MTLCommandBuffer m_ObjCWrappedMTLCommandBuffer;
   CaptureState &m_State;
 };
 
-inline id_MTLCommandBuffer WrappedMTLCommandBuffer::GetObjCWrappedMTLCommandBuffer()
-{
-  return m_ObjCWrappedMTLCommandBuffer;
-}
-
 inline id_MTLCommandQueue WrappedMTLCommandBuffer::GetObjCWrappedMTLCommandQueue()
 {
-  return m_WrappedMTLCommandQueue->GetObjCWrappedMTLCommandQueue();
+  return m_WrappedMTLCommandQueue->objc;
 }
+
+namespace MTL
+{
+void CopyTexture(WrappedMTLCommandBuffer *commandBuffer, id_MTLTexture source,
+                 id_MTLTexture destination);
+};
