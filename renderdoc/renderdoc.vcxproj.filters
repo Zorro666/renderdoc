@@ -573,6 +573,9 @@
     <ClInclude Include="replay\dummy_driver.h">
       <Filter>Replay</Filter>
     </ClInclude>
+    <ClInclude Include="api\replay\metal_pipestate.h">
+      <Filter>API\Replay</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="maths\camera.cpp">

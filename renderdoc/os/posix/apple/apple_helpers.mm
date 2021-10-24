@@ -81,3 +81,8 @@ rdcstr apple_GetExecutablePathFromAppBundle(const char *appBundlePath)
   rdcstr result([executablePath cStringUsingEncoding:NSUTF8StringEncoding]);
   return result;
 }
+
+const char *apple_GetUTF8CStringFromNSString(NSString *nsString)
+{
+  return [nsString UTF8String];
+}

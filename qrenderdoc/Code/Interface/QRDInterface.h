@@ -452,6 +452,10 @@ DOCUMENT(R"(Specifies a pipeline stage for the :class:`PipelineStateViewer`.
 
   The vertex shader.
 
+.. data:: PostTessShader
+
+  The post-tessellation shader on metal.
+
 .. data:: HullShader
 
   The vertex shader.
@@ -520,6 +524,7 @@ enum class PipelineStage : int
   VertexShader,
   HullShader,
   TessControlShader = HullShader,
+  PostTessShader = HullShader,
   DomainShader,
   TessEvalShader = DomainShader,
   GeometryShader,
@@ -2658,6 +2663,16 @@ You should determine the API of the capture first before fetching it.
 :rtype: renderdoc.VKState
 )");
   virtual const VKPipe::State *CurVulkanPipelineState() = 0;
+
+  DOCUMENT(R"(Retrieve the current :class:`~renderdoc.MetalState` pipeline state.
+
+The return value will be ``None`` if the capture is not using the Metal API.
+You should determine the API of the capture first before fetching it.
+
+:return: The current Metal pipeline state.
+:rtype: renderdoc.MetalState
+)");
+  virtual const MetalPipe::State *CurMetalPipelineState() = 0;
 
   DOCUMENT(R"(Retrieve the current :class:`~renderdoc.PipeState` abstracted pipeline state.
 

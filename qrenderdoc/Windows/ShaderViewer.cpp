@@ -4405,6 +4405,10 @@ cbuffer RENDERDOC_Constants : register(b0)
   {
     return lit("; Can't insert snippets for SPIR-V ASM");
   }
+  else if(encoding == ShaderEncoding::MSL)
+  {
+    return lit("// don't have snippets for Metal SL");
+  }
 
   return QString();
 }
@@ -4442,6 +4446,10 @@ uniform uvec4 RENDERDOC_TexDim;
   {
     text = lit("; Can't insert snippets for SPIR-V ASM");
   }
+  else if(encoding == ShaderEncoding::MSL)
+  {
+    text = lit("// don't have snippets for Metal SL");
+  }
 
   insertSnippet(text);
 }
@@ -4476,6 +4484,10 @@ uniform uint RENDERDOC_SelectedMip;
   else if(encoding == ShaderEncoding::SPIRVAsm)
   {
     text = lit("; Can't insert snippets for SPIR-V ASM");
+  }
+  else if(encoding == ShaderEncoding::MSL)
+  {
+    text = lit("// don't have snippets for Metal SL");
   }
 
   insertSnippet(text);
@@ -4512,6 +4524,10 @@ uniform uint RENDERDOC_SelectedSliceFace;
   {
     text = lit("; Can't insert snippets for SPIR-V ASM");
   }
+  else if(encoding == ShaderEncoding::MSL)
+  {
+    text = lit("// don't have snippets for Metal SL");
+  }
 
   insertSnippet(text);
 }
@@ -4546,6 +4562,10 @@ uniform int RENDERDOC_SelectedSample;
   else if(encoding == ShaderEncoding::SPIRVAsm)
   {
     text = lit("; Can't insert snippets for SPIR-V ASM");
+  }
+  else if(encoding == ShaderEncoding::MSL)
+  {
+    text = lit("// don't have snippets for Metal SL");
   }
 
   insertSnippet(text);
@@ -4621,6 +4641,10 @@ uniform uint RENDERDOC_TextureType;
   else if(encoding == ShaderEncoding::SPIRVAsm)
   {
     text = lit("; Can't insert snippets for SPIR-V ASM");
+  }
+  else if(encoding == ShaderEncoding::MSL)
+  {
+    text = lit("// don't have snippets for Metal SL");
   }
 
   insertSnippet(text);
