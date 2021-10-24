@@ -258,6 +258,7 @@ if(APPLE)
     message(STATUS "Disabling GLES driver on apple")
     set(ENABLE_GLES OFF CACHE BOOL "" FORCE)
     set(ENABLE_EGL OFF CACHE BOOL "" FORCE)
+    set(ENABLE_METAL ON CACHE BOOL "" FORCE)
 endif()
 
 if(ANDROID)

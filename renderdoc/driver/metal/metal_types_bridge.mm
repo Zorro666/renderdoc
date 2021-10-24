@@ -23,9 +23,63 @@
  ******************************************************************************/
 
 #include "metal_types_bridge.h"
+#include "metal_types.h"
+
+#include "metal_buffer.h"
+#include "metal_command_buffer.h"
+#include "metal_command_queue.h"
 #include "metal_device.h"
+#include "metal_function.h"
+#include "metal_helpers.h"
+#include "metal_library.h"
+#include "metal_render_command_encoder.h"
+#include "metal_render_pipeline_state.h"
+#include "metal_texture.h"
+
+#import <QuartzCore/CAMetalLayer.h>
+#import <objc/runtime.h>
 
 #define DEFINE_OBJC_HELPERS(CPPTYPE)                                               \
+  static ObjCWrappedMTL##CPPTYPE *GetObjC(MTL::CPPTYPE *cppType)                   \
+  {                                                                                \
+    if(cppType == NULL)                                                            \
+    {                                                                              \
+      return NULL;                                                                 \
+    }                                                                              \
+    ObjCWrappedMTL##CPPTYPE *objC = (ObjCWrappedMTL##CPPTYPE *)cppType;            \
+    RDCASSERT([objC isKindOfClass:[ObjCWrappedMTL##CPPTYPE class]]);               \
+    return objC;                                                                   \
+  }                                                                                \
+                                                                                   \
+  WrappedMTL##CPPTYPE *GetWrapped(MTL::CPPTYPE *cppType)                           \
+  {                                                                                \
+    ObjCWrappedMTL##CPPTYPE *objC = GetObjC(cppType);                              \
+    return objC.wrappedCPP;                                                        \
+  }                                                                                \
+                                                                                   \
+  MTL::CPPTYPE *GetReal(MTL::CPPTYPE *cppType)                                     \
+  {                                                                                \
+    ObjCWrappedMTL##CPPTYPE *objC = GetObjC(cppType);                              \
+    MTL::CPPTYPE *real = (MTL::CPPTYPE *)objC.real;                                \
+    return real;                                                                   \
+  }                                                                                \
+                                                                                   \
+  bool IsObjCWrapped(MTL::CPPTYPE *cppType)                                        \
+  {                                                                                \
+    ObjCWrappedMTL##CPPTYPE *objC = (ObjCWrappedMTL##CPPTYPE *)cppType;            \
+    return [objC isKindOfClass:[ObjCWrappedMTL##CPPTYPE class]];                   \
+  }                                                                                \
+                                                                                   \
+  ResourceId GetId(MTL::CPPTYPE *cppType)                                          \
+  {                                                                                \
+    WrappedMTL##CPPTYPE *wrappedCPP = GetWrapped(cppType);                         \
+    if(wrappedCPP == NULL)                                                         \
+    {                                                                              \
+      return ResourceId();                                                         \
+    }                                                                              \
+    return wrappedCPP->id;                                                         \
+  }                                                                                \
+                                                                                   \
   MTL::CPPTYPE *AllocateObjCWrapper(WrappedMTL##CPPTYPE *wrappedCPP)               \
   {                                                                                \
     ObjCWrappedMTL##CPPTYPE *objC = [ObjCWrappedMTL##CPPTYPE alloc];               \
@@ -41,3 +95,34 @@
 
 METALCPP_WRAPPED_PROTOCOLS(DEFINE_OBJC_HELPERS)
 #undef DEFINE_OBJC_HELPERS
+
+static bool s_fixupMetalDriverAssert = false;
+
+void MTLFixupForMetalDriverAssert()
+{
+  /*
+    if(RenderDoc::Inst().IsReplayApp())
+      return;
+  */
+
+  if(s_fixupMetalDriverAssert)
+    return;
+
+#if ENABLED(RDOC_DEVEL)
+  NSLog(@"Fixup for Metal Driver debug assert. Adding protocol `MTLTextureImplementation` to "
+        @"`ObjCWrappedMTLTexture`");
+  class_addProtocol([ObjCWrappedMTLTexture class], objc_getProtocol("MTLTextureImplementation"));
+#endif
+  s_fixupMetalDriverAssert = true;
+}
+
+CA::MetalDrawable *MTLGetNextDrawable(void *layer)
+{
+  CAMetalLayer *metalLayer = (CAMetalLayer *)layer;
+  RDCASSERT([metalLayer isKindOfClass:[CAMetalLayer class]]);
+  metalLayer.pixelFormat = (MTLPixelFormat)MTL::PixelFormatBGRA8Unorm;
+  metalLayer.framebufferOnly = NO;
+  metalLayer.allowsNextDrawableTimeout = YES;
+  CA::MetalDrawable *drawable = (__bridge CA::MetalDrawable *)[metalLayer nextDrawable];
+  return drawable;
+}

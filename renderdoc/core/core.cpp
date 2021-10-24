@@ -184,6 +184,7 @@ rdcstr DoStringise(const RDCDriver &el)
     STRINGISE_ENUM_CLASS(D3D8);
     STRINGISE_ENUM_CLASS(Image);
     STRINGISE_ENUM_CLASS(Vulkan);
+    STRINGISE_ENUM_CLASS(Metal);
   }
   END_ENUM_STRINGISE();
 }
@@ -521,7 +522,7 @@ void RenderDoc::Initialise()
   // cruft that we don't want cluttering output.
   // However we don't want to print in captured applications, since they may be outputting important
   // information to stdout/stderr and being piped around and processed!
-  if(IsReplayApp())
+  if(IsReplayApp() || ENABLED(OUTPUT_LOG_TO_STDOUT) || ENABLED(OUTPUT_LOG_TO_STDERR))
     RDCLOGOUTPUT();
 
   ProcessConfig();
@@ -618,7 +619,8 @@ void RenderDoc::InitialiseReplay(GlobalEnvironment env, const rdcarray<rdcstr> &
   if(env.enumerateGPUs)
   {
     m_AvailableGPUThread = Threading::CreateThread([this]() {
-      for(GraphicsAPI api : {GraphicsAPI::D3D11, GraphicsAPI::D3D12, GraphicsAPI::Vulkan})
+      for(GraphicsAPI api :
+          {GraphicsAPI::D3D11, GraphicsAPI::D3D12, GraphicsAPI::Vulkan, GraphicsAPI::Metal})
       {
         RDCDriver driverType = RDCDriver::Unknown;
 
@@ -628,6 +630,7 @@ void RenderDoc::InitialiseReplay(GlobalEnvironment env, const rdcarray<rdcstr> &
           case GraphicsAPI::D3D12: driverType = RDCDriver::D3D12; break;
           case GraphicsAPI::OpenGL: break;
           case GraphicsAPI::Vulkan: driverType = RDCDriver::Vulkan; break;
+          case GraphicsAPI::Metal: driverType = RDCDriver::Metal; break;
         }
 
         if(driverType == RDCDriver::Unknown || !HasReplayDriver(driverType))
@@ -1646,6 +1649,7 @@ DriverInformation RenderDoc::GetDriverInformation(GraphicsAPI api)
     case GraphicsAPI::D3D12: driverType = RDCDriver::D3D12; break;
     case GraphicsAPI::OpenGL: driverType = RDCDriver::OpenGL; break;
     case GraphicsAPI::Vulkan: driverType = RDCDriver::Vulkan; break;
+    case GraphicsAPI::Metal: driverType = RDCDriver::Metal; break;
   }
 
   if(driverType == RDCDriver::Unknown || !HasReplayDriver(driverType))

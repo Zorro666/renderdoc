@@ -56,10 +56,9 @@ float aspect(const QSizeF &s)
 }
 
 static QMap<QString, ShaderEncoding> encodingExtensions = {
-    {lit("hlsl"), ShaderEncoding::HLSL},
-    {lit("glsl"), ShaderEncoding::GLSL},
-    {lit("frag"), ShaderEncoding::GLSL},
-    {lit("spvasm"), ShaderEncoding::SPIRVAsm},
+    {lit("hlsl"), ShaderEncoding::HLSL}, {lit("glsl"), ShaderEncoding::GLSL},
+    {lit("frag"), ShaderEncoding::GLSL}, {lit("spvasm"), ShaderEncoding::SPIRVAsm},
+    {lit("metal"), ShaderEncoding::MSL},
 };
 
 Q_DECLARE_METATYPE(Following);
@@ -4450,6 +4449,10 @@ void TextureViewer::on_customCreate_clicked()
   else if(enc == ShaderEncoding::SPIRVAsm)
   {
     src = lit("; SPIR-V");
+  }
+  else if(enc == ShaderEncoding::MSL)
+  {
+    src = lit("// Metal SL - no template");
   }
   else
   {

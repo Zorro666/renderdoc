@@ -26,7 +26,14 @@
 
 #include "metal_types.h"
 
+#import <Metal/MTLBuffer.h>
+#import <Metal/MTLCommandBuffer.h>
+#import <Metal/MTLCommandQueue.h>
 #import <Metal/MTLDevice.h>
+#import <Metal/MTLLibrary.h>
+#import <Metal/MTLRenderCommandEncoder.h>
+#import <Metal/MTLRenderPipeline.h>
+#import <Metal/MTLTexture.h>
 
 // clang-format off
 #define DECLARE_OBJC_WRAPPED_INTERFACES(CPPTYPE)              \

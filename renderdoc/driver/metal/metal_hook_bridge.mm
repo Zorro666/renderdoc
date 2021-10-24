@@ -83,7 +83,10 @@ void MetalHook::RegisterGlobalNonHookedMetalFunctions()
 
 void MetalHook::RegisterGlobalHookedMetalFunctions()
 {
-#define METAL_FUNC(func) METAL.func = &::func;
+#define METAL_FUNC(func)                                                                          \
+  LibraryHooks::RegisterFunctionHook("Metal", FunctionHook(STRINGIZE(func), (void **)&METAL.func, \
+                                                           (void *)&METAL_EXPORT_NAME(func)));
+
   ForEachMetalSupported();
 #undef METAL_FUNC
 }

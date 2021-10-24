@@ -179,8 +179,7 @@
 
 - (nullable id<MTLCommandQueue>)newCommandQueue
 {
-  NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
-  return [self.real newCommandQueue];
+  return id<MTLCommandQueue>(self.wrappedCPP->newCommandQueue());
 }
 
 - (nullable id<MTLCommandQueue>)newCommandQueueWithMaxCommandBufferCount:(NSUInteger)maxCommandBufferCount
@@ -213,16 +212,15 @@
 
 - (nullable id<MTLBuffer>)newBufferWithLength:(NSUInteger)length options:(MTLResourceOptions)options
 {
-  NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
-  return [self.real newBufferWithLength:length options:options];
+  return id<MTLBuffer>(self.wrappedCPP->newBufferWithLength(length, (MTL::ResourceOptions)options));
 }
 
 - (nullable id<MTLBuffer>)newBufferWithBytes:(const void *)pointer
                                       length:(NSUInteger)length
                                      options:(MTLResourceOptions)options
 {
-  NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
-  return [self.real newBufferWithBytes:pointer length:length options:options];
+  return id<MTLBuffer>(
+      self.wrappedCPP->newBufferWithBytes(pointer, length, (MTL::ResourceOptions)options));
 }
 
 - (nullable id<MTLBuffer>)newBufferWithBytesNoCopy:(void *)pointer
@@ -247,8 +245,8 @@
 
 - (nullable id<MTLTexture>)newTextureWithDescriptor:(MTLTextureDescriptor *)descriptor
 {
-  NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
-  return [self.real newTextureWithDescriptor:descriptor];
+  return id<MTLTexture>(
+      self.wrappedCPP->newTextureWithDescriptor((MTL::TextureDescriptor *)descriptor));
 }
 
 - (nullable id<MTLTexture>)newTextureWithDescriptor:(MTLTextureDescriptor *)descriptor
@@ -256,8 +254,8 @@
                                               plane:(NSUInteger)plane
     API_AVAILABLE(macos(10.11), ios(11.0))
 {
-  NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
-  return [self.real newTextureWithDescriptor:descriptor iosurface:iosurface plane:plane];
+  return id<MTLTexture>(self.wrappedCPP->newTextureWithDescriptor(
+      (MTL::TextureDescriptor *)descriptor, iosurface, plane));
 }
 
 - (nullable id<MTLTexture>)newSharedTextureWithDescriptor:(MTLTextureDescriptor *)descriptor
@@ -282,8 +280,7 @@
 
 - (nullable id<MTLLibrary>)newDefaultLibrary
 {
-  NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
-  return [self.real newDefaultLibrary];
+  return id<MTLLibrary>(self.wrappedCPP->newDefaultLibrary());
 }
 
 - (nullable id<MTLLibrary>)newDefaultLibraryWithBundle:(NSBundle *)bundle
@@ -320,8 +317,8 @@
                                         options:(nullable MTLCompileOptions *)options
                                           error:(__autoreleasing NSError **)error
 {
-  NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
-  return [self.real newLibraryWithSource:source options:options error:error];
+  return (id<MTLLibrary>)self.wrappedCPP->newLibraryWithSource(
+      (NS::String *)source, (MTL::CompileOptions *)options, (NS::Error **)error);
 }
 
 - (void)newLibraryWithSource:(NSString *)source
@@ -357,8 +354,8 @@
 newRenderPipelineStateWithDescriptor:(MTLRenderPipelineDescriptor *)descriptor
                                error:(__autoreleasing NSError **)error
 {
-  NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
-  return [self.real newRenderPipelineStateWithDescriptor:descriptor error:error];
+  return id<MTLRenderPipelineState>(self.wrappedCPP->newRenderPipelineStateWithDescriptor(
+      (MTL::RenderPipelineDescriptor *)descriptor, (NS::Error **)error));
 }
 
 - (nullable id<MTLRenderPipelineState>)
