@@ -60,7 +60,11 @@ struct VkXfbQueryResult
 
 static const char *PatchedMeshOutputEntryPoint = "rdc";
 static const uint32_t MeshOutputDispatchWidth = 128;
+#if ENABLED(RDOC_APPLE)
+static uint32_t MeshOutputBufferArraySize = 16;
+#else
 static uint32_t MeshOutputBufferArraySize = 64;
+#endif    // #if ENABLED(RDOC_APPLE)
 
 // 0 = output
 // 1 = indices
