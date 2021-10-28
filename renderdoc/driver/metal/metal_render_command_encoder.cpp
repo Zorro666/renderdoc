@@ -184,10 +184,15 @@ bool WrappedMTLRenderCommandEncoder::Serialise_mtlRenderCommandEncoder_setFragme
   SERIALISE_ELEMENT_LOCAL(RenderCommandEncoder, GetResID(encoder))
       .TypedAs("MTLRenderCommandEncoder"_lit);
   SERIALISE_ELEMENT_LOCAL(Buffer, GetResID(buffer)).TypedAs("MTLBuffer"_lit);
+  void *pointer = buffer ? buffer->real_contents() : NULL;
+  uint64_t length = buffer ? buffer->real_length() : 0;
+  SERIALISE_ELEMENT_ARRAY(pointer, length);
+  SERIALISE_ELEMENT(length);
   SERIALISE_ELEMENT(offset);
   SERIALISE_ELEMENT(index);
 
   SERIALISE_CHECK_READ_ERRORS();
+  // RDCASSERT(buffer->length() == length);
 
   // TODO: implement RD MTL replay
   if(IsReplayingAndReading())
@@ -195,6 +200,8 @@ bool WrappedMTLRenderCommandEncoder::Serialise_mtlRenderCommandEncoder_setFragme
     encoder =
         (WrappedMTLRenderCommandEncoder *)GetResourceManager()->GetLiveResource(RenderCommandEncoder);
     id_MTLBuffer buffer = GetObjCWrappedResource<id_MTLBuffer>(GetResourceManager(), Buffer);
+    WrappedMTLBuffer *wrappedBuffer = GetWrapped(buffer);
+    memcpy(wrappedBuffer->real_contents(), pointer, length);
     encoder->real_setFragmentBuffer(buffer, (NSUInteger)offset, (NSUInteger)index);
   }
   return true;

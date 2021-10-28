@@ -30,6 +30,8 @@
 
 class WrappedMTLBuffer : public WrappedMTLObject
 {
+  friend WrappedMTLRenderCommandEncoder;
+
 public:
   WrappedMTLBuffer(id_MTLBuffer realMTLBuffer, ResourceId objId, WrappedMTLDevice *wrappedMTLDevice);
   WrappedMTLBuffer(WrappedMTLDevice *wrappedMTLDevice);
