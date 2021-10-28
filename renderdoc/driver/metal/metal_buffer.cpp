@@ -63,6 +63,14 @@ void *WrappedMTLBuffer::contents()
   return data;
 }
 
+NSUInteger WrappedMTLBuffer::length()
+{
+  NSUInteger length;
+  SERIALISE_TIME_CALL(length = real_length());
+
+  return length;
+}
+
 void WrappedMTLBuffer::didModifyRange(NSRange &range)
 {
   SERIALISE_TIME_CALL(real_didModifyRange(range));

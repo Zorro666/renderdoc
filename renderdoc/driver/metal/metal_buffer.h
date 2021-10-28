@@ -35,6 +35,7 @@ public:
   WrappedMTLBuffer(WrappedMTLDevice *wrappedMTLDevice);
 
   DECLARE_WRAPPED_API(void *, contents);
+  DECLARE_WRAPPED_API(NSUInteger, length);
   DECLARE_WRAPPED_API(void, didModifyRange, NSRange &range);
 
   enum

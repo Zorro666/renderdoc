@@ -62,6 +62,12 @@ void *WrappedMTLBuffer::real_contents()
   return [realMTLBuffer contents];
 }
 
+NSUInteger WrappedMTLBuffer::real_length()
+{
+  id_MTLBuffer realMTLBuffer = Unwrap<id_MTLBuffer>(this);
+  return [realMTLBuffer length];
+}
+
 void WrappedMTLBuffer::real_didModifyRange(NSRange &range)
 {
   id_MTLBuffer realMTLBuffer = Unwrap<id_MTLBuffer>(this);
