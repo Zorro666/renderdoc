@@ -57,3 +57,15 @@ const char *MTL::Get_localizedFailureReason(NSError *error)
   NSString *nsString = [error localizedFailureReason];
   return GetUTF8CString(nsString);
 }
+
+void MTL::NSLog(const char *cStr)
+{
+  if(cStr == NULL)
+  {
+    ::NSLog(@"(null)");
+    return;
+  }
+  NSString *nsString = NewNSStringFromUTF8(cStr);
+  ::NSLog(@"%@", nsString);
+  nsString = nil;
+}

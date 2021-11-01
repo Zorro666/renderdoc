@@ -31,4 +31,5 @@ NSString *NewNSStringFromUTF8(const char *cStr);
 const char *Get_localizedDescription(NSError *error);
 const char *Get_localizedRecoverySuggestion(NSError *error);
 const char *Get_localizedFailureReason(NSError *error);
+void NSLog(const char *cStr);
 }
