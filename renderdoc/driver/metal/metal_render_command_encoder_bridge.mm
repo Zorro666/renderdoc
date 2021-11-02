@@ -281,13 +281,57 @@ void WrappedMTLRenderCommandEncoder::real_endEncoding()
                                                         withRange:range];
 }
 
+- (void)setVertexVisibleFunctionTable:(nullable id<MTLVisibleFunctionTable>)functionTable
+                        atBufferIndex:(NSUInteger)bufferIndex API_AVAILABLE(macos(12.0), ios(15.0))
+{
+  NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
+  return [self.realMTLRenderCommandEncoder setVertexVisibleFunctionTable:functionTable
+                                                           atBufferIndex:bufferIndex];
+}
+
+- (void)setVertexVisibleFunctionTables:
+            (const id<MTLVisibleFunctionTable> __nullable[__nonnull])functionTables
+                       withBufferRange:(NSRange)range API_AVAILABLE(macos(12.0), ios(15.0))
+{
+  NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
+  return [self.realMTLRenderCommandEncoder setVertexVisibleFunctionTables:functionTables
+                                                          withBufferRange:range];
+}
+
+- (void)setVertexIntersectionFunctionTable:
+            (nullable id<MTLIntersectionFunctionTable>)intersectionFunctionTable
+                             atBufferIndex:(NSUInteger)bufferIndex
+    API_AVAILABLE(macos(12.0), ios(15.0))
+{
+  NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
+  return [self.realMTLRenderCommandEncoder setVertexIntersectionFunctionTable:intersectionFunctionTable
+                                                                atBufferIndex:bufferIndex];
+}
+
+- (void)setVertexIntersectionFunctionTables:
+            (const id<MTLIntersectionFunctionTable> __nullable[__nonnull])intersectionFunctionTable
+                            withBufferRange:(NSRange)range API_AVAILABLE(macos(12.0), ios(15.0))
+{
+  NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
+  return [self.realMTLRenderCommandEncoder setVertexIntersectionFunctionTables:intersectionFunctionTable
+                                                               withBufferRange:range];
+}
+
+- (void)setVertexAccelerationStructure:(nullable id<MTLAccelerationStructure>)accelerationStructure
+                         atBufferIndex:(NSUInteger)bufferIndex API_AVAILABLE(macos(12.0), ios(15.0))
+{
+  NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
+  return [self.realMTLRenderCommandEncoder setVertexAccelerationStructure:accelerationStructure
+                                                            atBufferIndex:bufferIndex];
+}
+
 - (void)setViewport:(MTLViewport)viewport
 {
   return self.wrappedMTLRenderCommandEncoder->setViewport(viewport);
 }
 
 - (void)setViewports:(const MTLViewport[__nonnull])viewports
-               count:(NSUInteger)count API_AVAILABLE(macos(10.13), ios(12.0))API_UNAVAILABLE(tvos)
+               count:(NSUInteger)count API_AVAILABLE(macos(10.13), ios(12.0), tvos(14.5))
 {
   NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
   return [self.realMTLRenderCommandEncoder setViewports:viewports count:count];
@@ -334,7 +378,7 @@ void WrappedMTLRenderCommandEncoder::real_endEncoding()
 }
 
 - (void)setScissorRects:(const MTLScissorRect[__nonnull])scissorRects
-                  count:(NSUInteger)count API_AVAILABLE(macos(10.13), ios(12.0))API_UNAVAILABLE(tvos)
+                  count:(NSUInteger)count API_AVAILABLE(macos(10.13), ios(12.0), tvos(14.5))
 {
   NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
   return [self.realMTLRenderCommandEncoder setScissorRects:scissorRects count:count];
@@ -426,6 +470,53 @@ void WrappedMTLRenderCommandEncoder::real_endEncoding()
                                                        lodMinClamps:lodMinClamps
                                                        lodMaxClamps:lodMaxClamps
                                                           withRange:range];
+}
+
+- (void)setFragmentVisibleFunctionTable:(nullable id<MTLVisibleFunctionTable>)functionTable
+                          atBufferIndex:(NSUInteger)bufferIndex API_AVAILABLE(macos(12.0), ios(15.0))
+{
+  NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
+  return [self.realMTLRenderCommandEncoder setFragmentVisibleFunctionTable:functionTable
+                                                             atBufferIndex:bufferIndex];
+}
+
+- (void)setFragmentVisibleFunctionTables:
+            (const id<MTLVisibleFunctionTable> __nullable[__nonnull])functionTables
+                         withBufferRange:(NSRange)range API_AVAILABLE(macos(12.0), ios(15.0))
+{
+  NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
+  return [self.realMTLRenderCommandEncoder setFragmentVisibleFunctionTables:functionTables
+                                                            withBufferRange:range];
+}
+
+- (void)setFragmentIntersectionFunctionTable:
+            (nullable id<MTLIntersectionFunctionTable>)intersectionFunctionTable
+                               atBufferIndex:(NSUInteger)bufferIndex
+    API_AVAILABLE(macos(12.0), ios(15.0))
+{
+  NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
+  return [self.realMTLRenderCommandEncoder
+      setFragmentIntersectionFunctionTable:intersectionFunctionTable
+                             atBufferIndex:bufferIndex];
+}
+
+- (void)setFragmentIntersectionFunctionTables:
+            (const id<MTLIntersectionFunctionTable> __nullable[__nonnull])intersectionFunctionTable
+                              withBufferRange:(NSRange)range API_AVAILABLE(macos(12.0), ios(15.0))
+{
+  NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
+  return [self.realMTLRenderCommandEncoder
+      setFragmentIntersectionFunctionTables:intersectionFunctionTable
+                            withBufferRange:range];
+}
+
+- (void)setFragmentAccelerationStructure:(nullable id<MTLAccelerationStructure>)accelerationStructure
+                           atBufferIndex:(NSUInteger)bufferIndex
+    API_AVAILABLE(macos(12.0), ios(15.0))
+{
+  NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
+  return [self.realMTLRenderCommandEncoder setFragmentAccelerationStructure:accelerationStructure
+                                                              atBufferIndex:bufferIndex];
 }
 
 - (void)setBlendColorRed:(float)red green:(float)green blue:(float)blue alpha:(float)alpha
@@ -676,8 +767,8 @@ void WrappedMTLRenderCommandEncoder::real_endEncoding()
           patchIndexBuffer:(nullable id<MTLBuffer>)patchIndexBuffer
     patchIndexBufferOffset:(NSUInteger)patchIndexBufferOffset
             indirectBuffer:(id<MTLBuffer>)indirectBuffer
-      indirectBufferOffset:(NSUInteger)indirectBufferOffset API_AVAILABLE(macos(10.12), ios(12.0))
-                               API_UNAVAILABLE(tvos)
+      indirectBufferOffset:(NSUInteger)indirectBufferOffset
+    API_AVAILABLE(macos(10.12), ios(12.0), tvos(14.5))
 {
   NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
   return [self.realMTLRenderCommandEncoder drawPatches:numberOfPatchControlPoints
@@ -716,7 +807,7 @@ void WrappedMTLRenderCommandEncoder::real_endEncoding()
     controlPointIndexBufferOffset:(NSUInteger)controlPointIndexBufferOffset
                    indirectBuffer:(id<MTLBuffer>)indirectBuffer
              indirectBufferOffset:(NSUInteger)indirectBufferOffset
-    API_AVAILABLE(macos(10.12), ios(12.0))API_UNAVAILABLE(tvos)
+    API_AVAILABLE(macos(10.12), ios(12.0), tvos(14.5))
 {
   NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
   return [self.realMTLRenderCommandEncoder drawIndexedPatches:numberOfPatchControlPoints
@@ -730,8 +821,8 @@ void WrappedMTLRenderCommandEncoder::real_endEncoding()
 
 - (void)setTileBytes:(const void *)bytes
               length:(NSUInteger)length
-             atIndex:(NSUInteger)index API_AVAILABLE(macos(11.0), macCatalyst(14.0), ios(11.0))
-                         API_UNAVAILABLE(tvos)
+             atIndex:(NSUInteger)index
+    API_AVAILABLE(macos(11.0), macCatalyst(14.0), ios(11.0), tvos(14.5))
 {
   NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
   return [self.realMTLRenderCommandEncoder setTileBytes:bytes length:length atIndex:index];
@@ -739,8 +830,8 @@ void WrappedMTLRenderCommandEncoder::real_endEncoding()
 
 - (void)setTileBuffer:(nullable id<MTLBuffer>)buffer
                offset:(NSUInteger)offset
-              atIndex:(NSUInteger)index API_AVAILABLE(macos(11.0), macCatalyst(14.0), ios(11.0))
-                          API_UNAVAILABLE(tvos)
+              atIndex:(NSUInteger)index
+    API_AVAILABLE(macos(11.0), macCatalyst(14.0), ios(11.0), tvos(14.5))
 {
   NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
   return [self.realMTLRenderCommandEncoder setTileBuffer:buffer offset:offset atIndex:index];
@@ -748,7 +839,7 @@ void WrappedMTLRenderCommandEncoder::real_endEncoding()
 
 - (void)setTileBufferOffset:(NSUInteger)offset
                     atIndex:(NSUInteger)index
-    API_AVAILABLE(macos(11.0), macCatalyst(14.0), ios(11.0))API_UNAVAILABLE(tvos)
+    API_AVAILABLE(macos(11.0), macCatalyst(14.0), ios(11.0), tvos(14.5))
 {
   NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
   return [self.realMTLRenderCommandEncoder setTileBufferOffset:offset atIndex:index];
@@ -756,24 +847,24 @@ void WrappedMTLRenderCommandEncoder::real_endEncoding()
 
 - (void)setTileBuffers:(const id<MTLBuffer> __nullable[__nonnull])buffers
                offsets:(const NSUInteger[__nonnull])offsets
-             withRange:(NSRange)range API_AVAILABLE(macos(11.0), macCatalyst(14.0), ios(11.0))
-                           API_UNAVAILABLE(tvos)
+             withRange:(NSRange)range
+    API_AVAILABLE(macos(11.0), macCatalyst(14.0), ios(11.0), tvos(14.5))
 {
   NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
   return [self.realMTLRenderCommandEncoder setTileBuffers:buffers offsets:offsets withRange:range];
 }
 
 - (void)setTileTexture:(nullable id<MTLTexture>)texture
-               atIndex:(NSUInteger)index API_AVAILABLE(macos(11.0), macCatalyst(14.0), ios(11.0))
-                           API_UNAVAILABLE(tvos)
+               atIndex:(NSUInteger)index
+    API_AVAILABLE(macos(11.0), macCatalyst(14.0), ios(11.0), tvos(14.5))
 {
   NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
   return [self.realMTLRenderCommandEncoder setTileTexture:texture atIndex:index];
 }
 
 - (void)setTileTextures:(const id<MTLTexture> __nullable[__nonnull])textures
-              withRange:(NSRange)range API_AVAILABLE(macos(11.0), macCatalyst(14.0), ios(11.0))
-                            API_UNAVAILABLE(tvos)
+              withRange:(NSRange)range
+    API_AVAILABLE(macos(11.0), macCatalyst(14.0), ios(11.0), tvos(14.5))
 {
   NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
   return [self.realMTLRenderCommandEncoder setTileTextures:textures withRange:range];
@@ -781,15 +872,15 @@ void WrappedMTLRenderCommandEncoder::real_endEncoding()
 
 - (void)setTileSamplerState:(nullable id<MTLSamplerState>)sampler
                     atIndex:(NSUInteger)index
-    API_AVAILABLE(macos(11.0), macCatalyst(14.0), ios(11.0))API_UNAVAILABLE(tvos)
+    API_AVAILABLE(macos(11.0), macCatalyst(14.0), ios(11.0), tvos(14.5))
 {
   NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
   return [self.realMTLRenderCommandEncoder setTileSamplerState:sampler atIndex:index];
 }
 
 - (void)setTileSamplerStates:(const id<MTLSamplerState> __nullable[__nonnull])samplers
-                   withRange:(NSRange)range API_AVAILABLE(macos(11.0), macCatalyst(14.0), ios(11.0))
-                                 API_UNAVAILABLE(tvos)
+                   withRange:(NSRange)range
+    API_AVAILABLE(macos(11.0), macCatalyst(14.0), ios(11.0), tvos(14.5))
 {
   NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
   return [self.realMTLRenderCommandEncoder setTileSamplerStates:samplers withRange:range];
@@ -799,7 +890,7 @@ void WrappedMTLRenderCommandEncoder::real_endEncoding()
                 lodMinClamp:(float)lodMinClamp
                 lodMaxClamp:(float)lodMaxClamp
                     atIndex:(NSUInteger)index
-    API_AVAILABLE(macos(11.0), macCatalyst(14.0), ios(11.0))API_UNAVAILABLE(tvos)
+    API_AVAILABLE(macos(11.0), macCatalyst(14.0), ios(11.0), tvos(14.5))
 {
   NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
   return [self.realMTLRenderCommandEncoder setTileSamplerState:sampler
@@ -811,8 +902,8 @@ void WrappedMTLRenderCommandEncoder::real_endEncoding()
 - (void)setTileSamplerStates:(const id<MTLSamplerState> __nullable[__nonnull])samplers
                 lodMinClamps:(const float[__nonnull])lodMinClamps
                 lodMaxClamps:(const float[__nonnull])lodMaxClamps
-                   withRange:(NSRange)range API_AVAILABLE(ios(11.0), macos(11.0), macCatalyst(14.0))
-                                 API_UNAVAILABLE(tvos)
+                   withRange:(NSRange)range
+    API_AVAILABLE(ios(11.0), tvos(14.5), macos(11.0), macCatalyst(14.0))
 {
   NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
   return [self.realMTLRenderCommandEncoder setTileSamplerStates:samplers
@@ -821,8 +912,51 @@ void WrappedMTLRenderCommandEncoder::real_endEncoding()
                                                       withRange:range];
 }
 
-- (void)dispatchThreadsPerTile:(MTLSize)threadsPerTile API_AVAILABLE(macos(11.0), macCatalyst(14.0))
-                                   API_UNAVAILABLE(tvos)
+- (void)setTileVisibleFunctionTable:(nullable id<MTLVisibleFunctionTable>)functionTable
+                      atBufferIndex:(NSUInteger)bufferIndex API_AVAILABLE(macos(12.0), ios(15.0))
+{
+  NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
+  return [self.realMTLRenderCommandEncoder setTileVisibleFunctionTable:functionTable
+                                                         atBufferIndex:bufferIndex];
+}
+
+- (void)setTileVisibleFunctionTables:(const id<MTLVisibleFunctionTable> __nullable[__nonnull])functionTables
+                     withBufferRange:(NSRange)range API_AVAILABLE(macos(12.0), ios(15.0))
+{
+  NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
+  return [self.realMTLRenderCommandEncoder setTileVisibleFunctionTables:functionTables
+                                                        withBufferRange:range];
+}
+
+- (void)setTileIntersectionFunctionTable:
+            (nullable id<MTLIntersectionFunctionTable>)intersectionFunctionTable
+                           atBufferIndex:(NSUInteger)bufferIndex
+    API_AVAILABLE(macos(12.0), ios(15.0))
+{
+  NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
+  return [self.realMTLRenderCommandEncoder setTileIntersectionFunctionTable:intersectionFunctionTable
+                                                              atBufferIndex:bufferIndex];
+}
+
+- (void)setTileIntersectionFunctionTables:
+            (const id<MTLIntersectionFunctionTable> __nullable[__nonnull])intersectionFunctionTable
+                          withBufferRange:(NSRange)range API_AVAILABLE(macos(12.0), ios(15.0))
+{
+  NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
+  return [self.realMTLRenderCommandEncoder setTileIntersectionFunctionTables:intersectionFunctionTable
+                                                             withBufferRange:range];
+}
+
+- (void)setTileAccelerationStructure:(nullable id<MTLAccelerationStructure>)accelerationStructure
+                       atBufferIndex:(NSUInteger)bufferIndex API_AVAILABLE(macos(12.0), ios(15.0))
+{
+  NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
+  return [self.realMTLRenderCommandEncoder setTileAccelerationStructure:accelerationStructure
+                                                          atBufferIndex:bufferIndex];
+}
+
+- (void)dispatchThreadsPerTile:(MTLSize)threadsPerTile
+    API_AVAILABLE(macos(11.0), macCatalyst(14.0), ios(11.0), tvos(14.5))
 {
   NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
   return [self.realMTLRenderCommandEncoder dispatchThreadsPerTile:threadsPerTile];
@@ -830,8 +964,8 @@ void WrappedMTLRenderCommandEncoder::real_endEncoding()
 
 - (void)setThreadgroupMemoryLength:(NSUInteger)length
                             offset:(NSUInteger)offset
-                           atIndex:(NSUInteger)index API_AVAILABLE(macos(11.0), macCatalyst(14.0))
-                                       API_UNAVAILABLE(tvos)
+                           atIndex:(NSUInteger)index
+    API_AVAILABLE(macos(11.0), macCatalyst(14.0), ios(11.0), tvos(14.5))
 {
   NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
   return [self.realMTLRenderCommandEncoder setThreadgroupMemoryLength:length

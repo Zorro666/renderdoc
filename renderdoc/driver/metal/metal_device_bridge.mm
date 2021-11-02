@@ -231,6 +231,22 @@ id_MTLTexture WrappedMTLDevice::real_newTextureWithDescriptor(MTLTextureDescript
   return realMTLDevice;
 }
 
+- (NSMethodSignature *)methodSignatureForSelector:(SEL)aSelector
+{
+  id fwd = self.realMTLDevice;
+  return [fwd methodSignatureForSelector:aSelector];
+}
+
+- (void)forwardInvocation:(NSInvocation *)invocation
+{
+  SEL aSelector = [invocation selector];
+
+  if([self.realMTLDevice respondsToSelector:aSelector])
+    [invocation invokeWithTarget:self.realMTLDevice];
+  else
+    [super forwardInvocation:invocation];
+}
+
 // MTLDevice
 - (NSString *)name
 {
@@ -387,98 +403,6 @@ id_MTLTexture WrappedMTLDevice::real_newTextureWithDescriptor(MTLTextureDescript
   return self.realMTLDevice.currentAllocatedSize;
 }
 
-- (NSUInteger)maxThreadgroupMemoryLength
-{
-  return self.realMTLDevice.maxThreadgroupMemoryLength;
-}
-
-- (NSUInteger)maxArgumentBufferSamplerCount
-{
-  return self.realMTLDevice.maxArgumentBufferSamplerCount;
-}
-
-- (BOOL)areProgrammableSamplePositionsSupported
-{
-  return self.realMTLDevice.programmableSamplePositionsSupported;
-}
-
-- (NSUInteger)maxBufferLength
-{
-  return self.realMTLDevice.maxBufferLength;
-}
-
-- (NSArray<id<MTLCounterSet>> *)counterSets
-{
-  return self.realMTLDevice.counterSets;
-}
-
-- (uint64_t)peerGroupID
-{
-  return self.realMTLDevice.peerGroupID;
-}
-
-- (uint32_t)peerIndex
-{
-  return self.realMTLDevice.peerIndex;
-}
-
-- (uint32_t)peerCount
-{
-  return self.realMTLDevice.peerCount;
-}
-
-- (BOOL)supportsDynamicLibraries
-{
-  if(@available(macOS 11.0, *))
-  {
-    return self.realMTLDevice.supportsDynamicLibraries;
-  }
-  else
-  {
-    // Fallback on earlier versions
-    return NO;
-  }
-}
-
-- (NSUInteger)sparseTileSizeInBytes
-{
-  if(@available(macOS 11.0, *))
-  {
-    return self.realMTLDevice.sparseTileSizeInBytes;
-  }
-  else
-  {
-    // Fallback on earlier versions
-    return 0;
-  }
-}
-
-- (BOOL)supportsRaytracing
-{
-  if(@available(macOS 11.0, *))
-  {
-    return self.realMTLDevice.supportsRaytracing;
-  }
-  else
-  {
-    // Fallback on earlier versions
-    return NO;
-  }
-}
-
-- (BOOL)supportsFunctionPointers
-{
-  if(@available(macOS 11.0, *))
-  {
-    return self.realMTLDevice.supportsFunctionPointers;
-  }
-  else
-  {
-    // Fallback on earlier versions
-    return NO;
-  }
-}
-
 - (nullable id<MTLCommandQueue>)newCommandQueue
 {
   return self.wrappedMTLDevice->newCommandQueue();
@@ -629,6 +553,23 @@ id_MTLTexture WrappedMTLDevice::real_newTextureWithDescriptor(MTLTextureDescript
                                 completionHandler:completionHandler];
 }
 
+- (nullable id<MTLLibrary>)newLibraryWithStitchedDescriptor:(MTLStitchedLibraryDescriptor *)descriptor
+                                                      error:(__autoreleasing NSError **)error
+    API_AVAILABLE(macos(12.0), ios(15.0))
+{
+  NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
+  return [self.realMTLDevice newLibraryWithStitchedDescriptor:descriptor error:error];
+}
+
+- (void)newLibraryWithStitchedDescriptor:(MTLStitchedLibraryDescriptor *)descriptor
+                       completionHandler:(MTLNewLibraryCompletionHandler)completionHandler
+    API_AVAILABLE(macos(12.0), ios(15.0))
+{
+  NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
+  return [self.realMTLDevice newLibraryWithStitchedDescriptor:descriptor
+                                            completionHandler:completionHandler];
+}
+
 - (nullable id<MTLRenderPipelineState>)
 newRenderPipelineStateWithDescriptor:(MTLRenderPipelineDescriptor *)descriptor
                                error:(__autoreleasing NSError **)error
@@ -777,7 +718,7 @@ newRenderPipelineStateWithTileDescriptor:(MTLTileRenderPipelineDescriptor *)desc
                                  options:(MTLPipelineOption)options
                               reflection:(MTLAutoreleasedRenderPipelineReflection *__nullable)reflection
                                    error:(__autoreleasing NSError **)error
-    API_AVAILABLE(macos(11.0), macCatalyst(14.0), ios(11.0))API_UNAVAILABLE(tvos)
+    API_AVAILABLE(macos(11.0), macCatalyst(14.0), ios(11.0), tvos(14.5))
 {
   NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
   return [self.realMTLDevice newRenderPipelineStateWithTileDescriptor:descriptor
@@ -790,12 +731,27 @@ newRenderPipelineStateWithTileDescriptor:(MTLTileRenderPipelineDescriptor *)desc
                                          options:(MTLPipelineOption)options
                                completionHandler:
                                    (MTLNewRenderPipelineStateWithReflectionCompletionHandler)completionHandler
-    API_AVAILABLE(macos(11.0), macCatalyst(14.0), ios(11.0))API_UNAVAILABLE(tvos)
+    API_AVAILABLE(macos(11.0), macCatalyst(14.0), ios(11.0), tvos(14.5))
 {
   NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
   return [self.realMTLDevice newRenderPipelineStateWithTileDescriptor:descriptor
                                                               options:options
                                                     completionHandler:completionHandler];
+}
+
+- (NSUInteger)maxThreadgroupMemoryLength
+{
+  return self.realMTLDevice.maxThreadgroupMemoryLength;
+}
+
+- (NSUInteger)maxArgumentBufferSamplerCount
+{
+  return self.realMTLDevice.maxArgumentBufferSamplerCount;
+}
+
+- (BOOL)areProgrammableSamplePositionsSupported
+{
+  return self.realMTLDevice.programmableSamplePositionsSupported;
 }
 
 - (void)getDefaultSamplePositions:(MTLSamplePosition *)positions
@@ -858,6 +814,21 @@ newIndirectCommandBufferWithDescriptor:(MTLIndirectCommandBufferDescriptor *)des
   return [self.realMTLDevice newSharedEventWithHandle:sharedEventHandle];
 }
 
+- (uint64_t)peerGroupID
+{
+  return self.realMTLDevice.peerGroupID;
+}
+
+- (uint32_t)peerIndex
+{
+  return self.realMTLDevice.peerIndex;
+}
+
+- (uint32_t)peerCount
+{
+  return self.realMTLDevice.peerCount;
+}
+
 - (MTLSize)sparseTileSizeWithTextureType:(MTLTextureType)textureType
                              pixelFormat:(MTLPixelFormat)pixelFormat
                              sampleCount:(NSUInteger)sampleCount
@@ -867,6 +838,19 @@ newIndirectCommandBufferWithDescriptor:(MTLIndirectCommandBufferDescriptor *)des
   return [self.realMTLDevice sparseTileSizeWithTextureType:textureType
                                                pixelFormat:pixelFormat
                                                sampleCount:sampleCount];
+}
+
+- (NSUInteger)sparseTileSizeInBytes
+{
+  if(@available(macOS 11.0, *))
+  {
+    return self.realMTLDevice.sparseTileSizeInBytes;
+  }
+  else
+  {
+    // Fallback on earlier versions
+    return 0;
+  }
 }
 
 - (void)convertSparsePixelRegions:(const MTLRegion[_Nonnull])pixelRegions
@@ -895,6 +879,16 @@ newIndirectCommandBufferWithDescriptor:(MTLIndirectCommandBufferDescriptor *)des
                                        toPixelRegions:pixelRegions
                                          withTileSize:tileSize
                                            numRegions:numRegions];
+}
+
+- (NSUInteger)maxBufferLength
+{
+  return self.realMTLDevice.maxBufferLength;
+}
+
+- (NSArray<id<MTLCounterSet>> *)counterSets
+{
+  return self.realMTLDevice.counterSets;
 }
 
 - (nullable id<MTLCounterSampleBuffer>)newCounterSampleBufferWithDescriptor:
@@ -927,6 +921,24 @@ newIndirectCommandBufferWithDescriptor:(MTLIndirectCommandBufferDescriptor *)des
   return [self.realMTLDevice supportsVertexAmplificationCount:count];
 }
 
+- (BOOL)supportsDynamicLibraries
+{
+  if(@available(macOS 11.0, *))
+  {
+    return self.realMTLDevice.supportsDynamicLibraries;
+  }
+  else
+  {
+    // Fallback on earlier versions
+    return NO;
+  }
+}
+
+- (BOOL)supportsRenderDynamicLibraries API_AVAILABLE(macos(12.0), ios(15.0))
+{
+  return self.realMTLDevice.supportsRenderDynamicLibraries;
+}
+
 - (nullable id<MTLDynamicLibrary>)newDynamicLibrary:(id<MTLLibrary>)library
                                               error:(NSError **)error
     API_AVAILABLE(macos(11.0), ios(14.0))
@@ -951,6 +963,19 @@ newIndirectCommandBufferWithDescriptor:(MTLIndirectCommandBufferDescriptor *)des
   return [self.realMTLDevice newBinaryArchiveWithDescriptor:descriptor error:error];
 }
 
+- (BOOL)supportsRaytracing
+{
+  if(@available(macOS 11.0, *))
+  {
+    return self.realMTLDevice.supportsRaytracing;
+  }
+  else
+  {
+    // Fallback on earlier versions
+    return NO;
+  }
+}
+
 - (MTLAccelerationStructureSizes)accelerationStructureSizesWithDescriptor:
     (MTLAccelerationStructureDescriptor *)descriptor API_AVAILABLE(macos(11.0), ios(14.0))
 {
@@ -972,20 +997,32 @@ newIndirectCommandBufferWithDescriptor:(MTLIndirectCommandBufferDescriptor *)des
   return [self.realMTLDevice newAccelerationStructureWithDescriptor:descriptor];
 }
 
-- (NSMethodSignature *)methodSignatureForSelector:(SEL)aSelector
+- (BOOL)supportsFunctionPointers
 {
-  id fwd = self.realMTLDevice;
-  return [fwd methodSignatureForSelector:aSelector];
+  if(@available(macOS 11.0, *))
+  {
+    return self.realMTLDevice.supportsFunctionPointers;
+  }
+  else
+  {
+    // Fallback on earlier versions
+    return NO;
+  }
 }
 
-- (void)forwardInvocation:(NSInvocation *)invocation
+- (BOOL)supportsFunctionPointersFromRender API_AVAILABLE(macos(12.0), ios(15.0))
 {
-  SEL aSelector = [invocation selector];
+  return self.realMTLDevice.supportsFunctionPointersFromRender;
+}
 
-  if([self.realMTLDevice respondsToSelector:aSelector])
-    [invocation invokeWithTarget:self.realMTLDevice];
-  else
-    [super forwardInvocation:invocation];
+- (BOOL)supportsRaytracingFromRender API_AVAILABLE(macos(12.0), ios(15.0))
+{
+  return self.realMTLDevice.supportsRaytracingFromRender;
+}
+
+- (BOOL)supportsPrimitiveMotionBlur API_AVAILABLE(macos(11.0), ios(14.0))
+{
+  return self.realMTLDevice.supportsPrimitiveMotionBlur;
 }
 
 @end

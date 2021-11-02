@@ -135,9 +135,49 @@ NSUInteger WrappedMTLRenderPipelineState::real_imageblockMemoryLengthForDimensio
 }
 
 - (NSUInteger)imageblockMemoryLengthForDimensions:(MTLSize)imageblockDimensions
-    API_AVAILABLE(macos(11.0), macCatalyst(14.0), ios(11.0))API_UNAVAILABLE(tvos)
+    API_AVAILABLE(macos(11.0), macCatalyst(14.0), ios(11.0), tvos(14.5))
 {
   return self.wrappedMTLRenderPipelineState->imageblockMemoryLengthForDimensions(imageblockDimensions);
+}
+
+- (nullable id<MTLFunctionHandle>)functionHandleWithFunction:(id<MTLFunction>)function
+                                                       stage:(MTLRenderStages)stage
+    API_AVAILABLE(macos(12.0), ios(15.0))
+{
+  NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
+  return [self.realMTLRenderPipelineState functionHandleWithFunction:function stage:stage];
+}
+
+- (nullable id<MTLVisibleFunctionTable>)newVisibleFunctionTableWithDescriptor:
+                                            (MTLVisibleFunctionTableDescriptor *__nonnull)descriptor
+                                                                        stage:(MTLRenderStages)stage
+    API_AVAILABLE(macos(12.0), ios(15.0))
+{
+  NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
+  return [self.realMTLRenderPipelineState newVisibleFunctionTableWithDescriptor:descriptor
+                                                                          stage:stage];
+}
+
+- (nullable id<MTLIntersectionFunctionTable>)
+newIntersectionFunctionTableWithDescriptor:(MTLIntersectionFunctionTableDescriptor *_Nonnull)descriptor
+                                     stage:(MTLRenderStages)stage
+    API_AVAILABLE(macos(12.0), ios(15.0))
+{
+  NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
+  return [self.realMTLRenderPipelineState newIntersectionFunctionTableWithDescriptor:descriptor
+                                                                               stage:stage];
+}
+
+- (nullable id<MTLRenderPipelineState>)
+newRenderPipelineStateWithAdditionalBinaryFunctions:
+    (nonnull MTLRenderPipelineFunctionsDescriptor *)additionalBinaryFunctions
+                                              error:(__autoreleasing NSError **)error
+    API_AVAILABLE(macos(12.0), ios(15.0))
+{
+  NSLog(@"Not hooked %@", NSStringFromSelector(_cmd));
+  return [self.realMTLRenderPipelineState
+      newRenderPipelineStateWithAdditionalBinaryFunctions:additionalBinaryFunctions
+                                                    error:error];
 }
 
 @end
