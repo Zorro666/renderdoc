@@ -60,7 +60,7 @@ enum NSUInteger_objc : uint64_t
 struct id_NSObject
 {
   id_NSObject(void *i) : m_Ptr(i) {}
-  operator id<NSObject>() { return (id<NSObject>)m_Ptr; }
+  operator id<NSObject>() { return (__bridge id<NSObject>)m_Ptr; }
 private:
   void *m_Ptr;
 };
@@ -159,16 +159,16 @@ const uint32_t MAX_RENDER_PASS_COLOR_ATTACHMENTS = 8;
 
 #if defined(__OBJC__)
 
-#define DECLARE_IDWRAPPED_PROTOCOL(TYPE)                  \
-  struct id_##TYPE                                        \
-  {                                                       \
-    id_##TYPE() : m_Ptr(NULL) {}                          \
-    id_##TYPE(id_NSObject i) : m_Ptr((void *)i) {}        \
-    id_##TYPE(id<TYPE> i) : m_Ptr((void *)i) {}           \
-    operator id<TYPE>() { return (id<TYPE>)m_Ptr; }       \
-    operator id_NSObject() { return (id_NSObject)m_Ptr; } \
-  private:                                                \
-    void *m_Ptr;                                          \
+#define DECLARE_IDWRAPPED_PROTOCOL(TYPE)                           \
+  struct id_##TYPE                                                 \
+  {                                                                \
+    id_##TYPE() : m_Ptr(NULL) {}                                   \
+    id_##TYPE(id_NSObject i) : m_Ptr((__bridge void *)i) {}        \
+    id_##TYPE(id<TYPE> i) : m_Ptr((__bridge void *)i) {}           \
+    operator id<TYPE>() { return (__bridge id<TYPE>)m_Ptr; }       \
+    operator id_NSObject() { return (__bridge id_NSObject)m_Ptr; } \
+  private:                                                         \
+    void *m_Ptr;                                                   \
   };
 
 #define DECLARE_METAL_ENUM(TYPE) enum TYPE##_objc : uint64_t;
