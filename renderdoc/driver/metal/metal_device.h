@@ -360,4 +360,5 @@ void Get_defaultLibraryData(const void **pData, uint32_t *bytesCount);
 void Get_LayerSize(void *layerHandle, int &width, int &height);
 void Set_LayerSize(void *layerHandle, int w, int h);
 id_MTLTexture Get_texture(id_CAMetalDrawable drawable);
+void ReleaseDrawable(id_CAMetalDrawable &drawable);
 };

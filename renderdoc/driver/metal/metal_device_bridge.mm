@@ -36,11 +36,18 @@ void getMetalLayerSize(void *layerHandle, int &width, int &height);
 
 id_MTLTexture MTL::Get_texture(id_CAMetalDrawable drawable)
 {
-  id<CAMetalDrawable> metalDrawable(drawable);
   // TODO: this is likely to be an unwrapped texture
-  id_MTLTexture texture = metalDrawable.texture;
+  id_MTLTexture texture = [drawable texture];
   RDCASSERT([texture isKindOfClass:[ObjCWrappedMTLTexture class]]);
   return texture;
+}
+
+void MTL::ReleaseDrawable(id_CAMetalDrawable &drawable)
+{
+  if(drawable == nil)
+    return;
+  [drawable release];
+  drawable = nil;
 }
 
 void MTL::Get_defaultLibraryData(const void **pData, uint32_t *bytesCount)
