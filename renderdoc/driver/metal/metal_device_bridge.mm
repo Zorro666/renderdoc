@@ -60,6 +60,7 @@ void MTL::Get_defaultLibraryData(const void **pData, uint32_t *bytesCount)
   NSData *nsData = (NSData *)data;
   *pData = nsData.bytes;
   *bytesCount = (uint32_t)nsData.length;
+  dispatch_release(data);
 }
 
 void MTL::Get_LayerSize(void *layerHandle, int &width, int &height)
@@ -116,6 +117,7 @@ id_MTLLibrary WrappedMTLDevice::CreateMTLLibrary(const void *pData, uint32_t byt
   NSError *error;
   id_MTLDevice realMTLDevice = Unwrap<id_MTLDevice>(this);
   id_MTLLibrary library = [realMTLDevice newLibraryWithData:data error:&error];
+  dispatch_release(data);
   return library;
 }
 
@@ -179,7 +181,7 @@ id_MTLRenderPipelineState WrappedMTLDevice::real_newRenderPipelineStateWithDescr
   id_MTLRenderPipelineState realMTLRenderPipelineState =
       [realDevice newRenderPipelineStateWithDescriptor:realDescriptor error:error];
 
-  [realDescriptor dealloc];
+  [realDescriptor release];
 
   return realMTLRenderPipelineState;
 }
