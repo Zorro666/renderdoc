@@ -1199,6 +1199,10 @@ void MetalReplay::FlipOutputWindow(uint64_t id)
     commandBuffer->presentDrawable((id_MTLDrawable)outw.drawable);
   }
   m_pDriver->SubmitCmds();
+  if(commandBuffer)
+  {
+    MTL::ReleaseDrawable(outw.drawable);
+  }
   m_pDriver->FlushQ();
 }
 
