@@ -38,7 +38,7 @@
   class WrappedMTL##CPPTYPE;                                         \
   extern WrappedMTL##CPPTYPE *GetWrapped(MTL::CPPTYPE *objCWrapped); \
   extern MTL::CPPTYPE *GetReal(MTL::CPPTYPE *objCWrapped);           \
-  extern bool IsObjCWrapped(MTL::CPPTYPE *objCWrapped);              \
+  extern bool IsObjCBridge(MTL::CPPTYPE *objCWrapped);               \
   extern ResourceId GetResID(MTL::CPPTYPE *objCWrapped);             \
   extern MTL::CPPTYPE *AllocateObjCBridge(WrappedMTL##CPPTYPE *wrapped);
 
