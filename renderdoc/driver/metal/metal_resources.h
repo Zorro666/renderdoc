@@ -115,24 +115,20 @@ struct UnwrapHelper
 {
 };
 
-#define UNWRAP_HELPER(CPPTYPE)                 \
-  template <>                                  \
-  struct UnwrapHelper<MTL::CPPTYPE *>          \
-  {                                            \
-    typedef CONCAT(WrappedMTL, CPPTYPE) Outer; \
-  };
+#define WRAPPED_TYPE_HELPERS(CPPTYPE)                    \
+  template <>                                            \
+  struct UnwrapHelper<MTL::CPPTYPE *>                    \
+  {                                                      \
+    typedef CONCAT(WrappedMTL, CPPTYPE) Outer;           \
+  };                                                     \
+  extern MTL::CPPTYPE *Unwrap(WrappedMTL##CPPTYPE *obj); \
+  extern MTL::CPPTYPE *GetObjCBridge(WrappedMTL##CPPTYPE *obj);
 
-METALCPP_WRAPPED_PROTOCOLS(UNWRAP_HELPER)
-#undef UNWRAP_HELPER
+METALCPP_WRAPPED_PROTOCOLS(WRAPPED_TYPE_HELPERS)
+#undef WRAPPED_TYPE_HELPERS
 
-#define IMPLEMENT_WRAPPED_TYPE_UNWRAP(CPPTYPE)              \
-  inline MTL::CPPTYPE *Unwrap(WrappedMTL##CPPTYPE *obj)     \
-  {                                                         \
-    return Unwrap<MTL::CPPTYPE *>((WrappedMTLObject *)obj); \
-  }
-
-METALCPP_WRAPPED_PROTOCOLS(IMPLEMENT_WRAPPED_TYPE_UNWRAP)
-#undef IMPLEMENT_WRAPPED_TYPE_UNWRAP
+template <typename WrappedType>
+WrappedType GetWrappedResource(MetalResourceManager *rm, ResourceId id);
 
 struct MetalResourceRecord : public ResourceRecord
 {

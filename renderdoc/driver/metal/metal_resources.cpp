@@ -23,7 +23,26 @@
  ******************************************************************************/
 
 #include "metal_resources.h"
+#include "metal_command_queue.h"
 #include "metal_device.h"
+#include "metal_function.h"
+#include "metal_library.h"
+
+template <typename WrappedType>
+WrappedType GetWrappedResource(MetalResourceManager *rm, ResourceId id)
+{
+  if(rm && !IsStructuredExporting(rm->GetState()))
+  {
+    if(id != ResourceId())
+    {
+      if(rm->HasLiveResource(id))
+      {
+        return (WrappedType)rm->GetLiveResource(id);
+      }
+    }
+  }
+  return NULL;
+}
 
 ResourceId GetResID(WrappedMTLObject *obj)
 {
@@ -32,6 +51,18 @@ ResourceId GetResID(WrappedMTLObject *obj)
 
   return obj->id;
 }
+
+#define IMPLEMENT_WRAPPED_TYPE_HELPERS(CPPTYPE)                                          \
+  MTL::CPPTYPE *Unwrap(WrappedMTL##CPPTYPE *obj) { return Unwrap<MTL::CPPTYPE *>(obj); } \
+  MTL::CPPTYPE *GetObjCBridge(WrappedMTL##CPPTYPE *obj)                                  \
+  {                                                                                      \
+    return GetObjCBridge<MTL::CPPTYPE *>(obj);                                           \
+  }                                                                                      \
+  template WrappedMTL##CPPTYPE *GetWrappedResource<WrappedMTL##CPPTYPE *>(               \
+      MetalResourceManager * rm, ResourceId id);
+
+METALCPP_WRAPPED_PROTOCOLS(IMPLEMENT_WRAPPED_TYPE_HELPERS)
+#undef IMPLEMENT_WRAPPED_TYPE_HELPERS
 
 void WrappedMTLObject::Dealloc()
 {
@@ -45,7 +76,7 @@ MetalResourceManager *WrappedMTLObject::GetResourceManager()
 
 MTL::Device *WrappedMTLObject::GetObjCBridgeMTLDevice()
 {
-  return GetObjCBridge<MTL::Device *>(m_WrappedMTLDevice);
+  return GetObjCBridge(m_WrappedMTLDevice);
 }
 
 MetalResourceRecord::~MetalResourceRecord()
