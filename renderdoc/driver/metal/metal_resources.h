@@ -35,6 +35,7 @@ class MetalResourceManager;
 enum MetalResourceType
 {
   eResUnknown = 0,
+  eResCommandBuffer,
   eResCommandQueue,
   eResDevice,
   eResLibrary,
@@ -127,6 +128,36 @@ struct UnwrapHelper
 METALCPP_WRAPPED_PROTOCOLS(WRAPPED_TYPE_HELPERS)
 #undef WRAPPED_TYPE_HELPERS
 
+namespace MetalResources
+{
+struct CmdBufferRecordingInfo
+{
+  CmdBufferRecordingInfo() = default;
+  CmdBufferRecordingInfo(const CmdBufferRecordingInfo &) = delete;
+  CmdBufferRecordingInfo(CmdBufferRecordingInfo &&) = delete;
+  CmdBufferRecordingInfo &operator=(const CmdBufferRecordingInfo &) = delete;
+  ~CmdBufferRecordingInfo()
+  {
+    SAFE_DELETE(alloc);
+    SAFE_DELETE(allocPool);
+  }
+
+  WrappedMTLCommandQueue *queue;
+  WrappedMTLDevice *device;
+
+  ChunkPagePool *allocPool = NULL;
+  ChunkAllocator *alloc = NULL;
+
+  // The drawable that present was called on
+  MTL::Drawable *drawable;
+  // AdvanceFrame/Present should be called after this buffer is committed.
+  bool present;
+  // an encoder is active : waiting for endEncoding to be called
+  bool isEncoding;
+};
+
+};    // namespace MetalResources
+
 struct MetalResourceRecord : public ResourceRecord
 {
 public:
@@ -146,6 +177,7 @@ public:
   // Each entry is only used by specific record types
   union
   {
-    void *ptrUnion;    // for initialisation to NULL
+    void *ptrUnion;                                     // for initialisation to NULL
+    MetalResources::CmdBufferRecordingInfo *cmdInfo;    // only for command buffers
   };
 };
