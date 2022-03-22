@@ -22,6 +22,7 @@
  * THE SOFTWARE.
  ******************************************************************************/
 
+#include "metal_buffer.h"
 #include "metal_command_buffer.h"
 #include "metal_command_queue.h"
 #include "metal_device.h"
@@ -305,8 +306,7 @@ void DoSerialise(SerialiserType &ser, RDMTL::RenderPassDescriptor &el)
   SERIALISE_MEMBER(colorAttachments);
   SERIALISE_MEMBER(depthAttachment);
   SERIALISE_MEMBER(stencilAttachment);
-  // TODO: when WrappedMTLBuffer exists
-  // WrappedMTLBuffer *visibilityResultBuffer;
+  SERIALISE_MEMBER(visibilityResultBuffer);
   SERIALISE_MEMBER(renderTargetArrayLength);
   SERIALISE_MEMBER(imageblockSampleLength);
   SERIALISE_MEMBER(threadgroupMemoryLength);
