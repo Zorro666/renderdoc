@@ -25,7 +25,10 @@
 #pragma once
 
 #include "metal_common.h"
+#include "metal_core.h"
 #include "metal_manager.h"
+
+class MetalCapturer;
 
 class WrappedMTLDevice : public WrappedMTLObject
 {
@@ -34,6 +37,8 @@ class WrappedMTLDevice : public WrappedMTLObject
 public:
   WrappedMTLDevice(MTL::Device *realMTLDevice, ResourceId objId);
   ~WrappedMTLDevice() {}
+  template <typename SerialiserType>
+  bool Serialise_MTLCreateSystemDefaultDevice(SerialiserType &ser);
   static WrappedMTLDevice *MTLCreateSystemDefaultDevice(MTL::Device *realMTLDevice);
 
   // Serialised MTLDevice APIs
@@ -87,6 +92,18 @@ public:
   MetalResourceManager *GetResourceManager() { return m_ResourceManager; };
   WriteSerialiser &GetThreadSerialiser();
 
+  // IFrameCapturer interface
+  RDCDriver GetFrameCaptureDriver() { return RDCDriver::Metal; }
+  void StartFrameCapture(void *dev, void *wnd);
+  bool EndFrameCapture(void *dev, void *wnd);
+  bool DiscardFrameCapture(void *dev, void *wnd);
+  // IFrameCapturer interface
+
+  void AdvanceFrame();
+  void Present(WrappedMTLTexture *backBuffer, CA::MetalLayer *outputLayer);
+
+  void AddCommandBufferRecord(MetalResourceRecord *record);
+
   enum
   {
     TypeEnum = eResDevice
@@ -98,6 +115,14 @@ public:
 private:
   static void MTLFixupForMetalDriverAssert();
   static void MTLHookObjcMethods();
+  void FirstFrame();
+
+  template <typename SerialiserType>
+  bool Serialise_CaptureScope(SerialiserType &ser);
+  template <typename SerialiserType>
+  bool Serialise_BeginCaptureFrame(SerialiserType &ser);
+  void EndCaptureFrame();
+
   bool Prepare_InitialState(WrappedMTLObject *res);
   uint64_t GetSize_InitialState(ResourceId id, const MetalInitialContents &initial);
   template <typename SerialiserType>
@@ -114,13 +139,52 @@ private:
 
   MetalResourceManager *m_ResourceManager;
 
+  // record the command buffer records so we can insert them
+  // individually, that means even if they were recorded locklessly
+  // in parallel, on replay they are disjoint and it makes things
+  // much easier to process (queue submit order will enforce/display
+  // ordering, record order is not important)
+  Threading::CriticalSection m_CommandBufferRecordsLock;
+  rdcarray<MetalResourceRecord *> m_CommandBufferRecords;
+
   // Back buffer and swap chain emulation
   Threading::CriticalSection m_PotentialBackBuffersLock;
   std::unordered_set<WrappedMTLTexture *> m_PotentialBackBuffers;
+  Threading::CriticalSection m_OutputLayersLock;
+  std::unordered_set<CA::MetalLayer *> m_OutputLayers;
 
+  MetalCapturer *m_Capturer = NULL;
   CaptureState m_State;
+  bool m_AppControlledCapture = false;
+  PerformanceTimer m_CaptureTimer;
+  uint32_t m_FrameCounter = 0;
+  rdcarray<FrameDescription> m_CapturedFrames;
+  Threading::RWLock m_CapTransitionLock;
+  MetalResourceRecord *m_FrameCaptureRecord;
+  Chunk *m_HeaderChunk;
+
+  MetalInitParams m_InitParams;
+  uint64_t m_SectionVersion;
 
   uint64_t threadSerialiserTLSSlot;
   Threading::CriticalSection m_ThreadSerialisersLock;
   rdcarray<WriteSerialiser *> m_ThreadSerialisers;
+};
+
+class MetalCapturer : public IFrameCapturer
+{
+public:
+  MetalCapturer(WrappedMTLDevice *device) : m_Device(device) {}
+  // IFrameCapturer interface
+  RDCDriver GetFrameCaptureDriver() { return RDCDriver::Metal; }
+  void StartFrameCapture(void *dev, void *wnd) { return m_Device->StartFrameCapture(dev, wnd); }
+  bool EndFrameCapture(void *dev, void *wnd) { return m_Device->EndFrameCapture(dev, wnd); };
+  bool DiscardFrameCapture(void *dev, void *wnd)
+  {
+    return m_Device->DiscardFrameCapture(dev, wnd);
+  };
+  // IFrameCapturer interface
+
+private:
+  WrappedMTLDevice *m_Device = NULL;
 };

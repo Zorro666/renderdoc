@@ -115,7 +115,7 @@ METALCPP_WRAPPED_PROTOCOLS(WRAPPED_TYPE_HELPERS)
 struct MetalCmdBufferRecordingInfo
 {
   MetalCmdBufferRecordingInfo(WrappedMTLCommandQueue *parentQueue)
-      : queue(parentQueue), present(false), drawable(NULL)
+      : queue(parentQueue), present(false), outputLayer(NULL), backBuffer(NULL)
   {
   }
   MetalCmdBufferRecordingInfo() = delete;
@@ -125,8 +125,10 @@ struct MetalCmdBufferRecordingInfo
   ~MetalCmdBufferRecordingInfo() {}
   WrappedMTLCommandQueue *queue;
 
-  // The drawable that present was called on
-  MTL::Drawable *drawable;
+  // The MetalLayer to present
+  CA::MetalLayer *outputLayer;
+  // The texture to present
+  WrappedMTLTexture *backBuffer;
   // AdvanceFrame/Present should be called after this buffer is committed.
   bool present;
 };

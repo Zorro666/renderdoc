@@ -22,32 +22,22 @@
  * THE SOFTWARE.
  ******************************************************************************/
 
-#include "metal_helpers_bridge.h"
-#import <AppKit/AppKit.h>
-#import <Foundation/NSStream.h>
-#import <QuartzCore/CAMetalLayer.h>
+#include "metal_replay.h"
+#include "serialise/rdcfile.h"
 
-void ObjC::Get_defaultLibraryData(bytebuf &buffer)
+RDResult Metal_CreateReplayDevice(RDCFile *rdc, const ReplayOptions &opts, IReplayDriver **driver)
 {
-  NSBundle *mainAppBundle = [NSBundle mainBundle];
-  NSString *defaultLibaryPath = [mainAppBundle pathForResource:@"default" ofType:@"metallib"];
-  NSData *myData = [NSData dataWithContentsOfFile:defaultLibaryPath];
-  dispatch_data_t data = dispatch_data_create(
-      myData.bytes, myData.length, dispatch_get_main_queue(), DISPATCH_DATA_DESTRUCTOR_DEFAULT);
-  NSData *nsData = (NSData *)data;
-  buffer.resize(nsData.length);
-  memcpy(buffer.data(), nsData.bytes, buffer.size());
-  dispatch_release(data);
+  METAL_NOT_IMPLEMENTED();
+
+  return ResultCode::APIUnsupported;
 }
 
-MTL::Texture *ObjC::Get_Texture(MTL::Drawable *drawableHandle)
+struct MetalDriverRegistration
 {
-  id<CAMetalDrawable> drawable = id<CAMetalDrawable>(drawableHandle);
-  return (MTL::Texture *)drawable.texture;
-}
+  MetalDriverRegistration()
+  {
+    RenderDoc::Inst().RegisterReplayProvider(RDCDriver::Metal, &Metal_CreateReplayDevice);
+  }
+};
 
-CA::MetalLayer *ObjC::Get_Layer(MTL::Drawable *drawableHandle)
-{
-  id<CAMetalDrawable> drawable = id<CAMetalDrawable>(drawableHandle);
-  return (CA::MetalLayer *)drawable.layer;
-}
+static MetalDriverRegistration MetalDriverRegistration;

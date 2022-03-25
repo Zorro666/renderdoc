@@ -24,6 +24,7 @@
 
 #include "metal_command_buffer.h"
 #include "metal_device.h"
+#include "metal_helpers_bridge.h"
 #include "metal_render_command_encoder.h"
 #include "metal_resources.h"
 #include "metal_texture.h"
@@ -114,6 +115,9 @@ bool WrappedMTLCommandBuffer::Serialise_presentDrawable(SerialiserType &ser, MTL
 
 void WrappedMTLCommandBuffer::presentDrawable(MTL::Drawable *drawable)
 {
+  // To avoid metal assert about accessing drawable texture after calling present
+  MTL::Texture *mtlBackBuffer = ObjC::Get_Texture(drawable);
+
   SERIALISE_TIME_CALL(Unwrap(this)->presentDrawable(drawable));
   if(IsCaptureMode(m_State))
   {
@@ -124,10 +128,11 @@ void WrappedMTLCommandBuffer::presentDrawable(MTL::Drawable *drawable)
       Serialise_presentDrawable(ser, drawable);
       chunk = scope.Get();
     }
-    MetalResourceRecord *record = GetRecord(this);
-    record->AddChunk(chunk);
-    record->cmdInfo->present = true;
-    record->cmdInfo->drawable = drawable;
+    MetalResourceRecord *bufferRecord = GetRecord(this);
+    bufferRecord->AddChunk(chunk);
+    bufferRecord->cmdInfo->present = true;
+    bufferRecord->cmdInfo->outputLayer = ObjC::Get_Layer(drawable);
+    bufferRecord->cmdInfo->backBuffer = GetWrapped(mtlBackBuffer);
   }
   else
   {
@@ -169,9 +174,16 @@ void WrappedMTLCommandBuffer::commit()
     if(capframe)
     {
       bufferRecord->AddRef();
+      m_Device->AddCommandBufferRecord(bufferRecord);
       bufferRecord->MarkResourceFrameReferenced(GetResID(m_CommandQueue), eFrameRef_Read);
       // pull in frame refs from this command buffer
       bufferRecord->AddResourceReferences(GetResourceManager());
+    }
+    bool present = bufferRecord->cmdInfo->present;
+    if(present)
+    {
+      m_Device->AdvanceFrame();
+      m_Device->Present(bufferRecord->cmdInfo->backBuffer, bufferRecord->cmdInfo->outputLayer);
     }
   }
   else

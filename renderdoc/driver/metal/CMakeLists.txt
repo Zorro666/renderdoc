@@ -44,6 +44,8 @@ set(sources
     metal_init_state.cpp
     metal_helpers_bridge.h
     metal_helpers_bridge.mm
+    metal_replay.cpp
+    metal_replay.h
     metal_serialise.cpp
     metal_stringise.cpp
     official/metal-cpp.h

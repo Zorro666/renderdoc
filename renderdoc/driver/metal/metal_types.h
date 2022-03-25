@@ -115,6 +115,8 @@ MTL_DECLARE_REFLECTION_TYPE(Viewport);
 MTL_DECLARE_REFLECTION_TYPE(MultisampleDepthResolveFilter);
 MTL_DECLARE_REFLECTION_TYPE(MultisampleStencilResolveFilter);
 MTL_DECLARE_REFLECTION_TYPE(SamplePosition);
+MTL_DECLARE_REFLECTION_TYPE(DeviceLocation);
+MTL_DECLARE_REFLECTION_TYPE(ArgumentBuffersTier);
 
 template <>
 inline rdcliteral TypeName<NS::Range>()
