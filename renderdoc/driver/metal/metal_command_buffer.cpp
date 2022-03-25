@@ -206,31 +206,23 @@ bool WrappedMTLCommandBuffer::Serialise_commit(SerialiserType &ser)
 
 void WrappedMTLCommandBuffer::commit()
 {
-  SERIALISE_TIME_CALL(Unwrap(this)->commit());
-  if(IsCaptureMode(m_State))
+  MTL::CommandBuffer *mtlCommandBuffer = Unwrap(this);
+  bool isCapture = IsCaptureMode(m_State);
+  // During capture keep the real resource alive for the scope of this method
+  if(isCapture)
+    mtlCommandBuffer->retain();
+  SERIALISE_TIME_CALL(mtlCommandBuffer->commit());
+  if(isCapture)
   {
-    Chunk *chunk = NULL;
-    {
-      CACHE_THREAD_SERIALISER();
-      SCOPED_SERIALISE_CHUNK(MetalChunk::MTLCommandBuffer_commit);
-      Serialise_commit(ser);
-      chunk = scope.Get();
-    }
     MetalResourceRecord *bufferRecord = GetRecord(this);
-    bufferRecord->AddChunk(chunk);
-
-    if(IsActiveCapturing(m_State))
-    {
-      bufferRecord->AddRef();
-      bufferRecord->MarkResourceFrameReferenced(GetResID(m_CommandQueue), eFrameRef_Read);
-      // pull in frame refs from this command buffer
-      bufferRecord->AddResourceReferences(GetResourceManager());
-    }
+    m_Device->CaptureCmdBufCommit(bufferRecord);
   }
   else
   {
     // TODO: implement RD MTL replay
   }
+  if(isCapture)
+    mtlCommandBuffer->release();
 }
 
 template <typename SerialiserType>
@@ -261,6 +253,7 @@ void WrappedMTLCommandBuffer::enqueue()
     }
     MetalResourceRecord *bufferRecord = GetRecord(this);
     bufferRecord->AddChunk(chunk);
+    m_Device->CaptureCmdBufEnqueue(bufferRecord);
   }
   else
   {

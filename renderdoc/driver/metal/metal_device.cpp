@@ -37,6 +37,7 @@ WrappedMTLDevice::WrappedMTLDevice(MTL::Device *realMTLDevice, ResourceId objId)
 {
   AllocateObjCBridge(this);
   m_Device = this;
+  m_Capturer = new MetalCapturer(this);
 
   if(RenderDoc::Inst().IsReplayApp())
   {
@@ -46,21 +47,55 @@ WrappedMTLDevice::WrappedMTLDevice(MTL::Device *realMTLDevice, ResourceId objId)
     m_State = CaptureState::BackgroundCapturing;
   }
 
+  m_SectionVersion = MetalInitParams::CurrentVersion;
+
   threadSerialiserTLSSlot = Threading::AllocateTLSSlot();
 
   m_ResourceManager = new MetalResourceManager(m_State, this);
+
+  m_HeaderChunk = NULL;
+
+  if(!RenderDoc::Inst().IsReplayApp())
+  {
+    m_FrameCaptureRecord = GetResourceManager()->AddResourceRecord(ResourceIDGen::GetNewUniqueID());
+    m_FrameCaptureRecord->DataInSerialiser = false;
+    m_FrameCaptureRecord->Length = 0;
+    m_FrameCaptureRecord->InternalResource = true;
+  }
+  else
+  {
+    m_FrameCaptureRecord = NULL;
+
+    ResourceIDGen::SetReplayResourceIDs();
+  }
+
   RDCASSERT(m_Device == this);
   GetResourceManager()->AddCurrentResource(objId, this);
-}
 
-WrappedMTLDevice *WrappedMTLDevice::MTLCreateSystemDefaultDevice(MTL::Device *realMTLDevice)
-{
-  MTLFixupForMetalDriverAssert();
-  MTLHookObjcMethods();
-  ResourceId objId = ResourceIDGen::GetNewUniqueID();
-  WrappedMTLDevice *wrappedMTLDevice = new WrappedMTLDevice(realMTLDevice, objId);
+  if(IsCaptureMode(m_State))
+  {
+    Chunk *chunk = NULL;
 
-  return wrappedMTLDevice;
+    {
+      CACHE_THREAD_SERIALISER();
+
+      SCOPED_SERIALISE_CHUNK(MetalChunk::MTLCreateSystemDefaultDevice);
+      Serialise_MTLCreateSystemDefaultDevice(ser);
+      chunk = scope.Get();
+    }
+
+    MetalResourceRecord *record = GetResourceManager()->AddResourceRecord(this);
+    record->AddChunk(chunk);
+  }
+  else
+  {
+    // TODO: implement RD MTL replay
+  }
+
+  RenderDoc::Inst().AddDeviceFrameCapturer(this, m_Capturer);
+
+  m_mtlCommandQueue = Unwrap(this)->newCommandQueue();
+  FirstFrame();
 }
 
 IMP WrappedMTLDevice::g_real_CAMetalLayer_nextDrawable;
@@ -107,6 +142,30 @@ void WrappedMTLDevice::MTLFixupForMetalDriverAssert()
 }
 
 // Serialised MTLDevice APIs
+
+template <typename SerialiserType>
+bool WrappedMTLDevice::Serialise_MTLCreateSystemDefaultDevice(SerialiserType &ser)
+{
+  SERIALISE_ELEMENT_LOCAL(Device, GetResID(this)).TypedAs("MTLDevice"_lit);
+
+  SERIALISE_CHECK_READ_ERRORS();
+
+  if(IsReplayingAndReading())
+  {
+    // TODO: implement RD MTL replay
+  }
+  return true;
+}
+
+WrappedMTLDevice *WrappedMTLDevice::MTLCreateSystemDefaultDevice(MTL::Device *realMTLDevice)
+{
+  MTLFixupForMetalDriverAssert();
+  MTLHookObjcMethods();
+  ResourceId objId = ResourceIDGen::GetNewUniqueID();
+  WrappedMTLDevice *wrappedMTLDevice = new WrappedMTLDevice(realMTLDevice, objId);
+
+  return wrappedMTLDevice;
+}
 
 template <typename SerialiserType>
 bool WrappedMTLDevice::Serialise_newCommandQueue(SerialiserType &ser, WrappedMTLCommandQueue *queue)
@@ -539,8 +598,8 @@ WrappedMTLTexture *WrappedMTLDevice::Common_NewTexture(RDMTL::TextureDescriptor 
     if(IsCaptureMode(m_State))
     {
       {
-        SCOPED_LOCK(m_PotentialBackBuffersLock);
-        m_PotentialBackBuffers.insert(wrappedMTLTexture);
+        SCOPED_LOCK(m_CapturePotentialBackBuffersLock);
+        m_CapturePotentialBackBuffers.insert(wrappedMTLTexture);
       }
     }
   }
@@ -578,6 +637,7 @@ WrappedMTLBuffer *WrappedMTLDevice::Common_NewBuffer(bool withBytes, const void 
   return wrappedMTLBuffer;
 }
 
+INSTANTIATE_FUNCTION_SERIALISED(WrappedMTLDevice, bool, MTLCreateSystemDefaultDevice);
 INSTANTIATE_FUNCTION_WITH_RETURN_SERIALISED(WrappedMTLDevice, WrappedMTLCommandQueue *,
                                             newCommandQueue);
 INSTANTIATE_FUNCTION_WITH_RETURN_SERIALISED(WrappedMTLDevice, WrappedMTLLibrary *, newDefaultLibrary);

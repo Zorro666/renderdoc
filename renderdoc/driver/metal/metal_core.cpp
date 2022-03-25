@@ -23,6 +23,9 @@
  ******************************************************************************/
 
 #include "metal_core.h"
+#include "serialise/rdcfile.h"
+
+#include "metal_command_buffer.h"
 #include "metal_device.h"
 
 WriteSerialiser &WrappedMTLDevice::GetThreadSerialiser()
@@ -53,3 +56,554 @@ WriteSerialiser &WrappedMTLDevice::GetThreadSerialiser()
 
   return *ser;
 }
+
+void WrappedMTLDevice::WaitForGPU()
+{
+  MTL::CommandBuffer *mtlCommandBuffer = m_mtlCommandQueue->commandBuffer();
+  mtlCommandBuffer->commit();
+  mtlCommandBuffer->waitUntilCompleted();
+}
+
+template <typename SerialiserType>
+bool WrappedMTLDevice::Serialise_BeginCaptureFrame(SerialiserType &ser)
+{
+  // TODO: serialise image references and states
+
+  SERIALISE_CHECK_READ_ERRORS();
+
+  return true;
+}
+
+void WrappedMTLDevice::StartFrameCapture(DeviceOwnedWindow devWnd)
+{
+  if(!IsBackgroundCapturing(m_State))
+    return;
+
+  RDCLOG("Starting capture");
+  {
+    SCOPED_LOCK(m_CaptureCommandBuffersLock);
+    RDCASSERT(m_CaptureCommandBuffersSubmitted.empty());
+  }
+
+  m_CaptureTimer.Restart();
+
+  GetResourceManager()->ResetCaptureStartTime();
+
+  m_AppControlledCapture = true;
+
+  FrameDescription frame;
+  frame.frameNumber = ~0U;
+  frame.captureTime = Timing::GetUnixTimestamp();
+  m_CapturedFrames.push_back(frame);
+
+  GetResourceManager()->ClearReferencedResources();
+  // TODO: handle tracked memory
+
+  // need to do all this atomically so that no other commands
+  // will check to see if they need to mark dirty or
+  // mark pending dirty and go into the frame record.
+  {
+    SCOPED_WRITELOCK(m_CapTransitionLock);
+
+    // sync all active (committed) command buffers
+    for(MetalResourceRecord *record : m_CaptureCommandBuffersSubmitted)
+    {
+      WrappedMTLCommandBuffer *commandBuffer = (WrappedMTLCommandBuffer *)(record->m_Resource);
+      Unwrap(commandBuffer)->waitUntilCompleted();
+    }
+
+    GetResourceManager()->PrepareInitialContents();
+
+    RDCDEBUG("Attempting capture");
+    m_FrameCaptureRecord->DeleteChunks();
+    m_State = CaptureState::ActiveCapturing;
+  }
+
+  GetResourceManager()->MarkResourceFrameReferenced(GetResID(this), eFrameRef_Read);
+
+  // TODO: are there other resources that need to be marked as frame referenced
+}
+
+void WrappedMTLDevice::EndCaptureFrame()
+{
+  CACHE_THREAD_SERIALISER();
+  ser.SetActionChunk();
+  SCOPED_SERIALISE_CHUNK(SystemChunk::CaptureEnd);
+
+  // TODO: serialise the presented image
+
+  m_FrameCaptureRecord->AddChunk(scope.Get());
+}
+
+bool WrappedMTLDevice::EndFrameCapture(DeviceOwnedWindow devWnd)
+{
+  if(!IsActiveCapturing(m_State))
+    return true;
+
+  // TODO: find the window and drawable being captured
+
+  RDCLOG("Finished capture, Frame %u", m_CapturedFrames.back().frameNumber);
+
+  // TODO: mark the drawable and its images as frame referenced
+
+  // atomically transition to IDLE
+  {
+    SCOPED_WRITELOCK(m_CapTransitionLock);
+    EndCaptureFrame();
+    m_State = CaptureState::BackgroundCapturing;
+  }
+
+  // wait for the GPU to be idle
+  for(MetalResourceRecord *record : m_CaptureCommandBuffersSubmitted)
+  {
+    WrappedMTLCommandBuffer *commandBuffer = (WrappedMTLCommandBuffer *)(record->m_Resource);
+    Unwrap(commandBuffer)->waitUntilCompleted();
+  }
+
+  if(m_CaptureCommandBuffersSubmitted.empty())
+    WaitForGPU();
+
+  // TODO: get the backbuffer to generate the thumbnail image
+  RenderDoc::FramePixels fp;
+
+  RDCFile *rdc =
+      RenderDoc::Inst().CreateRDC(RDCDriver::Metal, m_CapturedFrames.back().frameNumber, fp);
+
+  StreamWriter *captureWriter = NULL;
+
+  if(rdc)
+  {
+    SectionProperties props;
+
+    // Compress with LZ4 so that it's fast
+    props.flags = SectionFlags::LZ4Compressed;
+    props.version = m_SectionVersion;
+    props.type = SectionType::FrameCapture;
+
+    captureWriter = rdc->WriteSection(props);
+  }
+  else
+  {
+    captureWriter = new StreamWriter(StreamWriter::InvalidStream);
+  }
+
+  uint64_t captureSectionSize = 0;
+
+  {
+    WriteSerialiser ser(captureWriter, Ownership::Stream);
+
+    ser.SetChunkMetadataRecording(GetThreadSerialiser().GetChunkMetadataRecording());
+    ser.SetUserData(GetResourceManager());
+
+    {
+      m_InitParams.Set(Unwrap(this), m_ID);
+      SCOPED_SERIALISE_CHUNK(SystemChunk::DriverInit, m_InitParams.GetSerialiseSize());
+      SERIALISE_ELEMENT(m_InitParams);
+    }
+
+    RDCDEBUG("Inserting Resource Serialisers");
+    GetResourceManager()->InsertReferencedChunks(ser);
+    GetResourceManager()->InsertInitialContentsChunks(ser);
+
+    RDCDEBUG("Creating Capture Scope");
+    GetResourceManager()->Serialise_InitialContentsNeeded(ser);
+    // TODO: memory references
+
+    {
+      SCOPED_SERIALISE_CHUNK(SystemChunk::CaptureScope, 16);
+      Serialise_CaptureScope(ser);
+    }
+
+    {
+      WriteSerialiser &captureBeginSer = GetThreadSerialiser();
+      ScopedChunk scope(captureBeginSer, SystemChunk::CaptureBegin);
+
+      Serialise_BeginCaptureFrame(captureBeginSer);
+      m_HeaderChunk = scope.Get();
+    }
+
+    m_HeaderChunk->Write(ser);
+
+    // don't need to lock access to m_CaptureCommandBuffersSubmitted as
+    // no longer in active capture (the transition is thread-protected)
+    // nothing will be pushed to the vector
+
+    {
+      std::map<int64_t, Chunk *> recordlist;
+      size_t countCmdBuffers = m_CaptureCommandBuffersSubmitted.size();
+      RDCDEBUG("Flushing %zu command buffer records to file serialiser", countCmdBuffers);
+      // ensure all command buffer records within the frame even if recorded before
+      // serialised order must be preserved
+      for(MetalResourceRecord *record : m_CaptureCommandBuffersSubmitted)
+      {
+        RDCDEBUG("Adding chunks from command buffer %s", ToStr(record->GetResourceID()).c_str());
+        size_t prevSize = recordlist.size();
+        (void)prevSize;
+        record->Insert(recordlist);
+        RDCDEBUG("Added %zu chunks to file serialiser", recordlist.size() - prevSize);
+      }
+
+      size_t prevSize = recordlist.size();
+      (void)prevSize;
+      m_FrameCaptureRecord->Insert(recordlist);
+      RDCDEBUG("Adding %zu frame capture chunks to file serialiser", recordlist.size() - prevSize);
+      RDCDEBUG("Flushing %zu chunks to file serialiser from context record", recordlist.size());
+
+      float num = float(recordlist.size());
+      float idx = 0.0f;
+
+      for(auto && [ _, record ] : recordlist)
+      {
+        RenderDoc::Inst().SetProgress(CaptureProgress::SerialiseFrameContents, idx / num);
+        idx += 1.0f;
+        record->Write(ser);
+        RDCLOG("Writing Chunk %d", (int)record->GetChunkType<MetalChunk>());
+      }
+      RDCDEBUG("Done");
+    }
+    captureSectionSize = captureWriter->GetOffset();
+  }
+
+  RDCLOG("Captured Metal frame with %f MB capture section in %f seconds",
+         double(captureSectionSize) / (1024.0 * 1024.0), m_CaptureTimer.GetMilliseconds() / 1000.0);
+
+  RenderDoc::Inst().FinishCaptureWriting(rdc, m_CapturedFrames.back().frameNumber);
+
+  m_HeaderChunk->Delete();
+  m_HeaderChunk = NULL;
+
+  // delete tracked cmd buffers - had to keep them alive until after serialiser flush.
+  CaptureClearSubmittedCmdBuffers();
+
+  GetResourceManager()->ResetLastWriteTimes();
+  GetResourceManager()->MarkUnwrittenResources();
+
+  // TODO: handle memory resources in the resource manager
+
+  GetResourceManager()->ClearReferencedResources();
+  GetResourceManager()->FreeInitialContents();
+
+  // TODO: handle memory resources in the initial contents
+
+  return true;
+}
+
+bool WrappedMTLDevice::DiscardFrameCapture(DeviceOwnedWindow devWnd)
+{
+  if(!IsActiveCapturing(m_State))
+    return true;
+
+  RDCLOG("Discarding frame capture.");
+
+  RenderDoc::Inst().FinishCaptureWriting(NULL, m_CapturedFrames.back().frameNumber);
+
+  m_CapturedFrames.pop_back();
+
+  // atomically transition to IDLE
+  {
+    SCOPED_WRITELOCK(m_CapTransitionLock);
+    m_State = CaptureState::BackgroundCapturing;
+  }
+
+  m_HeaderChunk->Delete();
+  m_HeaderChunk = NULL;
+
+  CaptureClearSubmittedCmdBuffers();
+
+  GetResourceManager()->MarkUnwrittenResources();
+
+  // TODO: handle memory resources in the resource manager
+
+  GetResourceManager()->ClearReferencedResources();
+  GetResourceManager()->FreeInitialContents();
+
+  // TODO: handle memory resources in the initial contents
+
+  return true;
+}
+
+template <typename SerialiserType>
+bool WrappedMTLDevice::Serialise_CaptureScope(SerialiserType &ser)
+{
+  SERIALISE_ELEMENT_LOCAL(frameNumber, m_CapturedFrames.back().frameNumber);
+
+  SERIALISE_CHECK_READ_ERRORS();
+
+  if(IsReplayingAndReading())
+  {
+    // TODO: implement RD MTL replay
+  }
+  return true;
+}
+
+void WrappedMTLDevice::CaptureCmdBufSubmit(MetalResourceRecord *record)
+{
+  RDCASSERT(MetalCmdBufferStatus::Submitted ==
+            (record->cmdInfo->flags & MetalCmdBufferStatus::Submitted));
+  RDCASSERT(IsCaptureMode(m_State));
+  if(IsActiveCapturing(m_State))
+  {
+    WrappedMTLCommandBuffer *commandBuffer = (WrappedMTLCommandBuffer *)(record->m_Resource);
+    Chunk *chunk = NULL;
+    std::unordered_set<ResourceId> refIDs;
+    // The record will get deleted at the end of active frame capture
+    record->AddRef();
+    record->AddReferencedIDs(refIDs);
+    // snapshot/detect any CPU modifications to the contents
+    // of referenced MTLBuffer with shared storage mode
+    for(auto it = refIDs.begin(); it != refIDs.end(); ++it)
+    {
+      ResourceId id = *it;
+      MetalResourceRecord *record = GetResourceManager()->GetResourceRecord(id);
+      if(record->m_Type == eResBuffer)
+      {
+        // TODO: capture CPU modified buffers
+      }
+    }
+    record->MarkResourceFrameReferenced(GetResID(commandBuffer->GetCommandQueue()), eFrameRef_Read);
+    // pull in frame refs from this command buffer
+    record->AddResourceReferences(GetResourceManager());
+    {
+      CACHE_THREAD_SERIALISER();
+      SCOPED_SERIALISE_CHUNK(MetalChunk::MTLCommandBuffer_commit);
+      commandBuffer->Serialise_commit(ser);
+      chunk = scope.Get();
+    }
+    record->AddChunk(chunk);
+    m_CaptureCommandBuffersSubmitted.push_back(record);
+  }
+  if(record->cmdInfo->flags & MetalCmdBufferStatus::Presented)
+  {
+    AdvanceFrame();
+    Present(record);
+  }
+  // In background or active capture mode the record reference is incremented in
+  // CaptureCmdBufEnqueue
+  record->Delete(GetResourceManager());
+}
+
+void WrappedMTLDevice::CaptureCmdBufCommit(MetalResourceRecord *record)
+{
+  SCOPED_LOCK(m_CaptureCommandBuffersLock);
+  if((record->cmdInfo->flags & MetalCmdBufferStatus::Enqueued) == MetalCmdBufferStatus::NoFlags)
+    CaptureCmdBufEnqueue(record);
+
+  RDCASSERT(MetalCmdBufferStatus::NoFlags ==
+            (record->cmdInfo->flags & MetalCmdBufferStatus::Committed));
+  record->cmdInfo->flags |= MetalCmdBufferStatus::Committed;
+
+  RDCDEBUG("Commit CommandBufferRecord %s", ToStr(record->GetResourceID()).c_str());
+  size_t countSubmitted = 0;
+  for(MetalResourceRecord *record : m_CaptureCommandBuffersEnqueued)
+  {
+    if(record->cmdInfo->flags & MetalCmdBufferStatus::Committed)
+    {
+      RDCASSERT(MetalCmdBufferStatus::NoFlags ==
+                (record->cmdInfo->flags & MetalCmdBufferStatus::Submitted));
+      record->cmdInfo->flags |= MetalCmdBufferStatus::Submitted;
+      ++countSubmitted;
+      CaptureCmdBufSubmit(record);
+      RDCDEBUG("Submit CommandBufferRecord %s", ToStr(record->GetResourceID()).c_str());
+      continue;
+    }
+    break;
+  };
+  m_CaptureCommandBuffersEnqueued.erase(0, countSubmitted);
+}
+
+void WrappedMTLDevice::CaptureCmdBufEnqueue(MetalResourceRecord *record)
+{
+  SCOPED_LOCK(m_CaptureCommandBuffersLock);
+  RDCASSERT(MetalCmdBufferStatus::NoFlags ==
+            (record->cmdInfo->flags & MetalCmdBufferStatus::Enqueued));
+  record->cmdInfo->flags |= MetalCmdBufferStatus::Enqueued;
+  record->AddRef();
+  m_CaptureCommandBuffersEnqueued.push_back(record);
+
+  RDCDEBUG("Enqueing CommandBufferRecord %s %d", ToStr(record->GetResourceID()).c_str(),
+           m_CaptureCommandBuffersEnqueued.count());
+}
+
+void WrappedMTLDevice::AdvanceFrame()
+{
+  if(IsBackgroundCapturing(m_State))
+    RenderDoc::Inst().Tick();
+
+  m_FrameCounter++;    // first present becomes frame #1, this function is at the end of the frame
+}
+
+void WrappedMTLDevice::FirstFrame()
+{
+  // if we have to capture the first frame, begin capturing immediately
+  if(IsBackgroundCapturing(m_State) && RenderDoc::Inst().ShouldTriggerCapture(0))
+  {
+    RenderDoc::Inst().StartFrameCapture(DeviceOwnedWindow(this, NULL));
+
+    m_AppControlledCapture = false;
+    m_CapturedFrames.back().frameNumber = 0;
+  }
+}
+
+void WrappedMTLDevice::Present(MetalResourceRecord *record)
+{
+  WrappedMTLTexture *backBuffer = record->cmdInfo->backBuffer;
+  {
+    SCOPED_LOCK(m_CapturePotentialBackBuffersLock);
+    if(m_CapturePotentialBackBuffers.count(backBuffer) == 0)
+    {
+      RDCERR("Capture ignoring Present called on unknown backbuffer");
+      return;
+    }
+  }
+
+  CA::MetalLayer *outputLayer = record->cmdInfo->outputLayer;
+  DeviceOwnedWindow devWnd(this, outputLayer);
+  {
+    SCOPED_LOCK(m_CaptureOutputLayersLock);
+    if(m_CaptureOutputLayers.count(outputLayer) == 0)
+    {
+      m_CaptureOutputLayers.insert(outputLayer);
+      RenderDoc::Inst().AddFrameCapturer(devWnd, m_Capturer);
+    }
+  }
+
+  bool activeWindow = RenderDoc::Inst().IsActiveWindow(devWnd);
+
+  RenderDoc::Inst().AddActiveDriver(RDCDriver::Metal, true);
+
+  if(!activeWindow)
+    return;
+
+  if(IsActiveCapturing(m_State) && !m_AppControlledCapture)
+    RenderDoc::Inst().EndFrameCapture(devWnd);
+
+  if(RenderDoc::Inst().ShouldTriggerCapture(m_FrameCounter) && IsBackgroundCapturing(m_State))
+  {
+    RenderDoc::Inst().StartFrameCapture(devWnd);
+
+    m_AppControlledCapture = false;
+    m_CapturedFrames.back().frameNumber = m_FrameCounter;
+  }
+}
+
+void WrappedMTLDevice::CaptureClearSubmittedCmdBuffers()
+{
+  SCOPED_LOCK(m_CaptureCommandBuffersLock);
+  for(MetalResourceRecord *record : m_CaptureCommandBuffersSubmitted)
+  {
+    record->Delete(GetResourceManager());
+  }
+
+  m_CaptureCommandBuffersSubmitted.clear();
+}
+
+MetalInitParams::MetalInitParams()
+{
+  memset(this, 0, sizeof(MetalInitParams));
+}
+
+uint64_t MetalInitParams::GetSerialiseSize()
+{
+  size_t ret = 0;
+
+  // device information
+  ret += sizeof(uint32_t);
+  ret += sizeof(char) * name->length();
+
+  ret += sizeof(uint64_t) * 4 + sizeof(uint32_t) * 2;
+  ret += sizeof(MTL::DeviceLocation);
+  ret += sizeof(NS::UInteger);
+  ret += sizeof(bool) * 4;
+
+  // device capabilities
+  ret += sizeof(bool) * 15;
+  ret += sizeof(MTL::ArgumentBuffersTier);
+
+  ret += sizeof(ResourceId);
+
+  return (uint64_t)ret;
+}
+
+void MetalInitParams::Set(MTL::Device *pRealDevice, ResourceId inst)
+{
+  // device information
+  name = pRealDevice->name();
+  recommendedMaxWorkingSetSize = pRealDevice->recommendedMaxWorkingSetSize();
+  maxTransferRate = pRealDevice->maxTransferRate();
+  registryID = pRealDevice->registryID();
+  peerGroupID = pRealDevice->peerGroupID();
+  peerCount = pRealDevice->peerCount();
+  peerIndex = pRealDevice->peerIndex();
+  location = pRealDevice->location();
+  locationNumber = pRealDevice->locationNumber();
+  hasUnifiedMemory = pRealDevice->hasUnifiedMemory();
+  headless = pRealDevice->headless();
+  lowPower = pRealDevice->lowPower();
+  removable = pRealDevice->removable();
+
+  // device capabilities
+  supportsMTLGPUFamilyCommon1 = pRealDevice->supportsFamily(MTL::GPUFamilyCommon1);
+  supportsMTLGPUFamilyCommon2 = pRealDevice->supportsFamily(MTL::GPUFamilyCommon2);
+  supportsMTLGPUFamilyCommon3 = pRealDevice->supportsFamily(MTL::GPUFamilyCommon3);
+
+  supportsMTLGPUFamilyApple1 = pRealDevice->supportsFamily(MTL::GPUFamilyApple1);
+  supportsMTLGPUFamilyApple2 = pRealDevice->supportsFamily(MTL::GPUFamilyApple2);
+  supportsMTLGPUFamilyApple3 = pRealDevice->supportsFamily(MTL::GPUFamilyApple3);
+  supportsMTLGPUFamilyApple4 = pRealDevice->supportsFamily(MTL::GPUFamilyApple4);
+  supportsMTLGPUFamilyApple5 = pRealDevice->supportsFamily(MTL::GPUFamilyApple5);
+  supportsMTLGPUFamilyApple6 = pRealDevice->supportsFamily(MTL::GPUFamilyApple6);
+  supportsMTLGPUFamilyApple7 = pRealDevice->supportsFamily(MTL::GPUFamilyApple7);
+  supportsMTLGPUFamilyApple8 = pRealDevice->supportsFamily(MTL::GPUFamilyApple8);
+
+  supportsMTLGPUFamilyMac1 = pRealDevice->supportsFamily(MTL::GPUFamilyMac1);
+  supportsMTLGPUFamilyMac2 = pRealDevice->supportsFamily(MTL::GPUFamilyMac2);
+
+  supportsMTLGPUFamilyMacCatalyst1 = pRealDevice->supportsFamily(MTL::GPUFamilyMacCatalyst1);
+  supportsMTLGPUFamilyMacCatalyst2 = pRealDevice->supportsFamily(MTL::GPUFamilyMacCatalyst2);
+
+  argumentBuffersSupport = pRealDevice->argumentBuffersSupport();
+
+  InstanceID = inst;
+}
+
+template <typename SerialiserType>
+void DoSerialise(SerialiserType &ser, MetalInitParams &el)
+{
+  SERIALISE_MEMBER(name);
+  SERIALISE_MEMBER(recommendedMaxWorkingSetSize);
+  SERIALISE_MEMBER(maxTransferRate);
+  SERIALISE_MEMBER(registryID);
+  SERIALISE_MEMBER(peerGroupID);
+  SERIALISE_MEMBER(peerCount);
+  SERIALISE_MEMBER(peerIndex);
+  SERIALISE_MEMBER(location);
+  SERIALISE_MEMBER(locationNumber);
+  SERIALISE_MEMBER(hasUnifiedMemory);
+  SERIALISE_MEMBER(headless);
+  SERIALISE_MEMBER(lowPower);
+  SERIALISE_MEMBER(removable);
+
+  // device capabilities
+  SERIALISE_MEMBER(supportsMTLGPUFamilyCommon1);
+  SERIALISE_MEMBER(supportsMTLGPUFamilyCommon2);
+  SERIALISE_MEMBER(supportsMTLGPUFamilyCommon3);
+
+  SERIALISE_MEMBER(supportsMTLGPUFamilyApple1);
+  SERIALISE_MEMBER(supportsMTLGPUFamilyApple2);
+  SERIALISE_MEMBER(supportsMTLGPUFamilyApple3);
+  SERIALISE_MEMBER(supportsMTLGPUFamilyApple4);
+  SERIALISE_MEMBER(supportsMTLGPUFamilyApple5);
+  SERIALISE_MEMBER(supportsMTLGPUFamilyApple6);
+  SERIALISE_MEMBER(supportsMTLGPUFamilyApple7);
+  SERIALISE_MEMBER(supportsMTLGPUFamilyApple8);
+
+  SERIALISE_MEMBER(supportsMTLGPUFamilyMac1);
+  SERIALISE_MEMBER(supportsMTLGPUFamilyMac2);
+
+  SERIALISE_MEMBER(supportsMTLGPUFamilyMacCatalyst1);
+  SERIALISE_MEMBER(supportsMTLGPUFamilyMacCatalyst2);
+
+  SERIALISE_MEMBER(argumentBuffersSupport);
+}
+
+INSTANTIATE_SERIALISE_TYPE(MetalInitParams);
