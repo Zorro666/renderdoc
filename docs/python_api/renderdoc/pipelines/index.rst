@@ -10,4 +10,5 @@ This is the API reference for the functions, classes, and enums in the ``renderd
 	d3d12
 	gl
 	vulkan
+	metal
 	common

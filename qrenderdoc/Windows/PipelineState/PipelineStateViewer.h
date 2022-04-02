@@ -50,6 +50,7 @@ class D3D11PipelineStateViewer;
 class D3D12PipelineStateViewer;
 class GLPipelineStateViewer;
 class VulkanPipelineStateViewer;
+class MetalPipelineStateViewer;
 
 class PipelineStateViewer;
 
@@ -186,6 +187,7 @@ private:
   void setToD3D12();
   void setToGL();
   void setToVulkan();
+  void setToMetal();
   void reset();
 
   QString GetCurrentAPI();
@@ -194,5 +196,6 @@ private:
   D3D12PipelineStateViewer *m_D3D12;
   GLPipelineStateViewer *m_GL;
   VulkanPipelineStateViewer *m_Vulkan;
+  MetalPipelineStateViewer *m_Metal;
   ICaptureViewer *m_Current;
 };

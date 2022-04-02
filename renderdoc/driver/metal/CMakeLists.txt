@@ -51,6 +51,17 @@ set(sources
     metal_stringise.cpp
     metal_replay.h
     metal_replay.cpp
+    metal_render_state.cpp
+    metal_render_state.h
+    metal_info.cpp
+    metal_info.h
+    metal_debug_manager.h
+    metal_debug_manager.cpp
+    metal_debug_render.cpp
+    metal_outputwindow.cpp
+    metal_rendertexture.cpp
+    metal_shaders.h
+    metal_shaders.metal
     official/metal-cpp.h
     official/metal-cpp.cpp)
 

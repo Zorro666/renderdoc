@@ -237,9 +237,11 @@ ReplayProxy::ReplayProxy(ReadSerialiser &reader, WriteSerialiser &writer, IRemot
     m_GLPipelineState = new GLPipe::State;
   else if(m_APIProps.pipelineType == GraphicsAPI::Vulkan)
     m_VulkanPipelineState = new VKPipe::State;
+  else if(m_APIProps.pipelineType == GraphicsAPI::Metal)
+    m_MetalPipelineState = new MetalPipe::State;
 
   m_Remote->SetPipelineStates(m_D3D11PipelineState, m_D3D12PipelineState, m_GLPipelineState,
-                              m_VulkanPipelineState);
+                              m_VulkanPipelineState, m_MetalPipelineState);
 }
 
 ReplayProxy::ReplayProxy(ReadSerialiser &reader, WriteSerialiser &writer, IReplayDriver *proxy)
@@ -1899,6 +1901,10 @@ void ReplayProxy::Proxied_SavePipelineState(ParamSerialiser &paramser, ReturnSer
     {
       SERIALISE_ELEMENT(*m_VulkanPipelineState);
     }
+    else if(m_APIProps.pipelineType == GraphicsAPI::Metal)
+    {
+      SERIALISE_ELEMENT(*m_MetalPipelineState);
+    }
     SERIALISE_ELEMENT(packet);
     ser.EndChunk();
 
@@ -1966,6 +1972,28 @@ void ReplayProxy::Proxied_SavePipelineState(ParamSerialiser &paramser, ReturnSer
           if(stages[i]->reflection != 0)
             stages[i]->reflection =
                 GetShaderReflectionByPointer((uint64_t)(uintptr_t)stages[i]->reflection);
+        }
+      }
+      else if(m_APIProps.pipelineType == GraphicsAPI::Metal)
+      {
+        MetalPipe::Shader *stages[] = {
+            &m_MetalPipelineState->vertexShader,
+            &m_MetalPipelineState->postTessShader,
+            &m_MetalPipelineState->fragmentShader,
+            &m_MetalPipelineState->computeShader,
+        };
+
+        ResourceId pipe = m_MetalPipelineState->graphics.pipelineResourceId;
+
+        for(int i = 0; i < 6; i++)
+        {
+          if(i == 5)
+            pipe = m_MetalPipelineState->compute.pipelineResourceId;
+
+          if(stages[i]->resourceId != ResourceId())
+            stages[i]->reflection =
+                GetShader(pipe, stages[i]->resourceId,
+                          ShaderEntryPoint(stages[i]->entryPoint, stages[i]->stage));
         }
       }
     }

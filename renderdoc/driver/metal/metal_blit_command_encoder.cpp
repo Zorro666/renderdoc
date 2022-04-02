@@ -99,6 +99,8 @@ bool WrappedMTLBlitCommandEncoder::Serialise_endEncoding(SerialiserType &ser)
         return true;
     }
     WrappedMTLBlitCommandEncoder *blitEncoder = m_Device->GetCurrentReplayBlitEncoder();
+    RDCASSERT(blitEncoder);
+    RDCLOG("M %s endEncoding", ToStr(GetResID(BlitCommandEncoder)).c_str());
     Unwrap(blitEncoder)->endEncoding();
     m_Device->ClearActiveBlitCommandEncoder();
   }
@@ -256,6 +258,7 @@ bool WrappedMTLBlitCommandEncoder::Serialise_synchronizeResource(SerialiserType 
       if(!m_Device->IsCurrentCommandBufferEventInReplayRange())
         return true;
     }
+    RDCLOG("M %s synchronizeResource", ToStr(GetResID(BlitCommandEncoder)).c_str());
     WrappedMTLBlitCommandEncoder *blitEncoder = m_Device->GetCurrentReplayBlitEncoder();
     Unwrap(blitEncoder)->synchronizeResource(Unwrap(resource));
   }

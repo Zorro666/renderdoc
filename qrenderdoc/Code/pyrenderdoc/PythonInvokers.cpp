@@ -562,6 +562,11 @@ struct ReplayControllerInvoker : IReplayController
     return InvokeRetFunction<const VKPipe::State *>(&IReplayController::GetVulkanPipelineState);
   }
 
+  const MetalPipe::State *GetMetalPipelineState()
+  {
+    return InvokeRetFunction<const MetalPipe::State *>(&IReplayController::GetMetalPipelineState);
+  }
+
   const PipeState &GetPipelineState()
   {
     return InvokeRetRefFunction<const PipeState>(&IReplayController::GetPipelineState);
@@ -1689,6 +1694,10 @@ struct CaptureContextInvoker : public UIThreadInvoker<ICaptureContext>
   virtual const VKPipe::State *CurVulkanPipelineState() override
   {
     return m_Obj.CurVulkanPipelineState();
+  }
+  virtual const MetalPipe::State *CurMetalPipelineState() override
+  {
+    return m_Obj.CurMetalPipelineState();
   }
   virtual const PipeState &CurPipelineState() override { return m_Obj.CurPipelineState(); }
   virtual PersistentConfig &Config() override { return m_Obj.Config(); }

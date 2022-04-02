@@ -111,6 +111,11 @@ static void GetEncodings(GraphicsAPI api, ShaderEncoding &primary, ShaderEncodin
     primary = ShaderEncoding::SPIRV;
     secondary = ShaderEncoding::SPIRV;
   }
+  else if(api == GraphicsAPI::Metal)
+  {
+    primary = ShaderEncoding::MSL;
+    secondary = ShaderEncoding::MSL;
+  }
 }
 
 bool encodingCached[arraydim<ShaderEncoding>()] = {};

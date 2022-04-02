@@ -1,0 +1,34 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="MetalHook.cpp" />
+    <ClCompile Include="RD_MTLDevice.cpp" />
+    <ClCompile Include="RD_MTLLibrary.cpp" />
+    <ClCompile Include="RD_MTLRenderPipelineState.cpp" />
+    <ClCompile Include="MetalDispatchTable_helpers.mm" />
+    <ClCompile Include="MetalHook_helpers.mm" />
+    <ClCompile Include="RD_MTLDevice_helpers.mm" />
+    <ClCompile Include="RD_MTLLibrary_helpers.mm" />
+    <ClCompile Include="RD_MTLRenderPipelineState_helpers.mm" />
+    <ClCompile Include="Wrapped_MTLDevice_helpers.mm" />
+    <ClCompile Include="Wrapped_MTLLibrary_helpers.mm" />
+    <ClCompile Include="Wrapped_MTLRenderPipelineState_helpers.mm" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="official\vulkan_ggp.h">
+      <Filter>official</Filter>
+    </ClInclude>
+    <ClInclude Include="MetalDispatchTable.h" />
+    <ClInclude Include="MetalHook.h" />
+    <ClInclude Include="RD_MTLDevice.h" />
+    <ClInclude Include="RD_MTLLibrary.h" />
+    <ClInclude Include="RD_MTLRenderPipelineState.h" />
+    <ClInclude Include="RDMetalCommon.h" />
+    <ClInclude Include="Wrapped_MTLDevice.h" />
+    <ClInclude Include="Wrapped_MTLLibrary.h" />
+    <ClInclude Include="Wrapped_MTLRenderPipelineState.h" />
+    <ClInclude Include="metal_common.h" />
+    <ClInclude Include="metal_manager.h" />
+    <ClInclude Include="metal_resources.h" />
+  </ItemGroup>
+</Project>

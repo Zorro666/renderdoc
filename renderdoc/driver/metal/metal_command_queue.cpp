@@ -50,6 +50,9 @@ bool WrappedMTLCommandQueue::Serialise_commandBuffer(SerialiserType &ser,
 
     m_Device->AddResource(CommandBuffer, ResourceType::CommandBuffer, "Command Buffer");
     m_Device->DerivedResource(CommandQueue, CommandBuffer);
+    RDCLOG("M %s commandBuffer %s", ToStr(GetResID(CommandQueue)).c_str(),
+           ToStr(CommandBuffer).c_str());
+
     m_Device->SetCurrentCommandBuffer(wrappedMTLCommandBuffer);
     if(IsLoading(m_State))
     {
