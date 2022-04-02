@@ -32,10 +32,13 @@ class WrappedMTLBuffer : public WrappedMTLObject
 {
 public:
   WrappedMTLBuffer(MTL::Buffer *realMTLBuffer, ResourceId objId, WrappedMTLDevice *wrappedMTLDevice);
+  WrappedMTLBuffer(WrappedMTLDevice *wrappedMTLDevice);
 
   void *contents();
 
   DECLARE_FUNCTION_SERIALISED(void, didModifyRange, NS::Range &range);
+  template <typename SerialiserType>
+  bool Serialise_InternalModifyCPUContents(SerialiserType &ser, uint64_t start, uint64_t end);
 
   enum
   {

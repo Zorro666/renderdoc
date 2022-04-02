@@ -23,15 +23,18 @@
  ******************************************************************************/
 
 #include "metal_resources.h"
+#include "metal_blit_command_encoder.h"
 #include "metal_buffer.h"
 #include "metal_command_buffer.h"
 #include "metal_command_queue.h"
 #include "metal_device.h"
 #include "metal_function.h"
 #include "metal_library.h"
+#include "metal_manager.h"
 #include "metal_render_command_encoder.h"
 #include "metal_render_pipeline_state.h"
 #include "metal_texture.h"
+#include "metal_types.h"
 
 ResourceId GetResID(WrappedMTLObject *obj)
 {
@@ -49,6 +52,7 @@ METALCPP_WRAPPED_PROTOCOLS(IMPLEMENT_WRAPPED_TYPE_HELPERS)
 void WrappedMTLObject::Dealloc()
 {
   // TODO: call the wrapped object destructor
+  // GetResourceManager()->ReleaseWrappedResource(this);
 }
 
 MetalResourceManager *WrappedMTLObject::GetResourceManager()
@@ -60,4 +64,63 @@ MetalResourceRecord::~MetalResourceRecord()
 {
   if(m_Type == eResCommandBuffer)
     SAFE_DELETE(cmdInfo);
+  else if(m_Type == eResTexture)
+    SAFE_DELETE(texInfo);
+  else if(m_Type == eResBuffer)
+    SAFE_DELETE(bufInfo);
 }
+
+void WrappedMTLObject::AddEvent()
+{
+  m_Device->AddEvent();
+}
+
+void WrappedMTLObject::AddAction(const ActionDescription &a)
+{
+  m_Device->AddAction(a);
+}
+
+void MetalTextureState::BeginCapture()
+{
+  maxRefType = eFrameRef_None;
+}
+
+template <typename SerialiserType>
+void DoSerialise(SerialiserType &ser, MetalTextureState &el)
+{
+  SERIALISE_ELEMENT_LOCAL(textureInfo, el.GetTextureInfo());
+}
+
+template <typename SerialiserType>
+void DoSerialise(SerialiserType &ser, MetalTextureInfo &el)
+{
+  SERIALISE_MEMBER(layerCount);
+  // serialise these as full 32-bit integers for backwards compatibility
+  {
+    uint32_t levelCount = el.levelCount;
+    uint32_t sampleCount = el.sampleCount;
+    SERIALISE_ELEMENT(levelCount);
+    SERIALISE_ELEMENT(sampleCount);
+    if(ser.IsReading())
+    {
+      el.levelCount = (uint16_t)levelCount;
+      el.sampleCount = (uint16_t)sampleCount;
+    }
+  }
+
+  SERIALISE_MEMBER(extent);
+  {
+    MTL::TextureType type = el.type;
+    MTL::TextureUsage usage = el.usage;
+    SERIALISE_ELEMENT(usage);
+    SERIALISE_ELEMENT(type);
+    if(ser.IsReading())
+    {
+      el.usage = usage;
+      el.type = type;
+    }
+  }
+}
+
+INSTANTIATE_SERIALISE_TYPE(MetalTextureState);
+INSTANTIATE_SERIALISE_TYPE(MetalTextureInfo);

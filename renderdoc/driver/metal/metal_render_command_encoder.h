@@ -30,9 +30,12 @@
 
 class WrappedMTLRenderCommandEncoder : public WrappedMTLObject
 {
+  friend WrappedMTLDevice;
+
 public:
   WrappedMTLRenderCommandEncoder(MTL::RenderCommandEncoder *realMTLRenderCommandEncoder,
                                  ResourceId objId, WrappedMTLDevice *wrappedMTLDevice);
+  WrappedMTLRenderCommandEncoder(WrappedMTLDevice *wrappedMTLDevice);
 
   void SetCommandBuffer(WrappedMTLCommandBuffer *commandBuffer) { m_CommandBuffer = commandBuffer; }
   DECLARE_FUNCTION_SERIALISED(void, setRenderPipelineState,

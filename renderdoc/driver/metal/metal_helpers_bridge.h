@@ -31,5 +31,9 @@ namespace ObjC
 void Get_defaultLibraryData(bytebuf &buffer);
 MTL::Texture *Get_Texture(MTL::Drawable *drawable);
 CA::MetalLayer *Get_Layer(MTL::Drawable *drawable);
+void Get_LayerSize(void *layerHandle, int &width, int &height);
+void Set_LayerSize(void *layerHandle, int w, int h);
+void Set_Device(void *layerHandle, MTL::Device *device);
 void Set_FramebufferOnly(void *layerHandle, bool enable);
+CA::MetalDrawable *MTLGetNextDrawable(void *layerHandle);
 };

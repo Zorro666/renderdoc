@@ -93,6 +93,66 @@ static uint32_t GetPlaneByteSize(uint32_t width, uint32_t height, uint32_t depth
   return blockShape.bytes * widthInBlocks * heightInBlocks * mipDepth;
 }
 
+BlendMultiplier MakeBlendMultiplier(MTL::BlendFactor blend)
+{
+  switch(blend)
+  {
+    case MTL::BlendFactorZero: return BlendMultiplier::Zero;
+    case MTL::BlendFactorOne: return BlendMultiplier::One;
+    case MTL::BlendFactorSourceColor: return BlendMultiplier::SrcCol;
+    case MTL::BlendFactorOneMinusSourceColor: return BlendMultiplier::InvSrcCol;
+    case MTL::BlendFactorDestinationColor: return BlendMultiplier::DstCol;
+    case MTL::BlendFactorOneMinusDestinationColor: return BlendMultiplier::InvDstCol;
+    case MTL::BlendFactorSourceAlpha: return BlendMultiplier::SrcAlpha;
+    case MTL::BlendFactorOneMinusSourceAlpha: return BlendMultiplier::InvSrcAlpha;
+    case MTL::BlendFactorDestinationAlpha: return BlendMultiplier::DstAlpha;
+    case MTL::BlendFactorOneMinusDestinationAlpha: return BlendMultiplier::InvDstAlpha;
+    case MTL::BlendFactorBlendColor: return BlendMultiplier::FactorRGB;
+    case MTL::BlendFactorOneMinusBlendColor: return BlendMultiplier::InvFactorRGB;
+    case MTL::BlendFactorBlendAlpha: return BlendMultiplier::FactorAlpha;
+    case MTL::BlendFactorOneMinusBlendAlpha: return BlendMultiplier::InvFactorAlpha;
+    case MTL::BlendFactorSourceAlphaSaturated: return BlendMultiplier::SrcAlphaSat;
+    case MTL::BlendFactorSource1Color: return BlendMultiplier::Src1Col;
+    case MTL::BlendFactorOneMinusSource1Color: return BlendMultiplier::InvSrc1Col;
+    case MTL::BlendFactorSource1Alpha: return BlendMultiplier::Src1Alpha;
+    case MTL::BlendFactorOneMinusSource1Alpha: return BlendMultiplier::InvSrc1Alpha;
+    default: break;
+  }
+
+  return BlendMultiplier::One;
+}
+
+BlendOperation MakeBlendOp(MTL::BlendOperation op)
+{
+  switch(op)
+  {
+    case MTL::BlendOperationAdd: return BlendOperation::Add;
+    case MTL::BlendOperationSubtract: return BlendOperation::Subtract;
+    case MTL::BlendOperationReverseSubtract: return BlendOperation::ReversedSubtract;
+    case MTL::BlendOperationMin: return BlendOperation::Minimum;
+    case MTL::BlendOperationMax: return BlendOperation::Maximum;
+    default: break;
+  }
+
+  return BlendOperation::Add;
+}
+
+byte MakeWriteMask(MTL::ColorWriteMask mask)
+{
+  byte ret = 0;
+
+  if(mask & MTL::ColorWriteMaskRed)
+    ret |= 0x1;
+  if(mask & MTL::ColorWriteMaskGreen)
+    ret |= 0x2;
+  if(mask & MTL::ColorWriteMaskBlue)
+    ret |= 0x4;
+  if(mask & MTL::ColorWriteMaskAlpha)
+    ret |= 0x8;
+
+  return ret;
+}
+
 ResourceFormat MakeResourceFormat(MTL::PixelFormat format)
 {
   ResourceFormat ret;

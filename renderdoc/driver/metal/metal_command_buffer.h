@@ -34,6 +34,7 @@ class WrappedMTLCommandBuffer : public WrappedMTLObject
 public:
   WrappedMTLCommandBuffer(MTL::CommandBuffer *realMTLCommandBuffer, ResourceId objId,
                           WrappedMTLDevice *wrappedMTLDevice);
+  WrappedMTLCommandBuffer(WrappedMTLDevice *wrappedMTLDevice);
 
   void SetCommandQueue(WrappedMTLCommandQueue *commandQueue) { m_CommandQueue = commandQueue; }
   MTL::CommandQueue *GetCommandQueue() { return (MTL::CommandQueue *)m_CommandQueue; }
@@ -42,6 +43,9 @@ public:
                                           RDMTL::RenderPassDescriptor &descriptor);
   DECLARE_FUNCTION_SERIALISED(void, presentDrawable, MTL::Drawable *drawable);
   DECLARE_FUNCTION_SERIALISED(void, commit);
+  DECLARE_FUNCTION_SERIALISED(void, enqueue);
+  DECLARE_FUNCTION_SERIALISED(void, waitUntilCompleted);
+  DECLARE_FUNCTION_SERIALISED(void, label, const char *label);
 
   enum
   {

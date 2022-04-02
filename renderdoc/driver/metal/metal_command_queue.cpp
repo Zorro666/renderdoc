@@ -23,14 +23,22 @@
  ******************************************************************************/
 
 #include "metal_command_queue.h"
+#include "core/core.h"
 #include "metal_command_buffer.h"
 #include "metal_device.h"
+#include "metal_manager.h"
 
 WrappedMTLCommandQueue::WrappedMTLCommandQueue(MTL::CommandQueue *realMTLCommandQueue,
                                                ResourceId objId, WrappedMTLDevice *wrappedMTLDevice)
     : WrappedMTLObject(realMTLCommandQueue, objId, wrappedMTLDevice, wrappedMTLDevice->GetStateRef())
 {
   AllocateObjCBridge(this);
+}
+
+WrappedMTLCommandQueue::WrappedMTLCommandQueue(WrappedMTLDevice *wrappedMTLDevice)
+    : WrappedMTLObject(wrappedMTLDevice, wrappedMTLDevice->GetStateRef())
+{
+  m_ObjcBridge = NULL;
 }
 
 template <typename SerialiserType>
@@ -44,7 +52,33 @@ bool WrappedMTLCommandQueue::Serialise_commandBuffer(SerialiserType &ser,
 
   if(IsReplayingAndReading())
   {
+    //    if(IsLoading(m_State))
+    //    {
+    //      AddEvent();
+    //
+    //      ActionDescription action;
+    //      action.flags |= ActionFlags::NoFlags;
+    //      action.flags |= ActionFlags::CommandBufferBoundary;
+    //
+    //      AddAction(action);
+    //    }
     // TODO: implement RD MTL replay
+    //    MTL::CommandBuffer *realMTLCommandBuffer = Unwrap(CommandQueue)->commandBuffer();
+    //
+    //    WrappedMTLCommandBuffer *wrappedMTLCommandBuffer;
+    //    GetResourceManager()->WrapResource(realMTLCommandBuffer, wrappedMTLCommandBuffer);
+    //    wrappedMTLCommandBuffer->SetCommandQueue(CommandQueue);
+    WrappedMTLCommandBuffer *wrappedMTLCommandBuffer = m_Device->GetNextCommandBuffer();
+
+    if(GetResourceManager()->HasLiveResource(CommandBuffer))
+    {
+      // TODO: we are leaking the original WrappedMTLCommandBuffer
+      GetResourceManager()->EraseLiveResource(CommandBuffer);
+    }
+    GetResourceManager()->AddLiveResource(CommandBuffer, wrappedMTLCommandBuffer);
+
+    m_Device->AddResource(CommandBuffer, ResourceType::CommandBuffer, "Command Buffer");
+    m_Device->DerivedResource(CommandQueue, CommandBuffer);
   }
   return true;
 }

@@ -27,6 +27,9 @@
 #import <Foundation/NSStream.h>
 #import <QuartzCore/CAMetalLayer.h>
 
+// helper defined in vk_apple_helpers.mm
+void getMetalLayerSize(void *layerHandle, int &width, int &height);
+
 void ObjC::Get_defaultLibraryData(bytebuf &buffer)
 {
   NSBundle *mainAppBundle = [NSBundle mainBundle];
@@ -35,8 +38,7 @@ void ObjC::Get_defaultLibraryData(bytebuf &buffer)
   dispatch_data_t data = dispatch_data_create(
       myData.bytes, myData.length, dispatch_get_main_queue(), DISPATCH_DATA_DESTRUCTOR_DEFAULT);
   NSData *nsData = (NSData *)data;
-  buffer.resize(nsData.length);
-  memcpy(buffer.data(), nsData.bytes, buffer.size());
+  buffer.assign((byte *)nsData.bytes, nsData.length);
   dispatch_release(data);
 }
 
@@ -52,9 +54,43 @@ CA::MetalLayer *ObjC::Get_Layer(MTL::Drawable *drawableHandle)
   return (CA::MetalLayer *)drawable.layer;
 }
 
+void ObjC::Get_LayerSize(void *layerHandle, int &width, int &height)
+{
+  ::getMetalLayerSize(layerHandle, width, height);
+}
+
+void ObjC::Set_LayerSize(void *layerHandle, int w, int h)
+{
+  CAMetalLayer *layer = (CAMetalLayer *)layerHandle;
+  assert([layer isKindOfClass:[CAMetalLayer class]]);
+
+  CGSize cgSize;
+  cgSize.width = w;
+  cgSize.height = h;
+  layer.drawableSize = cgSize;
+}
+
+void ObjC::Set_Device(void *layerHandle, MTL::Device *device)
+{
+  CAMetalLayer *layer = (CAMetalLayer *)layerHandle;
+  assert([layer isKindOfClass:[CAMetalLayer class]]);
+  layer.device = id<MTLDevice>(device);
+}
+
 void ObjC::Set_FramebufferOnly(void *layerHandle, bool enable)
 {
   CAMetalLayer *layer = (CAMetalLayer *)layerHandle;
   assert([layer isKindOfClass:[CAMetalLayer class]]);
   layer.framebufferOnly = enable ? YES : NO;
+}
+
+CA::MetalDrawable *ObjC::MTLGetNextDrawable(void *layerHandle)
+{
+  CAMetalLayer *metalLayer = (CAMetalLayer *)layerHandle;
+  RDCASSERT([metalLayer isKindOfClass:[CAMetalLayer class]]);
+  metalLayer.pixelFormat = (MTLPixelFormat)MTL::PixelFormatBGRA8Unorm;
+  metalLayer.framebufferOnly = NO;
+  metalLayer.allowsNextDrawableTimeout = YES;
+  CA::MetalDrawable *drawable = (__bridge CA::MetalDrawable *)[metalLayer nextDrawable];
+  return drawable;
 }

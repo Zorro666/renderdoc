@@ -38,6 +38,12 @@ WrappedMTLRenderCommandEncoder::WrappedMTLRenderCommandEncoder(
   AllocateObjCBridge(this);
 }
 
+WrappedMTLRenderCommandEncoder::WrappedMTLRenderCommandEncoder(WrappedMTLDevice *wrappedMTLDevice)
+    : WrappedMTLObject(wrappedMTLDevice, wrappedMTLDevice->GetStateRef())
+{
+  m_ObjcBridge = NULL;
+}
+
 template <typename SerialiserType>
 bool WrappedMTLRenderCommandEncoder::Serialise_setRenderPipelineState(
     SerialiserType &ser, WrappedMTLRenderPipelineState *pipelineState)
@@ -50,6 +56,13 @@ bool WrappedMTLRenderCommandEncoder::Serialise_setRenderPipelineState(
   // TODO: implement RD MTL replay
   if(IsReplayingAndReading())
   {
+    // TODO: should this be encoder->setRenderPipeline
+    Unwrap(encoder)->setRenderPipelineState(Unwrap(pipelineState));
+    // TODO: should this be the live ID
+    ResourceId pipelineID = GetResID(pipelineState);
+
+    MetalRenderState &renderstate = m_Device->GetCmdRenderState();
+    renderstate.graphics.pipeline = pipelineID;
   }
   return true;
 }
@@ -137,6 +150,7 @@ bool WrappedMTLRenderCommandEncoder::Serialise_setFragmentBuffer(SerialiserType 
   // TODO: implement RD MTL replay
   if(IsReplayingAndReading())
   {
+    Unwrap(RenderCommandEncoder)->setFragmentBuffer(Unwrap(buffer), (NS::UInteger)offset, (NS::UInteger)index);
   }
   return true;
 }
@@ -261,6 +275,18 @@ bool WrappedMTLRenderCommandEncoder::Serialise_drawPrimitives(
   // TODO: implement RD MTL replay
   if(IsReplayingAndReading())
   {
+    if(IsLoading(m_State))
+    {
+      AddEvent();
+
+      ActionDescription action;
+      action.flags |= ActionFlags::Drawcall;
+
+      AddAction(action);
+    }
+    Unwrap(encoder)->drawPrimitives(primitiveType, (NS::UInteger)vertexStart,
+                                    (NS::UInteger)vertexCount, (NS::UInteger)instanceCount,
+                                    (NS::UInteger)baseInstance);
   }
   return true;
 }
@@ -318,6 +344,21 @@ bool WrappedMTLRenderCommandEncoder::Serialise_endEncoding(SerialiserType &ser)
   // TODO: implement RD MTL replay
   if(IsReplayingAndReading())
   {
+    if(IsLoading(m_State))
+    {
+      AddEvent();
+
+      ActionDescription action;
+      action.flags |= ActionFlags::PassBoundary;
+      action.flags |= ActionFlags::EndPass;
+
+      AddAction(action);
+    }
+    m_Device->SetRenderPassActiveState(WrappedMTLDevice::Primary, false);
+    // TODO: ASSERT active render encoder == this encoder
+    m_Device->SetActiveRenderCommandEncoder(NULL);
+    // TODO: should this call "endEncoding" to unify active render pass state tracking
+    Unwrap(encoder)->endEncoding();
   }
   return true;
 }
@@ -340,7 +381,9 @@ void WrappedMTLRenderCommandEncoder::endEncoding()
   }
   else
   {
-    // TODO: implement RD MTL replay
+    m_Device->SetRenderPassActiveState(WrappedMTLDevice::Primary, false);
+    // TODO: ASSERT active render encoder == this encoder
+    m_Device->SetActiveRenderCommandEncoder(NULL);
   }
 }
 

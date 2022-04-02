@@ -38,6 +38,7 @@
 #include "D3D11PipelineStateViewer.h"
 #include "D3D12PipelineStateViewer.h"
 #include "GLPipelineStateViewer.h"
+#include "MetalPipelineStateViewer.h"
 #include "VulkanPipelineStateViewer.h"
 #include "ui_PipelineStateViewer.h"
 
@@ -201,6 +202,7 @@ PipelineStateViewer::PipelineStateViewer(ICaptureContext &ctx, QWidget *parent)
   m_D3D12 = NULL;
   m_GL = NULL;
   m_Vulkan = NULL;
+  m_Metal = NULL;
 
   m_Current = NULL;
 
@@ -232,6 +234,8 @@ void PipelineStateViewer::OnCaptureLoaded()
     setToGL();
   else if(m_Ctx.APIProps().pipelineType == GraphicsAPI::Vulkan)
     setToVulkan();
+  else if(m_Ctx.APIProps().pipelineType == GraphicsAPI::Metal)
+    setToMetal();
 
   if(m_Current)
     m_Current->OnCaptureLoaded();
@@ -282,6 +286,8 @@ void PipelineStateViewer::OnEventChanged(uint32_t eventId)
     setToGL();
   else if(m_Ctx.APIProps().pipelineType == GraphicsAPI::Vulkan)
     setToVulkan();
+  else if(m_Ctx.APIProps().pipelineType == GraphicsAPI::Metal)
+    setToMetal();
 
   if(m_Current)
     m_Current->OnEventChanged(eventId);
@@ -297,6 +303,8 @@ QString PipelineStateViewer::GetCurrentAPI()
     return lit("OpenGL");
   else if(m_Current == m_Vulkan)
     return lit("Vulkan");
+  else if(m_Current == m_Metal)
+    return lit("Metal");
 
   return lit("");
 }
@@ -322,6 +330,8 @@ void PipelineStateViewer::setPersistData(const QVariant &persistData)
     setToGL();
   else if(str == lit("Vulkan"))
     setToVulkan();
+  else if(str == lit("Metal"))
+    setToMetal();
 }
 
 void PipelineStateViewer::reset()
@@ -330,11 +340,13 @@ void PipelineStateViewer::reset()
   delete m_D3D12;
   delete m_GL;
   delete m_Vulkan;
+  delete m_Metal;
 
   m_D3D11 = NULL;
   m_D3D12 = NULL;
   m_GL = NULL;
   m_Vulkan = NULL;
+  m_Metal = NULL;
 
   m_Current = NULL;
 }
@@ -385,6 +397,18 @@ void PipelineStateViewer::setToVulkan()
   m_Vulkan = new VulkanPipelineStateViewer(m_Ctx, *this, this);
   ui->layout->addWidget(m_Vulkan);
   m_Current = m_Vulkan;
+}
+
+void PipelineStateViewer::setToMetal()
+{
+  if(m_Metal)
+    return;
+
+  reset();
+
+  m_Metal = new MetalPipelineStateViewer(m_Ctx, *this, this);
+  ui->layout->addWidget(m_Metal);
+  m_Current = m_Metal;
 }
 
 QXmlStreamWriter *PipelineStateViewer::beginHTMLExport()
@@ -1222,6 +1246,8 @@ ResourceId PipelineStateViewer::updateThumbnail(QWidget *widget, QModelIndex idx
         id = m_GL->GetResource(item);
       else if(m_Vulkan)
         id = m_Vulkan->GetResource(item);
+      else if(m_Metal)
+        id = m_Metal->GetResource(item);
     }
 
     TextureDescription *tex = m_Ctx.GetTexture(id);
@@ -1269,6 +1295,8 @@ bool PipelineStateViewer::hasThumbnail(QWidget *widget, QModelIndex idx)
         id = m_GL->GetResource(item);
       else if(m_Vulkan)
         id = m_Vulkan->GetResource(item);
+      else if(m_Metal)
+        id = m_Metal->GetResource(item);
     }
 
     if(id != ResourceId() && m_Ctx.GetTexture(id))
@@ -1293,6 +1321,8 @@ void PipelineStateViewer::SetupResourceView(RDTreeWidget *widget)
       id = m_GL->GetResource(item);
     else if(m_Vulkan)
       id = m_Vulkan->GetResource(item);
+    else if(m_Metal)
+      id = m_Metal->GetResource(item);
 
     if(id != ResourceId())
     {
@@ -1490,6 +1520,7 @@ bool PipelineStateViewer::SaveShaderFile(const ShaderReflection *shader)
     case ShaderEncoding::GLSL: filter = tr("GLSL files (*.glsl)"); break;
     case ShaderEncoding::SPIRV: filter = tr("SPIR-V files (*.spv)"); break;
     case ShaderEncoding::SPIRVAsm: filter = tr("SPIR-V assembly files (*.spvasm)"); break;
+    case ShaderEncoding::MSL: filter = tr("Metal SL files (*.metal)"); break;
     case ShaderEncoding::Unknown:
     case ShaderEncoding::Count: filter = tr("All files (*.*)"); break;
   }
@@ -1537,4 +1568,6 @@ void PipelineStateViewer::SelectPipelineStage(PipelineStage stage)
     m_GL->SelectPipelineStage(stage);
   else if(m_Vulkan)
     m_Vulkan->SelectPipelineStage(stage);
+  else if(m_Metal)
+    m_Metal->SelectPipelineStage(stage);
 }

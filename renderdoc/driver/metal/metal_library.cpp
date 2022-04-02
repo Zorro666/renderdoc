@@ -25,12 +25,19 @@
 #include "metal_library.h"
 #include "metal_device.h"
 #include "metal_function.h"
+#include "metal_manager.h"
 
 WrappedMTLLibrary::WrappedMTLLibrary(MTL::Library *realMTLLibrary, ResourceId objId,
                                      WrappedMTLDevice *wrappedMTLDevice)
     : WrappedMTLObject(realMTLLibrary, objId, wrappedMTLDevice, wrappedMTLDevice->GetStateRef())
 {
   AllocateObjCBridge(this);
+}
+
+WrappedMTLLibrary::WrappedMTLLibrary(WrappedMTLDevice *wrappedMTLDevice)
+    : WrappedMTLObject(wrappedMTLDevice, wrappedMTLDevice->GetStateRef())
+{
+  m_ObjcBridge = NULL;
 }
 
 template <typename SerialiserType>
@@ -47,6 +54,12 @@ bool WrappedMTLLibrary::Serialise_newFunctionWithName(SerialiserType &ser,
   // TODO: implement RD MTL replay
   if(IsReplayingAndReading())
   {
+    MTL::Function *realMTLFunction = Unwrap(Library)->newFunction(FunctionName);
+    WrappedMTLFunction *wrappedMTLFunction;
+    GetResourceManager()->WrapResource(realMTLFunction, wrappedMTLFunction);
+    GetResourceManager()->AddLiveResource(Function, wrappedMTLFunction);
+    m_Device->AddResource(Function, ResourceType::Shader, "Function");
+    m_Device->DerivedResource(Library, Function);
   }
   return true;
 }

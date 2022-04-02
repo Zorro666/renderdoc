@@ -42,15 +42,22 @@ struct MetalInitialContents
     type = t;
   }
 
+  MetalInitialContents(MetalResourceType t, bytebuf data)
+  {
+    memset(this, 0, sizeof(*this));
+    type = t;
+    resourceContents = data;
+  }
+
   template <typename Configuration>
   void Free(ResourceManager<Configuration> *rm)
   {
     RDCASSERT(false);
   }
   bytebuf resourceContents;
-
-  // for plain resources, we store the resource type
   MetalResourceType type;
+  // MTL::Buffer* buf;
+  // MTL::Texture* img;
 };
 
 struct MetalResourceManagerConfiguration
@@ -117,6 +124,42 @@ public:
     return id;
   }
 
+  template <typename realtype>
+  void ReleaseWrappedResource(realtype obj, bool clearID = false)
+  {
+    ResourceId id = GetResID(obj);
+
+    // TODO: implement RD MTL replay
+    //    if(IsReplayMode(m_State))
+    //      ResourceManager::RemoveWrapper(ToTypedHandle(Unwrap(obj)));
+
+    ResourceManager::ReleaseCurrentResource(id);
+    MetalResourceRecord *record = GetRecord(obj);
+    if(record)
+    {
+      record->Delete(this);
+    }
+    /*
+        if(clearID)
+        {
+          // note the nulling of the wrapped object's ID here is rather unpleasant,
+          // but the lesser of two evils to ensure that stale descriptor set slots
+          // referencing the object behave safely. To do this correctly we would need
+          // to maintain a list of back-references to every descriptor set that has
+          // this object bound, and invalidate them. Instead we just make sure the ID
+          // is always something sensible, since we know the deallocation doesn't
+          // free the memory - the object is pool-allocated.
+          // If a new object is allocated in that pool slot, it will still be a valid
+          // ID and if the resource isn't ever referenced elsewhere, it will just be
+          // a non-live ID to be ignored.
+          WrappedMTLObject *res = (WrappedMTLObject *)GetWrapped(obj);
+          res->id = ResourceId();
+          res->record = NULL;
+        }
+    */
+    delete obj;
+  }
+
   using ResourceManager::AddResourceRecord;
 
   template <typename wrappedtype>
@@ -136,6 +179,27 @@ public:
   //  void DestroyResourceRecord(ResourceRecord *record);
   // ResourceRecordHandler interface
 
+  void SetInternalResource(ResourceId id) {}
+  InitPolicy GetInitPolicy() { return m_InitPolicy; }
+  void SetOptimisationLevel(ReplayOptimisationLevel level)
+  {
+    switch(level)
+    {
+      case ReplayOptimisationLevel::Count:
+        RDCERR("Invalid optimisation level specified");
+        m_InitPolicy = eInitPolicy_NoOpt;
+        break;
+      case ReplayOptimisationLevel::NoOptimisation: m_InitPolicy = eInitPolicy_NoOpt; break;
+      case ReplayOptimisationLevel::Conservative: m_InitPolicy = eInitPolicy_CopyAll; break;
+      case ReplayOptimisationLevel::Balanced: m_InitPolicy = eInitPolicy_ClearUnread; break;
+      case ReplayOptimisationLevel::Fastest: m_InitPolicy = eInitPolicy_Fastest; break;
+    }
+  }
+
+  template <typename SerialiserType>
+  void SerialiseTextureStates(SerialiserType &ser,
+                              std::map<ResourceId, MetalLockingTextureState> &states);
+
 private:
   // ResourceManager interface
   bool ResourceTypeRelease(WrappedMTLObject *res);
@@ -147,5 +211,8 @@ private:
   void Apply_InitialState(WrappedMTLObject *live, const MetalInitialContents &initial);
   // ResourceManager interface
 
+  rdcarray<ResourceId> InitialContentResources();
+
   WrappedMTLDevice *m_Device;
+  InitPolicy m_InitPolicy = eInitPolicy_CopyAll;
 };

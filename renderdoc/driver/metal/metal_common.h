@@ -232,6 +232,7 @@ enum class MetalChunk : uint32_t
   MTLBuffer_removeAllDebugMarkers,
   MTLBuffer_remoteStorageBuffer,
   MTLBuffer_newRemoteBufferViewForDevice,
+  MTLBuffer_InternalModifyCPUContents,
   Max
 };
 
@@ -299,6 +300,9 @@ DECLARE_REFLECTION_ENUM(MetalChunk);
     msgprinted = true;                                                           \
   } while((void)0, 0)
 
+BlendMultiplier MakeBlendMultiplier(MTL::BlendFactor blend);
+BlendOperation MakeBlendOp(MTL::BlendOperation op);
+byte MakeWriteMask(MTL::ColorWriteMask mask);
 ResourceFormat MakeResourceFormat(MTL::PixelFormat format);
 uint32_t GetByteSize(uint32_t width, uint32_t height, uint32_t depth, MTL::PixelFormat format,
                      uint32_t mip);

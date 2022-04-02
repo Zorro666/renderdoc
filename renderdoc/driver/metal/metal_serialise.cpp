@@ -22,6 +22,7 @@
  * THE SOFTWARE.
  ******************************************************************************/
 
+#include "metal_blit_command_encoder.h"
 #include "metal_buffer.h"
 #include "metal_command_buffer.h"
 #include "metal_command_queue.h"
@@ -136,6 +137,14 @@ void DoSerialise(SerialiserType &ser, MTL::SamplePosition &el)
 {
   SERIALISE_MEMBER(x);
   SERIALISE_MEMBER(y);
+}
+
+template <typename SerialiserType>
+void DoSerialise(SerialiserType &ser, MTL::Size &el)
+{
+  SERIALISE_MEMBER(width);
+  SERIALISE_MEMBER(height);
+  SERIALISE_MEMBER(depth);
 }
 
 template <typename SerialiserType>
@@ -334,6 +343,7 @@ INSTANTIATE_SERIALISE_TYPE(MTL::TextureSwizzleChannels);
 INSTANTIATE_SERIALISE_TYPE(MTL::ClearColor);
 INSTANTIATE_SERIALISE_TYPE(MTL::SamplePosition);
 INSTANTIATE_SERIALISE_TYPE(MTL::Viewport);
+INSTANTIATE_SERIALISE_TYPE(MTL::Size);
 INSTANTIATE_SERIALISE_TYPE(RDMTL::TextureDescriptor);
 INSTANTIATE_SERIALISE_TYPE(RDMTL::RenderPipelineColorAttachmentDescriptor);
 INSTANTIATE_SERIALISE_TYPE(RDMTL::PipelineBufferDescriptor);

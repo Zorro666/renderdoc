@@ -33,6 +33,7 @@ class WrappedMTLCommandQueue : public WrappedMTLObject
 public:
   WrappedMTLCommandQueue(MTL::CommandQueue *realMTLCommandQueue, ResourceId objId,
                          WrappedMTLDevice *wrappedMTLDevice);
+  WrappedMTLCommandQueue(WrappedMTLDevice *wrappedMTLDevice);
 
   DECLARE_FUNCTION_WITH_RETURN_SERIALISED(WrappedMTLCommandBuffer *, commandBuffer);
 

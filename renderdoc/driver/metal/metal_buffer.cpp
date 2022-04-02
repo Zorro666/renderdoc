@@ -33,6 +33,12 @@ WrappedMTLBuffer::WrappedMTLBuffer(MTL::Buffer *realMTLBuffer, ResourceId objId,
   AllocateObjCBridge(this);
 }
 
+WrappedMTLBuffer::WrappedMTLBuffer(WrappedMTLDevice *wrappedMTLDevice)
+    : WrappedMTLObject(wrappedMTLDevice, wrappedMTLDevice->GetStateRef())
+{
+  m_ObjcBridge = NULL;
+}
+
 void *WrappedMTLBuffer::contents()
 {
   void *data = Unwrap(this)->contents();
@@ -103,8 +109,7 @@ void WrappedMTLBuffer::didModifyRange(NS::Range &range)
         Serialise_didModifyRange(ser, range);
         chunk = scope.Get();
       }
-      // TODO: add to the frame capture record chunk
-      // m_Device->AddFrameCaptureRecordChunk(chunk);
+      m_Device->AddFrameCaptureRecordChunk(chunk);
     }
   }
   else
@@ -113,4 +118,32 @@ void WrappedMTLBuffer::didModifyRange(NS::Range &range)
   }
 }
 
+template <typename SerialiserType>
+bool WrappedMTLBuffer::Serialise_InternalModifyCPUContents(SerialiserType &ser, uint64_t start,
+                                                           uint64_t end)
+{
+  SERIALISE_ELEMENT_LOCAL(Buffer, this);
+  SERIALISE_ELEMENT(start).Important();
+  SERIALISE_ELEMENT(end).Important();
+  byte *pData = NULL;
+  uint64_t memSize = end - start;
+  if(ser.IsWriting())
+  {
+    pData = (byte *)Unwrap(this)->contents() + start;
+  }
+  if(IsReplayingAndReading())
+  {
+    pData = (byte *)Unwrap(Buffer)->contents() + start;
+  }
+
+  // serialise directly using buffer memory
+  ser.Serialise("data"_lit, pData, memSize, SerialiserFlags::NoFlags).Important();
+
+  SERIALISE_CHECK_READ_ERRORS();
+
+  return true;
+}
+
 INSTANTIATE_FUNCTION_SERIALISED(WrappedMTLBuffer, void, didModifyRange, NS::Range &);
+INSTANTIATE_FUNCTION_SERIALISED(WrappedMTLBuffer, void, InternalModifyCPUContents, uint64_t,
+                                uint64_t);

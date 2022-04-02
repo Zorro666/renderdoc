@@ -48,7 +48,8 @@ const uint32_t MAX_RENDER_PASS_SAMPLE_BUFFER_ATTACHMENTS = 4;
   FUNC(Library);                         \
   FUNC(RenderPipelineState);             \
   FUNC(Texture);                         \
-  FUNC(RenderCommandEncoder);
+  FUNC(RenderCommandEncoder);            \
+  FUNC(BlitCommandEncoder);
 
 // These serialise overloads will fetch the ID during capture, serialise the ID
 // directly as-if it were the original type, then on replay load up the resource if available.
@@ -117,6 +118,10 @@ MTL_DECLARE_REFLECTION_TYPE(MultisampleStencilResolveFilter);
 MTL_DECLARE_REFLECTION_TYPE(SamplePosition);
 MTL_DECLARE_REFLECTION_TYPE(DeviceLocation);
 MTL_DECLARE_REFLECTION_TYPE(ArgumentBuffersTier);
+MTL_DECLARE_REFLECTION_TYPE(DepthClipMode);
+MTL_DECLARE_REFLECTION_TYPE(TriangleFillMode);
+MTL_DECLARE_REFLECTION_TYPE(CullMode);
+MTL_DECLARE_REFLECTION_TYPE(Size);
 
 template <>
 inline rdcliteral TypeName<NS::Range>()

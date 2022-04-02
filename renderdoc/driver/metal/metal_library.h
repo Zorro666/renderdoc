@@ -25,15 +25,20 @@
 #pragma once
 
 #include "metal_common.h"
+#include "metal_core.h"
 
 class WrappedMTLLibrary : public WrappedMTLObject
 {
 public:
   WrappedMTLLibrary(MTL::Library *realMTLLibrary, ResourceId objId,
                     WrappedMTLDevice *wrappedMTLDevice);
+  WrappedMTLLibrary(WrappedMTLDevice *wrappedMTLDevice);
 
   DECLARE_FUNCTION_WITH_RETURN_SERIALISED(WrappedMTLFunction *, newFunctionWithName,
                                           NS::String *functionName);
+  DECLARE_FUNCTION_WITH_RETURN_SERIALISED(WrappedMTLFunction *, newFunctionWithName,
+                                          WrappedMTLLibrary *library, NS::String *functionName,
+                                          WrappedMTLFunction *function);
 
   enum
   {

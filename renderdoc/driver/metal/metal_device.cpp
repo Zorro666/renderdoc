@@ -24,24 +24,47 @@
 
 #include "metal_device.h"
 #include "metal_buffer.h"
+#include "metal_command_buffer.h"
 #include "metal_command_queue.h"
 #include "metal_core.h"
 #include "metal_function.h"
 #include "metal_helpers_bridge.h"
 #include "metal_library.h"
 #include "metal_manager.h"
+#include "metal_render_command_encoder.h"
 #include "metal_render_pipeline_state.h"
+#include "metal_replay.h"
 #include "metal_texture.h"
+
+WrappedMTLDevice::WrappedMTLDevice() : WrappedMTLObject(this, GetStateRef())
+{
+  Construct();
+}
 
 WrappedMTLDevice::WrappedMTLDevice(MTL::Device *realMTLDevice, ResourceId objId)
     : WrappedMTLObject(realMTLDevice, objId, this, GetStateRef())
 {
   AllocateObjCBridge(this);
+
+  Construct();
+  GetResourceManager()->AddCurrentResource(objId, this);
+}
+
+void WrappedMTLDevice::Construct()
+{
   m_Device = this;
   m_Capturer = new MetalCapturer(this);
 
   if(RenderDoc::Inst().IsReplayApp())
   {
+    m_State = CaptureState::LoadingReplaying;
+    m_DummyReplayLibrary = new WrappedMTLLibrary(this);
+    m_DummyReplayCommandQueue = new WrappedMTLCommandQueue(this);
+    m_DummyReplayCommandBuffer = new WrappedMTLCommandBuffer(this);
+    m_DummyReplayCommandBuffer->SetCommandQueue(m_DummyReplayCommandQueue);
+    m_DummyReplayRenderCommandEncoder = new WrappedMTLRenderCommandEncoder(this);
+    m_DummyReplayRenderCommandEncoder->SetCommandBuffer(m_DummyReplayCommandBuffer);
+    m_DummyBuffer = new WrappedMTLBuffer(this);
   }
   else
   {
@@ -52,7 +75,13 @@ WrappedMTLDevice::WrappedMTLDevice(MTL::Device *realMTLDevice, ResourceId objId)
 
   threadSerialiserTLSSlot = Threading::AllocateTLSSlot();
 
+  // m_ActionCallback = NULL;
+
+  m_ActionStack.push_back(&m_ParentAction);
+
   m_ResourceManager = new MetalResourceManager(m_State, this);
+
+  m_Replay = new MetalReplay(this);
 
   m_HeaderChunk = NULL;
 
@@ -71,8 +100,49 @@ WrappedMTLDevice::WrappedMTLDevice(MTL::Device *realMTLDevice, ResourceId objId)
   }
 
   RDCASSERT(m_Device == this);
-  GetResourceManager()->AddCurrentResource(objId, this);
+  GetResourceManager()->AddCurrentResource(m_ID, this);
+}
 
+RDResult WrappedMTLDevice::Initialise(MetalInitParams &params, uint64_t sectionVersion,
+                                      const ReplayOptions &opts)
+{
+  m_InitParams = params;
+  m_SectionVersion = sectionVersion;
+  m_ReplayOptions = opts;
+
+  m_ResourceManager->SetOptimisationLevel(m_ReplayOptions.optimisation);
+
+  MTLFixupForMetalDriverAssert();
+  m_Real = MTL::CreateSystemDefaultDevice();
+  AllocateObjCBridge(this);
+  m_ID = ResourceIDGen::GetNewUniqueID();
+  GetResourceManager()->AddCurrentResource(m_ID, this);
+  m_ReplayCommandQueue = newCommandQueue();
+  m_mtlCommandQueue = Unwrap(this)->newCommandQueue();
+
+  /*
+    m_Instance = NULL;
+
+    GetResourceManager()->WrapResource(m_Instance, m_Instance);
+    // we'll add the chunk later when we re-process it.
+    if(params.InstanceID != ResourceId())
+    {
+      GetResourceManager()->AddLiveResource(params.InstanceID, m_Instance);
+
+      AddResource(params.InstanceID, ResourceType::Device, "Instance");
+      GetReplay()->GetResourceDesc(params.InstanceID).initialisationChunks.clear();
+    }
+    else
+    {
+      GetResourceManager()->AddLiveResource(GetResID(m_Instance), m_Instance);
+    }
+  */
+  m_Replay->CreateResources();
+  return ResultCode::Succeeded;
+}
+
+void WrappedMTLDevice::CreateInstance()
+{
   if(IsCaptureMode(m_State))
   {
     Chunk *chunk = NULL;
@@ -91,36 +161,12 @@ WrappedMTLDevice::WrappedMTLDevice(MTL::Device *realMTLDevice, ResourceId objId)
   else
   {
     // TODO: implement RD MTL replay
+    GetResourceManager()->AddLiveResource(m_ID, this);
+    m_Replay->CreateResources();
   }
 
   m_mtlCommandQueue = Unwrap(this)->newCommandQueue();
   FirstFrame();
-}
-
-// Serialised MTLDevice APIs
-
-template <typename SerialiserType>
-bool WrappedMTLDevice::Serialise_MTLCreateSystemDefaultDevice(SerialiserType &ser)
-{
-  SERIALISE_ELEMENT_LOCAL(Device, GetResID(this)).TypedAs("MTLDevice"_lit);
-
-  SERIALISE_CHECK_READ_ERRORS();
-
-  if(IsReplayingAndReading())
-  {
-    // TODO: implement RD MTL replay
-  }
-  return true;
-}
-
-WrappedMTLDevice *WrappedMTLDevice::MTLCreateSystemDefaultDevice(MTL::Device *realMTLDevice)
-{
-  MTLFixupForMetalDriverAssert();
-  MTLHookObjcMethods();
-  ResourceId objId = ResourceIDGen::GetNewUniqueID();
-  WrappedMTLDevice *wrappedMTLDevice = new WrappedMTLDevice(realMTLDevice, objId);
-
-  return wrappedMTLDevice;
 }
 
 IMP WrappedMTLDevice::g_real_CAMetalLayer_nextDrawable;
@@ -169,6 +215,40 @@ void WrappedMTLDevice::MTLFixupForMetalDriverAssert()
 // Serialised MTLDevice APIs
 
 template <typename SerialiserType>
+bool WrappedMTLDevice::Serialise_MTLCreateSystemDefaultDevice(SerialiserType &ser)
+{
+  SERIALISE_ELEMENT_LOCAL(Device, GetResID(this)).TypedAs("MTLDevice"_lit);
+
+  SERIALISE_CHECK_READ_ERRORS();
+
+  if(IsReplayingAndReading())
+  {
+    RDCASSERT(m_Real);
+    RDCASSERT(m_ID != ResourceId::Null());
+    //    real = MTLCreateSystemDefaultDevice();
+    //    id = ResourceIDGen::GetNewUniqueID();
+    //    GetResourceManager()->AddCurrentResource(id, this);
+    //    MTL::CommandQueue* commandQueue_objc = newCommandQueue();
+    //    m_ReplayCommandQueue = GetWrapped(commandQueue_objc);
+
+    GetResourceManager()->AddLiveResource(Device, this);
+    AddResource(Device, ResourceType::Device, "Device");
+  }
+  return true;
+}
+
+WrappedMTLDevice *WrappedMTLDevice::MTLCreateSystemDefaultDevice(MTL::Device *realMTLDevice)
+{
+  MTLFixupForMetalDriverAssert();
+  MTLHookObjcMethods();
+  ResourceId objId = ResourceIDGen::GetNewUniqueID();
+  WrappedMTLDevice *wrappedMTLDevice = new WrappedMTLDevice(realMTLDevice, objId);
+  wrappedMTLDevice->CreateInstance();
+
+  return wrappedMTLDevice;
+}
+
+template <typename SerialiserType>
 bool WrappedMTLDevice::Serialise_newCommandQueue(SerialiserType &ser, WrappedMTLCommandQueue *queue)
 {
   SERIALISE_ELEMENT_LOCAL(Device, this);
@@ -178,7 +258,13 @@ bool WrappedMTLDevice::Serialise_newCommandQueue(SerialiserType &ser, WrappedMTL
 
   if(IsReplayingAndReading())
   {
-    // TODO: implement RD MTL replay
+    MTL::CommandQueue *realMTLCommandQueue = Unwrap(this)->newCommandQueue();
+    WrappedMTLCommandQueue *wrappedMTLCommandQueue;
+    GetResourceManager()->WrapResource(realMTLCommandQueue, wrappedMTLCommandQueue);
+    GetResourceManager()->AddLiveResource(CommandQueue, wrappedMTLCommandQueue);
+
+    AddResource(CommandQueue, ResourceType::Queue, "Queue");
+    DerivedResource(this, CommandQueue);
   }
   return true;
 }
@@ -227,7 +313,17 @@ bool WrappedMTLDevice::Serialise_newDefaultLibrary(SerialiserType &ser, WrappedM
 
   if(IsReplayingAndReading())
   {
-    // TODO: implement RD MTL replay
+    dispatch_data_t dispatchData = dispatch_data_create(
+        data.data(), data.size(), dispatch_get_main_queue(), DISPATCH_DATA_DESTRUCTOR_DEFAULT);
+    NS::Error *error;
+    MTL::Library *realMTLLibrary = Unwrap(this)->newLibrary(dispatchData, &error);
+    dispatch_release(dispatchData);
+
+    WrappedMTLLibrary *wrappedMTLLibrary;
+    GetResourceManager()->WrapResource(realMTLLibrary, wrappedMTLLibrary);
+    GetResourceManager()->AddLiveResource(Library, wrappedMTLLibrary);
+    AddResource(Library, ResourceType::Pool, "Library");
+    DerivedResource(this, Library);
   }
   return true;
 }
@@ -274,7 +370,13 @@ bool WrappedMTLDevice::Serialise_newLibraryWithSource(SerialiserType &ser,
 
   if(IsReplayingAndReading())
   {
-    // TODO: implement RD MTL replay
+    NS::Error *error = NULL;
+    MTL::Library *realMTLLibrary = Unwrap(this)->newLibrary(source, options, &error);
+    WrappedMTLLibrary *wrappedMTLLibrary;
+    GetResourceManager()->WrapResource(realMTLLibrary, wrappedMTLLibrary);
+    GetResourceManager()->AddLiveResource(Library, wrappedMTLLibrary);
+    AddResource(Library, ResourceType::Pool, "Library");
+    DerivedResource(this, Library);
   }
   return true;
 }
@@ -328,6 +430,22 @@ bool WrappedMTLDevice::Serialise_newBufferWithBytes(SerialiserType &ser, Wrapped
   // TODO: implement RD MTL replay
   if(IsReplayingAndReading())
   {
+    MTL::Buffer *realMTLBuffer;
+    if(initialData.isEmpty())
+    {
+      realMTLBuffer = Unwrap(this)->newBuffer(length, options);
+    }
+    else
+    {
+      RDCASSERT(initialData.size() == length);
+      realMTLBuffer = Unwrap(this)->newBuffer(initialData.data(), initialData.size(), options);
+    }
+    WrappedMTLBuffer *wrappedMTLBuffer;
+    GetResourceManager()->WrapResource(realMTLBuffer, wrappedMTLBuffer);
+    GetResourceManager()->AddLiveResource(Buffer, wrappedMTLBuffer);
+
+    AddResource(Buffer, ResourceType::Buffer, "Buffer");
+    DerivedResource(this, Buffer);
   }
   return true;
 }
@@ -358,6 +476,62 @@ bool WrappedMTLDevice::Serialise_newRenderPipelineStateWithDescriptor(
   // TODO: implement RD MTL replay
   if(IsReplayingAndReading())
   {
+    ResourceId liveID;
+
+    MTL::RenderPipelineDescriptor *mtlDescriptor(descriptor);
+    MTL::RenderPipelineState *realMTLRenderPipelineState =
+        Unwrap(this)->newRenderPipelineState(mtlDescriptor, error);
+    mtlDescriptor->release();
+    WrappedMTLRenderPipelineState *wrappedMTLRenderPipelineState;
+    liveID = GetResourceManager()->WrapResource(realMTLRenderPipelineState,
+                                                wrappedMTLRenderPipelineState);
+    GetResourceManager()->AddLiveResource(RenderPipelineState, wrappedMTLRenderPipelineState);
+    AddResource(RenderPipelineState, ResourceType::PipelineState, "Pipeline State");
+    DerivedResource(this, RenderPipelineState);
+
+    MetalCreationInfo::Pipeline &pipeline = m_CreationInfo.m_Pipeline[liveID];
+    // Save pipeline settings from MTLRenderPipelineDescriptor
+    // MTL::Function* = MTLRenderPipelineDescriptor::vertexFunction
+    // MTL::Function* = MTLRenderPipelineDescriptor::fragmentFunction
+    // TODO: vertexDescriptor : MTLVertexDescriptor
+    // TODO: vertexBuffers : MTLPipelineBufferDescriptorArray *
+    // TODO: fragmentBuffers : MTLPipelineBufferDescriptorArray *
+    const uint32_t colorAttachmentCount = descriptor.colorAttachments.count();
+    pipeline.attachments.resize(colorAttachmentCount);
+    for(uint32_t i = 0; i < colorAttachmentCount; ++i)
+    {
+      RDMTL::RenderPipelineColorAttachmentDescriptor &mtlAttachment = descriptor.colorAttachments[i];
+      MetalCreationInfo::Pipeline::Attachment &attachment = pipeline.attachments[i];
+      attachment.pixelFormat = mtlAttachment.pixelFormat;
+      attachment.blendingEnabled = mtlAttachment.blendingEnabled;
+      attachment.sourceRGBBlendFactor = mtlAttachment.sourceAlphaBlendFactor;
+      attachment.destinationRGBBlendFactor = mtlAttachment.destinationRGBBlendFactor;
+      attachment.rgbBlendOperation = mtlAttachment.rgbBlendOperation;
+      attachment.sourceAlphaBlendFactor = mtlAttachment.sourceAlphaBlendFactor;
+      attachment.destinationAlphaBlendFactor = mtlAttachment.destinationAlphaBlendFactor;
+      attachment.alphaBlendOperation = mtlAttachment.alphaBlendOperation;
+      attachment.writeMask = mtlAttachment.writeMask;
+    }
+    // MTLPixelFormat = MTLRenderPipelineDescriptor::depthAttachmentPixelFormat
+    // MTLPixelFormat = MTLRenderPipelineDescriptor::stencilAttachmentPixelFormat
+    // NSUInteger = MTLRenderPipelineDescriptor::sampleCount
+    pipeline.alphaToCoverageEnabled = descriptor.alphaToCoverageEnabled;
+    pipeline.alphaToOneEnabled = descriptor.alphaToOneEnabled;
+    pipeline.rasterizationEnabled = descriptor.rasterizationEnabled;
+    // MTLPrimitiveTopologyClass = MTLRenderPipelineDescriptor::inputPrimitiveTopology
+    // NSUInteger = MTLRenderPipelineDescriptor::rasterSampleCount
+    // NSUInteger = MTLRenderPipelineDescriptor::maxTessellationFactor
+    // bool = MTLRenderPipelineDescriptor::tessellationFactorScaleEnabled
+    // MTLTessellationFactorFormat = MTLRenderPipelineDescriptor::tessellationFactorFormat
+    // MTLTessellationControlPointIndexType =
+    // MTLRenderPipelineDescriptor::tessellationControlPointIndexType
+    // MTLTessellationFactorStepFunction =
+    // MTLRenderPipelineDescriptor::tessellationFactorStepFunction
+    // MTLWinding = MTLRenderPipelineDescriptor::tessellationOutputWindingOrder
+    // MTLTessellationPartitionMode = MTLRenderPipelineDescriptor::tessellationPartitionMode
+    // bool = MTLRenderPipelineDescriptor::supportIndirectCommandBuffers
+    // NSUInteger = MTLRenderPipelineDescriptor::maxVertexAmplificationCount
+    // TODO: binaryArchives : NSArray<id<MTLBinaryArchive>>
   }
   return true;
 }
@@ -417,6 +591,25 @@ bool WrappedMTLDevice::Serialise_newTextureWithDescriptor(SerialiserType &ser,
 
   if(IsReplayingAndReading())
   {
+    MTL::TextureDescriptor *mtlDescriptor(descriptor);
+    MTL::Texture *realMTLTexture = Unwrap(this)->newTexture(mtlDescriptor);
+    mtlDescriptor->release();
+    WrappedMTLTexture *wrappedMTLTexture;
+    ResourceId liveID = GetResourceManager()->WrapResource(realMTLTexture, wrappedMTLTexture);
+    GetResourceManager()->AddLiveResource(Texture, wrappedMTLTexture);
+
+    m_CreationInfo.m_Texture[liveID].Init(GetResourceManager(), m_CreationInfo, descriptor);
+    // TODO : set SwapBuffer flag
+    // m_CreationInfo.m_Texture[liveID].creationFlags |= TextureCategory::SwapBuffer;
+
+    bool inserted = false;
+    // TODO : set SwapBuffer flag
+    MetalTextureInfo info(descriptor, false);
+
+    InsertTextureState(wrappedMTLTexture, liveID, info, eFrameRef_Unknown, &inserted);
+
+    AddResource(Texture, ResourceType::Texture, "Texture");
+    DerivedResource(this, Texture);
   }
   return true;
 }
@@ -593,6 +786,7 @@ WrappedMTLTexture *WrappedMTLDevice::Common_NewTexture(RDMTL::TextureDescriptor 
     }
     MetalResourceRecord *textureRecord = GetResourceManager()->AddResourceRecord(wrappedMTLTexture);
     textureRecord->AddChunk(chunk);
+    textureRecord->texInfo = new MetalTextureInfo(rdDescriptor, realMTLTexture->framebufferOnly());
   }
   if(ioSurfaceTexture)
   {
@@ -630,12 +824,33 @@ WrappedMTLBuffer *WrappedMTLDevice::Common_NewBuffer(bool withBytes, const void 
 
     MetalResourceRecord *record = GetResourceManager()->AddResourceRecord(wrappedMTLBuffer);
     record->AddChunk(chunk);
+
+    MTL::StorageMode mode = realMTLBuffer->storageMode();
+    record->bufInfo = new MetalBufferInfo(mode);
+
+    // Create CPU side tracking info for CPU shared buffers
+    if(mode == MTL::StorageModeShared)
+    {
+      record->bufInfo->data = (byte *)realMTLBuffer->contents();
+      record->bufInfo->length = realMTLBuffer->length();
+    }
+    // Snapshot GPU only buffers
+    else if(mode == MTL::StorageModePrivate)
+    {
+      GetResourceManager()->MarkDirtyResource(id);
+    }
   }
   else
   {
     // TODO: implement RD MTL replay
   }
   return wrappedMTLBuffer;
+}
+
+CA::MetalDrawable *WrappedMTLDevice::GetNextDrawable(void *layer)
+{
+  CA::MetalDrawable *drawable = ObjC::MTLGetNextDrawable(layer);
+  return drawable;
 }
 
 INSTANTIATE_FUNCTION_SERIALISED(WrappedMTLDevice, bool, MTLCreateSystemDefaultDevice);
