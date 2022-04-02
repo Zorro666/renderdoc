@@ -5433,6 +5433,10 @@ float2 RD_SelectedRange();
   {
     text = lit("; Can't insert snippets for SPIR-V ASM");
   }
+  else if(encoding == ShaderEncoding::MSL)
+  {
+    text = lit("// don't have snippets for Metal SL");
+  }
 
   insertSnippet(text);
 }

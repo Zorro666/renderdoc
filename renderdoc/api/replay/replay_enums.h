@@ -1783,6 +1783,10 @@ DOCUMENT(R"(Identifies a Graphics API.
 
   Vulkan.
 
+.. data:: Metal
+
+  Metal.
+
 )");
 enum class GraphicsAPI : uint32_t
 {
@@ -1790,6 +1794,7 @@ enum class GraphicsAPI : uint32_t
   D3D12,
   OpenGL,
   Vulkan,
+  Metal,
 };
 
 DECLARE_REFLECTION_ENUM(GraphicsAPI);
@@ -1849,6 +1854,9 @@ DOCUMENT(R"(Identifies a shader encoding used to pass shader code to an API.
   DXIL binary shader, used by D3D12. Note that although the container is still DXBC format this is
   used to distinguish from :data:`DXBC` for compiler I/O matching.
 
+.. data:: MSL
+
+  Metal shading language in string format, used by Metal.
 )");
 enum class ShaderEncoding : uint32_t
 {
@@ -1862,6 +1870,7 @@ enum class ShaderEncoding : uint32_t
   DXIL,
   OpenGLSPIRV,
   OpenGLSPIRVAsm,
+  MSL,
   Count,
 };
 
@@ -2040,7 +2049,8 @@ DOCUMENT(R"(Check whether or not this is a human readable text representation.
 constexpr inline bool IsTextRepresentation(ShaderEncoding encoding)
 {
   return encoding == ShaderEncoding::HLSL || encoding == ShaderEncoding::GLSL ||
-         encoding == ShaderEncoding::SPIRVAsm || encoding == ShaderEncoding::OpenGLSPIRVAsm;
+         encoding == ShaderEncoding::SPIRVAsm || encoding == ShaderEncoding::OpenGLSPIRVAsm ||
+         encoding == ShaderEncoding::MSL;
 }
 
 DOCUMENT(R"(A primitive topology used for processing vertex data.
@@ -2340,6 +2350,10 @@ DOCUMENT(R"(The stage in a pipeline where a shader runs
 
   The tessellation evaluation shader. See also :data:`Domain`.
 
+.. data:: Post_Tess
+
+  The post-tessellation shader on Metal.
+
 .. data:: Geometry
 
   The geometry shader.
@@ -2378,6 +2392,7 @@ enum class ShaderStage : uint32_t
 
   Domain,
   Tess_Eval = Domain,
+  Post_Tess = Domain,
 
   Geometry,
 

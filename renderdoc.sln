@@ -81,6 +81,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Intel", "renderdoc\driver\i
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ARM", "renderdoc\driver\ihv\arm\ARM.vcxproj", "{F9CCE6CA-0CA3-4A22-9C7B-881369955E62}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "metal", "renderdoc\driver\metal\renderdoc_metal.vcxproj", "{FE01995F-247E-4127-A108-525EF5954081}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Development|x64 = Development|x64
@@ -273,6 +275,14 @@ Global
 		{F9CCE6CA-0CA3-4A22-9C7B-881369955E62}.Release|x64.Build.0 = Release|x64
 		{F9CCE6CA-0CA3-4A22-9C7B-881369955E62}.Release|x86.ActiveCfg = Release|Win32
 		{F9CCE6CA-0CA3-4A22-9C7B-881369955E62}.Release|x86.Build.0 = Release|Win32
+		{FE01995F-247E-4127-A108-525EF5954081}.Development|x64.ActiveCfg = Development|x64
+		{FE01995F-247E-4127-A108-525EF5954081}.Development|x64.Build.0 = Development|x64
+		{FE01995F-247E-4127-A108-525EF5954081}.Development|x86.ActiveCfg = Development|Win32
+		{FE01995F-247E-4127-A108-525EF5954081}.Development|x86.Build.0 = Development|Win32
+		{FE01995F-247E-4127-A108-525EF5954081}.Release|x64.ActiveCfg = Release|x64
+		{FE01995F-247E-4127-A108-525EF5954081}.Release|x64.Build.0 = Release|x64
+		{FE01995F-247E-4127-A108-525EF5954081}.Release|x86.ActiveCfg = Release|Win32
+		{FE01995F-247E-4127-A108-525EF5954081}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -307,5 +317,6 @@ Global
 		{40349AD9-5558-4DF4-84E2-11934DE90A11} = {4DA2F3E3-9A65-45DD-A69B-82C7757D4904}
 		{7FCB5FC5-1DBD-4DA6-83A0-6BA4E945BDA5} = {4DA2F3E3-9A65-45DD-A69B-82C7757D4904}
 		{F9CCE6CA-0CA3-4A22-9C7B-881369955E62} = {4DA2F3E3-9A65-45DD-A69B-82C7757D4904}
+		{FE01995F-247E-4127-A108-525EF5954081} = {864A44B0-5612-451A-857F-41E3EF785EF6}
 	EndGlobalSection
 EndGlobal

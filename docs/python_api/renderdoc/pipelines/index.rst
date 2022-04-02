@@ -8,4 +8,5 @@ Pipeline State Objects
 	d3d12
 	gl
 	vulkan
+	metal
 	common

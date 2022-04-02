@@ -35,9 +35,64 @@ struct MetalInitParams
   uint64_t GetSerialiseSize();
 
   // check if a frame capture section version is supported
+  static bool IsSupportedVersion(uint64_t ver);
   static const uint64_t CurrentVersion = 0x1;
 
   ResourceId DeviceID;
+};
+
+struct MetalActionTreeNode
+{
+  MetalActionTreeNode() {}
+  explicit MetalActionTreeNode(const ActionDescription &a) : action(a) {}
+  ActionDescription action;
+  rdcarray<MetalActionTreeNode> children;
+
+  rdcarray<ResourceId> executedCmds;
+
+  MetalActionTreeNode &operator=(const ActionDescription &a)
+  {
+    *this = MetalActionTreeNode(a);
+    return *this;
+  }
+
+  void InsertAndUpdateIDs(const MetalActionTreeNode &child, uint32_t baseEventID, uint32_t baseDrawID)
+  {
+    children.reserve(child.children.size());
+    for(size_t i = 0; i < child.children.size(); i++)
+    {
+      children.push_back(child.children[i]);
+      children.back().UpdateIDs(baseEventID, baseDrawID);
+    }
+  }
+
+  void UpdateIDs(uint32_t baseEventID, uint32_t baseDrawID)
+  {
+    action.eventId += baseEventID;
+    action.actionId += baseDrawID;
+
+    for(APIEvent &ev : action.events)
+      ev.eventId += baseEventID;
+
+    for(size_t i = 0; i < children.size(); i++)
+      children[i].UpdateIDs(baseEventID, baseDrawID);
+  }
+
+  rdcarray<ActionDescription> Bake()
+  {
+    rdcarray<ActionDescription> ret;
+    if(children.empty())
+      return ret;
+
+    ret.resize(children.size());
+    for(size_t i = 0; i < children.size(); i++)
+    {
+      ret[i] = children[i].action;
+      ret[i].children = children[i].Bake();
+    }
+
+    return ret;
+  }
 };
 
 DECLARE_REFLECTION_STRUCT(MetalInitParams);

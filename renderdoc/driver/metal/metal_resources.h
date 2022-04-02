@@ -160,6 +160,48 @@ struct MetalBufferInfo
   size_t length;
 };
 
+struct MetalTextureInfo
+{
+  MTL::Size extent;
+  MTL::TextureUsage usage;
+  MTL::TextureType type;
+  uint32_t layerCount = 0;
+  uint16_t levelCount = 0;
+  uint16_t sampleCount = 0;
+  bool frameBufferOnly = false;
+
+  MetalTextureInfo() {}
+  MetalTextureInfo(RDMTL::TextureDescriptor &descriptor, bool frameBufferOnly)
+      : usage(descriptor.usage),
+        type(descriptor.textureType),
+        layerCount((uint32_t)descriptor.arrayLength),
+        levelCount(descriptor.mipmapLevelCount),
+        sampleCount(descriptor.sampleCount),
+        frameBufferOnly(frameBufferOnly)
+  {
+    extent.width = descriptor.width;
+    extent.height = descriptor.height;
+    extent.depth = descriptor.depth;
+    MTL::TextureType textureType = descriptor.textureType;
+    if(textureType == MTL::TextureType1D)
+    {
+      extent.height = extent.depth = 1;
+    }
+    else if(textureType == MTL::TextureType2D)
+    {
+      extent.depth = 1;
+    }
+  }
+
+  inline bool operator==(const MetalTextureInfo &other) const
+  {
+    return layerCount == other.layerCount && levelCount == other.levelCount &&
+           sampleCount == other.sampleCount && extent.width == other.extent.width &&
+           extent.height == other.extent.height && extent.depth == other.extent.depth &&
+           usage == other.usage && type == other.type && frameBufferOnly == other.frameBufferOnly;
+  }
+};
+
 struct MetalResourceRecord : public ResourceRecord
 {
 public:
@@ -182,5 +224,89 @@ public:
     void *ptrUnion;                          // for initialisation to NULL
     MetalCmdBufferRecordingInfo *cmdInfo;    // only for command buffers
     MetalBufferInfo *bufInfo;                // only for buffers
+    MetalTextureInfo *texInfo;               // only for textures
   };
 };
+
+struct MetalTextureState
+{
+  WrappedMTLTexture *wrappedTexture = NULL;
+  MetalTextureInfo textureInfo;
+  FrameRefType maxRefType = eFrameRef_None;
+
+  inline const MetalTextureInfo &GetTextureInfo() const { return textureInfo; }
+  inline MetalTextureState() {}
+  inline MetalTextureState(WrappedMTLTexture *inWrappedTexture,
+                           const MetalTextureInfo &inTextureInfo, FrameRefType refType)
+      : wrappedTexture(inWrappedTexture), textureInfo(inTextureInfo), maxRefType(refType)
+  {
+  }
+  MetalTextureState InitialState() const;
+  void InitialState(MetalTextureState &result) const;
+  MetalTextureState CommandBufferInitialState() const;
+
+  void BeginCapture();
+  void FixupStorageReferences();
+};
+
+template <typename TextureStateT>
+class MetalLockedTextureStateRefTemplate
+{
+public:
+  MetalLockedTextureStateRefTemplate() = default;
+  MetalLockedTextureStateRefTemplate(TextureStateT *state, Threading::SpinLock &spin)
+      : m_state(state), m_lock(spin)
+  {
+  }
+  inline TextureStateT &operator*() const { return *m_state; }
+  inline TextureStateT *operator->() const { return m_state; }
+  inline operator bool() const { return m_state != NULL; }
+private:
+  TextureStateT *m_state = NULL;
+  Threading::ScopedSpinLock m_lock;
+};
+
+class MetalLockedConstTextureStateRef
+    : public MetalLockedTextureStateRefTemplate<const MetalTextureState>
+{
+public:
+  MetalLockedConstTextureStateRef() = default;
+  MetalLockedConstTextureStateRef(const MetalTextureState *state, Threading::SpinLock &spin)
+      : MetalLockedTextureStateRefTemplate<const MetalTextureState>(state, spin)
+  {
+  }
+};
+
+class MetalLockedTextureStateRef : public MetalLockedTextureStateRefTemplate<MetalTextureState>
+{
+public:
+  MetalLockedTextureStateRef() = default;
+  MetalLockedTextureStateRef(MetalTextureState *state, Threading::SpinLock &spin)
+      : MetalLockedTextureStateRefTemplate<MetalTextureState>(state, spin)
+  {
+  }
+};
+
+class MetalLockingTextureState
+{
+public:
+  MetalLockingTextureState() = default;
+  MetalLockingTextureState(WrappedMTLTexture *wrappedHandle, const MetalTextureInfo &textureInfo,
+                           FrameRefType refType)
+      : m_state(wrappedHandle, textureInfo, refType)
+  {
+  }
+  MetalLockingTextureState(const MetalTextureState &state) : m_state(state) {}
+  MetalLockedTextureStateRef LockWrite() { return MetalLockedTextureStateRef(&m_state, m_lock); }
+  MetalLockedConstTextureStateRef LockRead()
+  {
+    return MetalLockedConstTextureStateRef(&m_state, m_lock);
+  }
+  inline MetalTextureState *state() { return &m_state; }
+private:
+  MetalTextureState m_state;
+  Threading::SpinLock m_lock;
+};
+
+DECLARE_REFLECTION_STRUCT(MetalTextureState);
+DECLARE_REFLECTION_STRUCT(MetalTextureInfo);
