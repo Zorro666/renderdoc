@@ -85,6 +85,8 @@ def make_c_type(ret: str, pattern: bool, typelist: List[str]):
         ret = 'GLPipe::State'
     elif ret == 'VKState':
         ret = 'VKPipe::State'
+    elif ret == 'MetalState':
+        ret = 'MetalPipe::State'
 
     if ret in ['bool', 'void']:
         pass
@@ -280,7 +282,7 @@ for mod_name in check_mods:
                 namespace = re.search('namespace ' + pipe + '.* namespace ' + pipe, headers, re.MULTILINE | re.DOTALL)
                 namespace = namespace.group(0)
 
-            if source is None and objname[0:5] in ['D3D11', 'D3D12']:
+            if source is None and objname[0:5] in ['D3D11', 'D3D12', 'Metal']:
                 pipe = objname[0:5] + 'Pipe'
                 objname = objname[5:]
 

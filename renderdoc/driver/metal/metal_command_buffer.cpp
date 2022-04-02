@@ -71,8 +71,34 @@ bool WrappedMTLCommandBuffer::Serialise_blitCommandEncoder(SerialiserType &ser,
     ResourceId liveID =
         GetResourceManager()->WrapResource(mtlBlitCommandEncoder, wrappedMTLBlitCommandEncoder);
     wrappedMTLBlitCommandEncoder->SetCommandBuffer(cmdBuffer);
+    if(!m_Device->IsPartialReplay())
+    {
+      if(GetResourceManager()->HasLiveResource(BlitCommandEncoder))
+      {
+        // TODO: we are leaking the original WrappedMTLBlitCommandEncoder
+        GetResourceManager()->EraseLiveResource(BlitCommandEncoder);
+      }
+      GetResourceManager()->AddLiveResource(BlitCommandEncoder, wrappedMTLBlitCommandEncoder);
+      m_Device->AddResource(BlitCommandEncoder, ResourceType::RenderPass, "Blit Encoder");
+      m_Device->DerivedResource(cmdBuffer, BlitCommandEncoder);
+    }
+    RDCLOG("M %s blitCommandEncoder %s",
+           ToStr(GetResourceManager()->GetOriginalID(GetResID(cmdBuffer))).c_str(),
+           ToStr(BlitCommandEncoder).c_str());
+
+    RDCLOG("S %s blitCommandEncoder %s %s",
+           ToStr(GetResourceManager()->GetOriginalID(GetResID(cmdBuffer))).c_str(),
+           ToStr(BlitCommandEncoder).c_str(), ToStr(liveID).c_str());
     m_Device->SetActiveBlitCommandEncoder(wrappedMTLBlitCommandEncoder);
-    // TODO: initialise the replay tracked render state
+    MetalRenderState &renderState = m_Device->GetCmdRenderState();
+    // TODO: mixture of render and blit
+    // ONLY ONE ACTIVE AT ONE TIME
+    renderState.Init();
+    renderState.blitPass = liveID;
+    if(IsLoading(m_State))
+    {
+      RDCLOG("S CreateInfo %s", ToStr(BlitCommandEncoder).c_str());
+    }
   }
   return true;
 }
@@ -128,14 +154,16 @@ bool WrappedMTLCommandBuffer::Serialise_renderCommandEncoderWithDescriptor(
       if(!m_Device->IsCurrentCommandBufferEventInReplayRange())
         return true;
     }
+    m_Device->SetCurrentCommandBufferRenderPassDescriptor(descriptor);
     if(IsLoading(m_State))
     {
       AddEvent();
 
       ActionDescription action;
+      action.customName = StringFormat::Fmt("StartRenderEncoder(%s)",
+                                            m_Device->MakeRenderPassOpString(true).c_str());
       action.flags |= ActionFlags::PassBoundary;
       action.flags |= ActionFlags::BeginPass;
-
       AddAction(action);
     }
     WrappedMTLCommandBuffer *cmdBuffer = m_Device->GetCurrentReplayCommandBuffer();
@@ -143,12 +171,38 @@ bool WrappedMTLCommandBuffer::Serialise_renderCommandEncoderWithDescriptor(
     MTL::RenderCommandEncoder *mtlRenderCommandEncoder =
         Unwrap(cmdBuffer)->renderCommandEncoder(mtlDescriptor);
     mtlDescriptor->release();
+    // TODO: don't make a new ID : replace liveID with new wrapped resource
     WrappedMTLRenderCommandEncoder *wrappedMTLRenderCommandEncoder;
     ResourceId liveID =
         GetResourceManager()->WrapResource(mtlRenderCommandEncoder, wrappedMTLRenderCommandEncoder);
     wrappedMTLRenderCommandEncoder->SetCommandBuffer(cmdBuffer);
+    if(!m_Device->IsPartialReplay())
+    {
+      if(GetResourceManager()->HasLiveResource(RenderCommandEncoder))
+      {
+        // TODO: we are leaking the original WrappedMTLRenderCommandEncoder
+        GetResourceManager()->EraseLiveResource(RenderCommandEncoder);
+      }
+      GetResourceManager()->AddLiveResource(RenderCommandEncoder, wrappedMTLRenderCommandEncoder);
+      m_Device->AddResource(RenderCommandEncoder, ResourceType::RenderPass, "Render Encoder");
+      m_Device->DerivedResource(cmdBuffer, RenderCommandEncoder);
+    }
+    RDCLOG("M %s renderCommandEncoder %s",
+           ToStr(GetResourceManager()->GetOriginalID(GetResID(cmdBuffer))).c_str(),
+           ToStr(RenderCommandEncoder).c_str());
+
+    RDCLOG("S %s renderCommandEncoder %s %s",
+           ToStr(GetResourceManager()->GetOriginalID(GetResID(cmdBuffer))).c_str(),
+           ToStr(RenderCommandEncoder).c_str(), ToStr(liveID).c_str());
     m_Device->SetActiveRenderCommandEncoder(wrappedMTLRenderCommandEncoder);
-    // TODO: initialise the replay tracked render state
+    MetalRenderState &renderState = m_Device->GetCmdRenderState();
+    // TODO: mixture of render and blit
+    // ONLY ONE ACTIVE AT ONE TIME
+    renderState.Init();
+    renderState.renderPass = liveID;
+    MetalCreationInfo &c = m_Device->GetCreationInfo();
+    c.m_RenderPass[liveID].Init(descriptor);
+    RDCLOG("S CreateInfo %s", ToStr(liveID).c_str());
   }
   return true;
 }
@@ -227,6 +281,8 @@ bool WrappedMTLCommandBuffer::Serialise_presentDrawable(SerialiserType &ser,
       if(!m_Device->IsCurrentCommandBufferEventInReplayRange())
         return true;
     }
+    WrappedMTLCommandBuffer *cmdBuffer = m_Device->GetCurrentReplayCommandBuffer();
+    RDCLOG("M %s present", ToStr(GetResourceManager()->GetOriginalID(GetResID(cmdBuffer))).c_str());
   }
   return true;
 }
@@ -313,6 +369,7 @@ bool WrappedMTLCommandBuffer::Serialise_enqueue(SerialiserType &ser)
   {
     m_Device->SetCurrentCommandBuffer(CommandBuffer);
     WrappedMTLCommandBuffer *cmdBuffer = m_Device->GetCurrentReplayCommandBuffer();
+    RDCLOG("M %s enqueue", ToStr(GetResourceManager()->GetOriginalID(GetResID(cmdBuffer))).c_str());
     m_Device->ReplayCommandBufferEnqueue(cmdBuffer);
   }
   return true;
@@ -353,6 +410,8 @@ bool WrappedMTLCommandBuffer::Serialise_waitUntilCompleted(SerialiserType &ser)
     m_Device->SetCurrentCommandBuffer(NULL);
     if(IsActiveReplaying(m_State))
     {
+      RDCLOG("M %s wait",
+             ToStr(GetResourceManager()->GetOriginalID(GetResID(CommandBuffer))).c_str());
       Unwrap(CommandBuffer)->waitUntilCompleted();
     }
   }

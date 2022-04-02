@@ -789,6 +789,12 @@
     <ClCompile Include="Windows\Dialogs\ProjectionGuessDialog.cpp">
       <Filter>Windows\Dialogs</Filter>
     </ClCompile>
+    <ClCompile Include="$(IntDir)generated\moc_MetalPipelineStateViewer.cpp">
+      <Filter>Generated Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Windows\PipelineState\MetalPipelineStateViewer.cpp">
+      <Filter>Windows\PipelineState</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="3rdparty\flowlayout\FlowLayout.h">
@@ -1161,6 +1167,9 @@
       <Filter>Code</Filter>
     </ClInclude>
     <ClInclude Include="$(IntDir)generated\ui_ShaderMessageViewer.h">
+      <Filter>Generated Files</Filter>
+    </ClInclude>
+    <ClInclude Include="$(IntDir)generated\ui_MetalPipelineStateViewer.h">
       <Filter>Generated Files</Filter>
     </ClInclude>
     <ClInclude Include="3rdparty\catch\catch.hpp">
@@ -1612,6 +1621,12 @@
     </CustomBuild>
     <CustomBuild Include="Windows\Dialogs\ProjectionGuessDialog.ui">
       <Filter>Windows\Dialogs</Filter>
+    </CustomBuild>
+    <CustomBuild Include="Windows\PipelineState\MetalPipelineStateViewer.h">
+      <Filter>Windows\PipelineState</Filter>
+    </CustomBuild>
+    <CustomBuild Include="Windows\PipelineState\MetalPipelineStateViewer.ui">
+      <Filter>Windows\PipelineState</Filter>
     </CustomBuild>
   </ItemGroup>
   <ItemGroup>

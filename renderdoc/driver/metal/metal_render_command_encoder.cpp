@@ -52,15 +52,19 @@ bool WrappedMTLRenderCommandEncoder::Serialise_setRenderPipelineState(
   if(IsReplayingAndReading())
   {
     m_Device->SetCurrentCommandBuffer(RenderCommandEncoder->m_CommandBuffer);
+    // TODO: should this be the live ID
     ResourceId pipelineID = GetResID(pipelineState);
     if(IsActiveReplaying(m_State))
     {
       if(!m_Device->IsCurrentCommandBufferEventInReplayRange())
         return true;
     }
+    RDCLOG("M %s setRenderPipelineState",
+           ToStr(GetResourceManager()->GetOriginalID(GetResID(RenderCommandEncoder))).c_str());
     WrappedMTLRenderCommandEncoder *renderEncoder = m_Device->GetCurrentReplayRenderEncoder();
     Unwrap(renderEncoder)->setRenderPipelineState(Unwrap(pipelineState));
-    // TODO: update the replay tracked render state
+    MetalRenderState &renderstate = m_Device->GetCmdRenderState();
+    renderstate.graphics.pipeline = pipelineID;
   }
   return true;
 }
@@ -110,9 +114,12 @@ bool WrappedMTLRenderCommandEncoder::Serialise_setVertexBuffer(SerialiserType &s
       if(!m_Device->IsCurrentCommandBufferEventInReplayRange())
         return true;
     }
+    RDCLOG("M %s setVertexBuffer",
+           ToStr(GetResourceManager()->GetOriginalID(GetResID(RenderCommandEncoder))).c_str());
     WrappedMTLRenderCommandEncoder *renderEncoder = m_Device->GetCurrentReplayRenderEncoder();
     Unwrap(renderEncoder)->setVertexBuffer(Unwrap(buffer), offset, index);
-    // TODO: update the replay tracked render state
+    MetalRenderState &renderState = m_Device->GetCmdRenderState();
+    renderState.graphics.vertexBuffers.push_back({GetResID(buffer), offset, index});
   }
   return true;
 }
@@ -163,9 +170,12 @@ bool WrappedMTLRenderCommandEncoder::Serialise_setFragmentBuffer(SerialiserType 
       if(!m_Device->IsCurrentCommandBufferEventInReplayRange())
         return true;
     }
+    RDCLOG("M %s setFragmentBuffer",
+           ToStr(GetResourceManager()->GetOriginalID(GetResID(RenderCommandEncoder))).c_str());
     WrappedMTLRenderCommandEncoder *renderEncoder = m_Device->GetCurrentReplayRenderEncoder();
     Unwrap(renderEncoder)->setFragmentBuffer(Unwrap(buffer), offset, index);
-    // TODO: update the replay tracked render state
+    MetalRenderState &renderState = m_Device->GetCmdRenderState();
+    renderState.graphics.fragmentBuffers.push_back({GetResID(buffer), offset, index});
   }
   return true;
 }
@@ -214,9 +224,12 @@ bool WrappedMTLRenderCommandEncoder::Serialise_setFragmentTexture(SerialiserType
       if(!m_Device->IsCurrentCommandBufferEventInReplayRange())
         return true;
     }
+    RDCLOG("M %s setFragmentTexture",
+           ToStr(GetResourceManager()->GetOriginalID(GetResID(RenderCommandEncoder))).c_str());
     WrappedMTLRenderCommandEncoder *renderEncoder = m_Device->GetCurrentReplayRenderEncoder();
     Unwrap(renderEncoder)->setFragmentTexture(Unwrap(texture), index);
-    // TODO: update the replay tracked render state
+    MetalRenderState &renderState = m_Device->GetCmdRenderState();
+    renderState.graphics.fragmentTextures.push_back({GetResID(texture), index});
   }
   return true;
 }
@@ -262,6 +275,8 @@ bool WrappedMTLRenderCommandEncoder::Serialise_setViewport(SerialiserType &ser,
       if(!m_Device->IsCurrentCommandBufferEventInReplayRange())
         return true;
     }
+    RDCLOG("M %s setViewport",
+           ToStr(GetResourceManager()->GetOriginalID(GetResID(RenderCommandEncoder))).c_str());
     WrappedMTLRenderCommandEncoder *renderEncoder = m_Device->GetCurrentReplayRenderEncoder();
     Unwrap(renderEncoder)->setViewport(viewport);
     // TODO: update the replay tracked render state
@@ -308,9 +323,10 @@ bool WrappedMTLRenderCommandEncoder::Serialise_setCullMode(SerialiserType &ser,
       if(!m_Device->IsCurrentCommandBufferEventInReplayRange())
         return true;
     }
+    RDCLOG("M %s setCullMode",
+           ToStr(GetResourceManager()->GetOriginalID(GetResID(RenderCommandEncoder))).c_str());
     WrappedMTLRenderCommandEncoder *renderEncoder = m_Device->GetCurrentReplayRenderEncoder();
     Unwrap(renderEncoder)->setCullMode(cullMode);
-    // TODO: update the replay tracked render state
   }
   return true;
 }
@@ -369,6 +385,8 @@ bool WrappedMTLRenderCommandEncoder::Serialise_drawPrimitives(
       if(!m_Device->IsCurrentCommandBufferEventInReplayRange())
         return true;
     }
+    RDCLOG("M %s drawPrimitives",
+           ToStr(GetResourceManager()->GetOriginalID(GetResID(RenderCommandEncoder))).c_str());
     WrappedMTLRenderCommandEncoder *renderEncoder = m_Device->GetCurrentReplayRenderEncoder();
     Unwrap(renderEncoder)
         ->drawPrimitives(primitiveType, vertexStart, vertexCount, instanceCount, baseInstance);
@@ -454,6 +472,8 @@ bool WrappedMTLRenderCommandEncoder::Serialise_drawIndexedPrimitives(
       if(!m_Device->IsCurrentCommandBufferEventInReplayRange())
         return true;
     }
+    RDCLOG("M %s drawIndexedPrimitives",
+           ToStr(GetResourceManager()->GetOriginalID(GetResID(RenderCommandEncoder))).c_str());
     WrappedMTLRenderCommandEncoder *renderEncoder = m_Device->GetCurrentReplayRenderEncoder();
     Unwrap(renderEncoder)
         ->drawIndexedPrimitives(primitiveType, indexCount, indexType, Unwrap(indexBuffer),
@@ -525,6 +545,8 @@ bool WrappedMTLRenderCommandEncoder::Serialise_endEncoding(SerialiserType &ser)
       AddEvent();
 
       ActionDescription action;
+      action.customName =
+          StringFormat::Fmt("EndRenderEncoder(%s)", m_Device->MakeRenderPassOpString(false).c_str());
       action.flags |= ActionFlags::PassBoundary;
       action.flags |= ActionFlags::EndPass;
 
@@ -536,6 +558,9 @@ bool WrappedMTLRenderCommandEncoder::Serialise_endEncoding(SerialiserType &ser)
         return true;
     }
     WrappedMTLRenderCommandEncoder *renderEncoder = m_Device->GetCurrentReplayRenderEncoder();
+    RDCASSERT(renderEncoder);
+    RDCLOG("M %s endEncoding",
+           ToStr(GetResourceManager()->GetOriginalID(GetResID(RenderCommandEncoder))).c_str());
     Unwrap(renderEncoder)->endEncoding();
     m_Device->ClearActiveRenderCommandEncoder();
   }
@@ -561,6 +586,7 @@ void WrappedMTLRenderCommandEncoder::endEncoding()
   else
   {
     // TODO: implement RD MTL replay
+    RDCLOG("M %s endEncoding direct", ToStr(GetResID(this)).c_str());
   }
 }
 
