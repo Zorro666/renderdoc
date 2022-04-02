@@ -289,6 +289,7 @@ public:
   const D3D12Pipe::State *CurD3D12PipelineState() override { return m_CurD3D12PipelineState; }
   const GLPipe::State *CurGLPipelineState() override { return m_CurGLPipelineState; }
   const VKPipe::State *CurVulkanPipelineState() override { return m_CurVulkanPipelineState; }
+  const MetalPipe::State *CurMetalPipelineState() override { return m_CurMetalPipelineState; }
   const PipeState &CurPipelineState() override { return *m_CurPipelineState; }
   PersistantConfig &Config() override { return m_Config; }
 private:
@@ -298,6 +299,7 @@ private:
   const D3D12Pipe::State *m_CurD3D12PipelineState;
   const GLPipe::State *m_CurGLPipelineState;
   const VKPipe::State *m_CurVulkanPipelineState;
+  const MetalPipe::State *m_CurMetalPipelineState;
   const PipeState *m_CurPipelineState;
   PipeState m_DummyPipelineState;
 

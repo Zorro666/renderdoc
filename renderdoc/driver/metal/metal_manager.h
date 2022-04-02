@@ -58,6 +58,8 @@ struct MetalInitialContents
 
   // for plain resources, we store the resource type
   MetalResourceType type;
+  // MTL::Buffer* buf;
+  // MTL::Texture* img;
 };
 
 struct MetalResourceManagerConfiguration
@@ -130,6 +132,8 @@ public:
     ResourceId id = GetResID(wrapped);
 
     // TODO: implement RD MTL replay
+    //    if(IsReplayMode(m_State))
+    //      ResourceManager::RemoveWrapper(ToTypedHandle(Unwrap(wrapped)));
 
     ResourceManager::ReleaseCurrentResource(id);
     MetalResourceRecord *record = GetRecord(wrapped);
@@ -152,12 +156,47 @@ public:
     return ret;
   }
 
+  // easy path for getting the wrapped resource cast to the correct type
+  template <typename realtype>
+  typename UnwrapHelper<realtype>::Outer *GetLiveResourceTyped(ResourceId origid)
+  {
+    using WrappedType = typename UnwrapHelper<realtype>::Outer;
+    return (WrappedType *)(ResourceManager::GetLiveResource(origid));
+  }
+
+  template <typename realtype>
+  typename UnwrapHelper<realtype>::Outer *GetCurrentResourceTyped(ResourceId id)
+  {
+    using WrappedType = typename UnwrapHelper<realtype>::Outer;
+    return (WrappedType *)(ResourceManager::GetCurrentResource(id));
+  }
+
   // ResourceRecordHandler interface implemented in ResourceManager
   //  void MarkDirtyResource(ResourceId id);
   //  void RemoveResourceRecord(ResourceId id);
   //  void MarkResourceFrameReferenced(ResourceId id, FrameRefType refType);
   //  void DestroyResourceRecord(ResourceRecord *record);
   // ResourceRecordHandler interface
+
+  void SetInternalResource(ResourceId id) {}
+  InitPolicy GetInitPolicy() { return m_InitPolicy; }
+  void SetOptimisationLevel(ReplayOptimisationLevel level)
+  {
+    switch(level)
+    {
+      case ReplayOptimisationLevel::Count:
+        RDCERR("Invalid optimisation level specified");
+        m_InitPolicy = eInitPolicy_NoOpt;
+        break;
+      case ReplayOptimisationLevel::NoOptimisation: m_InitPolicy = eInitPolicy_NoOpt; break;
+      case ReplayOptimisationLevel::Conservative: m_InitPolicy = eInitPolicy_CopyAll; break;
+      case ReplayOptimisationLevel::Balanced: m_InitPolicy = eInitPolicy_ClearUnread; break;
+      case ReplayOptimisationLevel::Fastest: m_InitPolicy = eInitPolicy_Fastest; break;
+    }
+  }
+
+  template <typename SerialiserType>
+  void SerialiseTextureStates(SerialiserType &ser, std::map<ResourceId, MetalTextureState> &states);
 
 private:
   // ResourceManager interface
@@ -170,5 +209,8 @@ private:
   void Apply_InitialState(WrappedMTLObject *live, const MetalInitialContents &initial);
   // ResourceManager interface
 
+  rdcarray<ResourceId> InitialContentResources();
+
   WrappedMTLDevice *m_Device;
+  InitPolicy m_InitPolicy = eInitPolicy_CopyAll;
 };

@@ -1627,6 +1627,69 @@ QString ToQStr(const ResourceUsage usage, const GraphicsAPI apitype)
       case ResourceUsage::CPUWrite: return lit("CPU Write");
     }
   }
+  else if(apitype == GraphicsAPI::Metal)
+  {
+    switch(usage)
+    {
+      case ResourceUsage::Unused: return lit("Unused");
+
+      case ResourceUsage::VertexBuffer: return lit("Vertex Buffer");
+      case ResourceUsage::IndexBuffer: return lit("Index Buffer");
+
+      case ResourceUsage::VS_Constants: return lit("VS - Constant Buffer");
+      case ResourceUsage::HS_Constants: return lit("!!Invalid!!");
+      case ResourceUsage::DS_Constants: return lit("PTS - Constant Buffer");
+      case ResourceUsage::GS_Constants: return lit("!!Invalid!!");
+      case ResourceUsage::PS_Constants: return lit("FS - Constant Buffer");
+      case ResourceUsage::CS_Constants: return lit("CS - Constant Buffer");
+      case ResourceUsage::TS_Constants: return lit("!!Invalid!!");
+      case ResourceUsage::MS_Constants: return lit("!!Invalid!!");
+      case ResourceUsage::All_Constants: return lit("All - Constant Buffer");
+
+      case ResourceUsage::StreamOut: return lit("Transform Feedback");
+
+      case ResourceUsage::VS_Resource: return lit("VS - Texture");
+      case ResourceUsage::HS_Resource: return lit("!!Invalid!!");
+      case ResourceUsage::DS_Resource: return lit("PTS - Texture");
+      case ResourceUsage::GS_Resource: return lit("!!Invalid!!");
+      case ResourceUsage::PS_Resource: return lit("FS - Texture");
+      case ResourceUsage::CS_Resource: return lit("CS - Texture");
+      case ResourceUsage::TS_Resource: return lit("!!Invalid!!");
+      case ResourceUsage::MS_Resource: return lit("!!Invalid!!");
+      case ResourceUsage::All_Resource: return lit("All - Texture");
+
+      case ResourceUsage::VS_RWResource: return lit("VS - RW Image/Device Buffer");
+      case ResourceUsage::HS_RWResource: return lit("!!Invalid!!");
+      case ResourceUsage::DS_RWResource: return lit("PTS - RW Image/Device Buffer");
+      case ResourceUsage::GS_RWResource: return lit("!!Invalid!!");
+      case ResourceUsage::PS_RWResource: return lit("FS - RW Image/Device Buffer");
+      case ResourceUsage::CS_RWResource: return lit("CS - RW Image/Device Buffer");
+      case ResourceUsage::TS_RWResource: return lit("!!Invalid!!");
+      case ResourceUsage::MS_RWResource: return lit("!!Invalid!!");
+      case ResourceUsage::All_RWResource: return lit("All - RW Image/Device Buffer");
+
+      case ResourceUsage::InputTarget: return lit("FBO Input");
+      case ResourceUsage::ColorTarget: return lit("FBO Color");
+      case ResourceUsage::DepthStencilTarget: return lit("FBO Depthstencil");
+
+      case ResourceUsage::Indirect: return lit("Argument buffer");
+
+      case ResourceUsage::Clear: return lit("Clear");
+      case ResourceUsage::Discard: return lit("Discard");
+
+      case ResourceUsage::GenMips: return lit("Generate Mips");
+      case ResourceUsage::Resolve: return lit("Resolve");
+      case ResourceUsage::ResolveSrc: return lit("Resolve - Source");
+      case ResourceUsage::ResolveDst: return lit("Resolve - Dest");
+      case ResourceUsage::Copy: return lit("Copy");
+      case ResourceUsage::CopySrc: return lit("Copy - Source");
+      case ResourceUsage::CopyDst: return lit("Copy - Dest");
+
+      case ResourceUsage::Barrier: return lit("Barrier");
+
+      case ResourceUsage::CPUWrite: return lit("CPU Write");
+    }
+  }
 
   return lit("Unknown");
 }
@@ -1672,6 +1735,17 @@ QString ToQStr(const ShaderStage stage, const GraphicsAPI apitype)
       case ShaderStage::ClosestHit: return lit("ClosestHit");
       case ShaderStage::Miss: return lit("Miss");
       case ShaderStage::Callable: return lit("Callable");
+      default: break;
+    }
+  }
+  else if(apitype == GraphicsAPI::Metal)
+  {
+    switch(stage)
+    {
+      case ShaderStage::Vertex: return lit("Vertex");
+      case ShaderStage::Post_Tess: return lit("Post Tess");
+      case ShaderStage::Fragment: return lit("Fragment");
+      case ShaderStage::Compute: return lit("Compute");
       default: break;
     }
   }

@@ -1083,6 +1083,7 @@ void CaptureContext::LoadCaptureThreaded(const QString &captureFile, const Repla
     m_CurD3D12PipelineState = r->GetD3D12PipelineState();
     m_CurGLPipelineState = r->GetGLPipelineState();
     m_CurVulkanPipelineState = r->GetVulkanPipelineState();
+    m_CurMetalPipelineState = r->GetMetalPipelineState();
     m_CurPipelineState = &r->GetPipelineState();
 
     m_UnreadMessageCount = 0;
@@ -1617,6 +1618,7 @@ void CaptureContext::SetEventID(const rdcarray<ICaptureViewer *> &exclude, uint3
     m_CurD3D12PipelineState = r->GetD3D12PipelineState();
     m_CurGLPipelineState = r->GetGLPipelineState();
     m_CurVulkanPipelineState = r->GetVulkanPipelineState();
+    m_CurMetalPipelineState = r->GetMetalPipelineState();
     m_CurPipelineState = &r->GetPipelineState();
 
     done = true;

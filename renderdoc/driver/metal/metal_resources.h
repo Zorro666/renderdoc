@@ -160,6 +160,48 @@ struct MetalBufferInfo
   size_t length;
 };
 
+struct MetalTextureInfo
+{
+  MTL::Size extent;
+  MTL::TextureUsage usage;
+  MTL::TextureType type;
+  uint32_t layerCount = 0;
+  uint16_t levelCount = 0;
+  uint16_t sampleCount = 0;
+  bool frameBufferOnly = false;
+
+  MetalTextureInfo() {}
+  MetalTextureInfo(RDMTL::TextureDescriptor &descriptor, bool frameBufferOnly)
+      : usage(descriptor.usage),
+        type(descriptor.textureType),
+        layerCount((uint32_t)descriptor.arrayLength),
+        levelCount(descriptor.mipmapLevelCount),
+        sampleCount(descriptor.sampleCount),
+        frameBufferOnly(frameBufferOnly)
+  {
+    extent.width = descriptor.width;
+    extent.height = descriptor.height;
+    extent.depth = descriptor.depth;
+    MTL::TextureType textureType = descriptor.textureType;
+    if(textureType == MTL::TextureType1D)
+    {
+      extent.height = extent.depth = 1;
+    }
+    else if(textureType == MTL::TextureType2D)
+    {
+      extent.depth = 1;
+    }
+  }
+
+  inline bool operator==(const MetalTextureInfo &other) const
+  {
+    return layerCount == other.layerCount && levelCount == other.levelCount &&
+           sampleCount == other.sampleCount && extent.width == other.extent.width &&
+           extent.height == other.extent.height && extent.depth == other.extent.depth &&
+           usage == other.usage && type == other.type && frameBufferOnly == other.frameBufferOnly;
+  }
+};
+
 struct MetalResourceRecord : public ResourceRecord
 {
 public:
@@ -182,5 +224,30 @@ public:
     void *ptrUnion;                          // for initialisation to NULL
     MetalCmdBufferRecordingInfo *cmdInfo;    // only for command buffers
     MetalBufferInfo *bufInfo;                // only for buffers
+    MetalTextureInfo *texInfo;               // only for textures
   };
 };
+
+struct MetalTextureState
+{
+  WrappedMTLTexture *wrappedTexture = NULL;
+  MetalTextureInfo textureInfo;
+  FrameRefType maxRefType = eFrameRef_None;
+
+  inline const MetalTextureInfo &GetTextureInfo() const { return textureInfo; }
+  inline MetalTextureState() {}
+  inline MetalTextureState(WrappedMTLTexture *inWrappedTexture,
+                           const MetalTextureInfo &inTextureInfo, FrameRefType refType)
+      : wrappedTexture(inWrappedTexture), textureInfo(inTextureInfo), maxRefType(refType)
+  {
+  }
+  MetalTextureState InitialState() const;
+  void InitialState(MetalTextureState &result) const;
+  MetalTextureState CommandBufferInitialState() const;
+
+  void BeginCapture();
+  void FixupStorageReferences();
+};
+
+DECLARE_REFLECTION_STRUCT(MetalTextureState);
+DECLARE_REFLECTION_STRUCT(MetalTextureInfo);

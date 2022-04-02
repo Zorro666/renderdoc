@@ -195,6 +195,7 @@
     <ClInclude Include="api\replay\structured_data.h" />
     <ClInclude Include="api\replay\version.h" />
     <ClInclude Include="api\replay\vk_pipestate.h" />
+    <ClInclude Include="api\replay\metal_pipestate.h" />
     <ClInclude Include="common\common.h" />
     <ClInclude Include="common\custom_assert.h" />
     <ClInclude Include="common\dds_readwrite.h" />

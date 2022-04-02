@@ -1182,6 +1182,28 @@ rdcarray<Descriptor> PipeState::GetOutputTargets() const
         idx++;
       }
     }
+    else if(IsCaptureMetal())
+    {
+      const MetalPipe::RenderPass &rp = m_Metal->currentPass.renderpass;
+      const MetalPipe::Framebuffer &fb = m_Metal->currentPass.framebuffer;
+
+      int idx = 0;
+
+      ret.resize(rp.colorAttachments.count() + rp.resolveAttachments.count());
+      for(int i = 0; i < rp.colorAttachments.count(); i++)
+      {
+        uint32_t fbAttachmentIndex = rp.colorAttachments[i];
+        if(fbAttachmentIndex < (uint32_t)fb.attachments.count())
+        {
+          ret[idx].resourceId = fb.attachments[fbAttachmentIndex].imageResourceId;
+          ret[idx].firstMip = (int)fb.attachments[fbAttachmentIndex].firstMip;
+          ret[idx].firstSlice = (int)fb.attachments[fbAttachmentIndex].firstSlice;
+          ret[idx].typeCast = fb.attachments[fbAttachmentIndex].viewFormat.compType;
+        }
+
+        idx++;
+      }
+    }
   }
 
   return ret;

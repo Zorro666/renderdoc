@@ -556,6 +556,18 @@ See also :meth:`GetPipelineState`.
 )");
   virtual const VKPipe::State *GetVulkanPipelineState() = 0;
 
+  DOCUMENT(R"(Retrieve the current :class:`MetalState` pipeline state.
+
+The return value will be ``None`` if the capture is not using the Metal API.
+You should use :meth:`GetAPIProperties` to determine the API of the capture.
+
+See also :meth:`GetPipelineState`.
+
+:return: The current Metal pipeline state.
+:rtype: MetalState
+)");
+  virtual const MetalPipe::State *GetMetalPipelineState() = 0;
+
   DOCUMENT(R"(Retrieve the current :class:`PipeState` pipeline state abstraction.
 
 This pipeline state will always be valid, and allows queries that will work regardless of the

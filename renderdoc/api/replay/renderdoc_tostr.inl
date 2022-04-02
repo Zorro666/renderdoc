@@ -1063,6 +1063,7 @@ rdcstr DoStringise(const GraphicsAPI &el)
     STRINGISE_ENUM_CLASS(D3D12);
     STRINGISE_ENUM_CLASS(OpenGL);
     STRINGISE_ENUM_CLASS(Vulkan);
+    STRINGISE_ENUM_CLASS(Metal);
   }
   END_ENUM_STRINGISE();
 }

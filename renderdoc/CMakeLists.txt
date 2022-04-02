@@ -128,6 +128,7 @@ set(sources
     api/replay/version.h
     api/replay/gl_pipestate.h
     api/replay/vk_pipestate.h
+    api/replay/metal_pipestate.h
     api/replay/renderdoc_replay.h
     api/replay/renderdoc_tostr.inl
     common/common.cpp

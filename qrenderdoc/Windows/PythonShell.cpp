@@ -556,6 +556,10 @@ struct CaptureContextInvoker : ObjectForwarder<ICaptureContext>
   {
     return m_Obj.CurVulkanPipelineState();
   }
+  virtual const MetalPipe::State *CurMetalPipelineState() override
+  {
+    return m_Obj.CurMetalPipelineState();
+  }
   virtual const PipeState &CurPipelineState() override { return m_Obj.CurPipelineState(); }
   virtual PersistantConfig &Config() override { return m_Obj.Config(); }
   //

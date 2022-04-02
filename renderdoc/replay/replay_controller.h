@@ -149,6 +149,7 @@ public:
   const D3D12Pipe::State *GetD3D12PipelineState();
   const GLPipe::State *GetGLPipelineState();
   const VKPipe::State *GetVulkanPipelineState();
+  const MetalPipe::State *GetMetalPipelineState();
   const PipeState &GetPipelineState();
   rdcarray<Descriptor> GetDescriptors(ResourceId descriptorStore,
                                       const rdcarray<DescriptorRange> &ranges);
@@ -278,6 +279,7 @@ private:
   D3D12Pipe::State m_D3D12PipelineState;
   GLPipe::State m_GLPipelineState;
   VKPipe::State m_VulkanPipelineState;
+  MetalPipe::State m_MetalPipelineState;
   PipeState m_PipeState;
 
   rdcarray<ReplayOutput *> m_Outputs;

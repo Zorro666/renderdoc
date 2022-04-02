@@ -31,6 +31,54 @@ bool MetalResourceManager::ResourceTypeRelease(WrappedResourceType res)
   return false;
 }
 
+template <typename SerialiserType>
+void MetalResourceManager::SerialiseTextureStates(SerialiserType &ser,
+                                                  std::map<ResourceId, MetalTextureState> &states)
+{
+  SERIALISE_ELEMENT_LOCAL(NumTextures, (uint32_t)states.size()).Important();
+
+  auto srcit = states.begin();
+
+  for(uint32_t i = 0; i < NumTextures; i++)
+  {
+    SERIALISE_ELEMENT_LOCAL(Texture, (ResourceId)(srcit->first)).TypedAs("MTLTexture"_lit);
+    if(ser.IsWriting())
+    {
+      MetalTextureState &TextureState = srcit->second;
+      SERIALISE_ELEMENT(TextureState);
+      ++srcit;
+    }
+    else
+    {
+      bool hasLiveRes = HasLiveResource(Texture);
+
+      MetalTextureState textureState;
+
+      {
+        MetalTextureState &TextureState = textureState;
+        SERIALISE_ELEMENT(TextureState);
+      }
+      if(IsReplayingAndReading() && hasLiveRes)
+      {
+        // TODO: handle texture states during replay
+      }
+      if(hasLiveRes)
+      {
+        ResourceId liveid = GetLiveID(Texture);
+
+        if(IsLoading(m_State))
+        {
+          // TODO: handle texture states loading a capture
+        }
+        else if(IsActiveReplaying(m_State))
+        {
+          // TODO: handle texture states during replay
+        }
+      }
+    }
+  }
+}
+
 bool MetalResourceManager::Prepare_InitialState(WrappedMTLObject *res)
 {
   return m_Device->Prepare_InitialState(res);
@@ -58,3 +106,18 @@ void MetalResourceManager::Apply_InitialState(WrappedMTLObject *live,
 {
   return m_Device->Apply_InitialState(live, initial);
 }
+
+rdcarray<ResourceId> MetalResourceManager::InitialContentResources()
+{
+  rdcarray<ResourceId> resources =
+      ResourceManager<MetalResourceManagerConfiguration>::InitialContentResources();
+  std::sort(resources.begin(), resources.end(), [this](ResourceId a, ResourceId b) {
+    return m_InitialContents[a].data.type < m_InitialContents[b].data.type;
+  });
+  return resources;
+}
+
+template void MetalResourceManager::SerialiseTextureStates(
+    WriteSerialiser &ser, std::map<ResourceId, MetalTextureState> &states);
+template void MetalResourceManager::SerialiseTextureStates(
+    ReadSerialiser &ser, std::map<ResourceId, MetalTextureState> &states);

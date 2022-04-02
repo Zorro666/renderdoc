@@ -695,6 +695,7 @@
     <ClCompile Include="$(IntDir)generated\moc_ToolWindowManagerWrapper.cpp" />
     <ClCompile Include="$(IntDir)generated\moc_VirtualFileDialog.cpp" />
     <ClCompile Include="$(IntDir)generated\moc_VulkanPipelineStateViewer.cpp" />
+    <ClCompile Include="$(IntDir)generated\moc_MetalPipelineStateViewer.cpp" />
     <ClCompile Include="$(IntDir)generated\qrc_resources.cpp" />
     <ClCompile Include="$(IntDir)generated\qrc_qtconf.cpp" />
     <ClCompile Include="$(IntDir)generated\renderdoc_python.cxx">
@@ -782,6 +783,7 @@
     <ClCompile Include="Windows\PipelineState\GLPipelineStateViewer.cpp" />
     <ClCompile Include="Windows\PipelineState\PipelineStateViewer.cpp" />
     <ClCompile Include="Windows\PipelineState\VulkanPipelineStateViewer.cpp" />
+    <ClCompile Include="Windows\PipelineState\MetalPipelineStateViewer.cpp" />
     <ClCompile Include="Windows\ShaderViewer.cpp" />
     <ClCompile Include="Windows\ShaderMessageViewer.cpp" />
     <ClCompile Include="Windows\PythonShell.cpp" />
@@ -997,6 +999,7 @@
     <ClInclude Include="$(IntDir)generated\ui_ReplayOptionsSelector.h" />
     <ClInclude Include="$(IntDir)generated\ui_VirtualFileDialog.h" />
     <ClInclude Include="$(IntDir)generated\ui_VulkanPipelineStateViewer.h" />
+    <ClInclude Include="$(IntDir)generated\ui_MetalPipelineStateViewer.h" />
     <ClInclude Include="Code\RGPInterop.h" />
     <ClInclude Include="Code\CaptureContext.h" />
     <ClInclude Include="Styles\StyleData.h" />
@@ -1376,6 +1379,12 @@
       <Message>MOC %(Filename).h</Message>
       <Outputs>$(IntDir)generated\moc_%(Filename).cpp</Outputs>
     </CustomBuild>
+    <CustomBuild Include="Windows\PipelineState\MetalPipelineStateViewer.h">
+      <AdditionalInputs>%(Fullpath);$(QtBinDir)\moc.exe;%(AdditionalInputs)</AdditionalInputs>
+      <Command>"$(QtBinDir)\moc.exe" -DUNICODE -DWIN32 -DWIN64 -D_WIN32 -D_WIN64 -DRENDERDOC_PLATFORM_WIN32 -DSCINTILLA_QT=1 -DSCI_LEXER=1 -DQT_NO_DEBUG -DQT_WIDGETS_LIB -DQT_GUI_LIB -DQT_CORE_LIB -D_MSC_VER=1900 -I"$(ProjectDir)." -I"$(SolutionDir)\renderdoc\api\replay" -I"$(QtIncludeDir)" -I"$(QtIncludeDir)\QtWidgets" -I"$(QtIncludeDir)\QtGui" -I"$(QtIncludeDir)\QtCore" "%(Fullpath)" -o "$(IntDir)generated\moc_%(Filename).cpp"</Command>
+      <Message>MOC %(Filename).h</Message>
+      <Outputs>$(IntDir)generated\moc_%(Filename).cpp</Outputs>
+    </CustomBuild>
     <CustomBuild Include="Windows\PixelHistoryView.h">
       <AdditionalInputs>%(Fullpath);$(QtBinDir)\moc.exe;%(AdditionalInputs)</AdditionalInputs>
       <Command>"$(QtBinDir)\moc.exe" -DUNICODE -DWIN32 -DWIN64 -D_WIN32 -D_WIN64 -DRENDERDOC_PLATFORM_WIN32 -DSCINTILLA_QT=1 -DSCI_LEXER=1 -DQT_NO_DEBUG -DQT_WIDGETS_LIB -DQT_GUI_LIB -DQT_CORE_LIB -D_MSC_VER=1900 -I"$(ProjectDir)." -I"$(SolutionDir)\renderdoc\api\replay" -I"$(QtIncludeDir)" -I"$(QtIncludeDir)\QtWidgets" -I"$(QtIncludeDir)\QtGui" -I"$(QtIncludeDir)\QtCore" "%(Fullpath)" -o "$(IntDir)generated\moc_%(Filename).cpp"</Command>
@@ -1672,6 +1681,12 @@
       <Outputs>$(IntDir)generated\ui_%(Filename).h</Outputs>
     </CustomBuild>
     <CustomBuild Include="Windows\PipelineState\VulkanPipelineStateViewer.ui">
+      <AdditionalInputs>%(Fullpath);$(QtBinDir)\uic.exe;%(AdditionalInputs)</AdditionalInputs>
+      <Command>"$(QtBinDir)\uic.exe" "%(Fullpath)" -o "$(IntDir)generated\ui_%(Filename).h"</Command>
+      <Message>UIC %(Filename).ui</Message>
+      <Outputs>$(IntDir)generated\ui_%(Filename).h</Outputs>
+    </CustomBuild>
+    <CustomBuild Include="Windows\PipelineState\MetalPipelineStateViewer.ui">
       <AdditionalInputs>%(Fullpath);$(QtBinDir)\uic.exe;%(AdditionalInputs)</AdditionalInputs>
       <Command>"$(QtBinDir)\uic.exe" "%(Fullpath)" -o "$(IntDir)generated\ui_%(Filename).h"</Command>
       <Message>UIC %(Filename).ui</Message>

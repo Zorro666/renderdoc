@@ -27,6 +27,7 @@
 #include "d3d11_pipestate.h"
 #include "d3d12_pipestate.h"
 #include "gl_pipestate.h"
+#include "metal_pipestate.h"
 #include "vk_pipestate.h"
 
 DOCUMENT(R"(An API-agnostic view of the common aspects of the pipeline state. This allows simple
@@ -52,6 +53,7 @@ public:
     m_D3D12 = NULL;
     m_GL = NULL;
     m_Vulkan = NULL;
+    m_Metal = NULL;
   }
   void SetState(const D3D12Pipe::State *d3d12)
   {
@@ -60,6 +62,7 @@ public:
     m_D3D12 = d3d12;
     m_GL = NULL;
     m_Vulkan = NULL;
+    m_Metal = NULL;
   }
   void SetState(const GLPipe::State *gl)
   {
@@ -68,6 +71,7 @@ public:
     m_D3D12 = NULL;
     m_GL = gl;
     m_Vulkan = NULL;
+    m_Metal = NULL;
   }
   void SetState(const VKPipe::State *vk)
   {
@@ -76,6 +80,16 @@ public:
     m_D3D12 = NULL;
     m_GL = NULL;
     m_Vulkan = vk;
+    m_Metal = NULL;
+  }
+  void SetState(const MetalPipe::State *metal)
+  {
+    m_PipelineType = GraphicsAPI::Metal;
+    m_D3D11 = NULL;
+    m_D3D12 = NULL;
+    m_GL = NULL;
+    m_Vulkan = NULL;
+    m_Metal = metal;
   }
 
   void SetDescriptorAccess(rdcarray<DescriptorAccess> &&descriptorAccess,
@@ -94,7 +108,7 @@ public:
 )");
   bool IsCaptureLoaded() const
   {
-    return m_D3D11 != NULL || m_D3D12 != NULL || m_GL != NULL || m_Vulkan != NULL;
+    return m_D3D11 != NULL || m_D3D12 != NULL || m_GL != NULL || m_Vulkan != NULL || m_Metal != NULL;
   }
 
   DOCUMENT(R"(Determines whether or not a D3D11 capture is currently loaded.
@@ -137,6 +151,16 @@ public:
     return IsCaptureLoaded() && m_PipelineType == GraphicsAPI::Vulkan && m_Vulkan != NULL;
   }
 
+  DOCUMENT(R"(Determines whether or not a Metal capture is currently loaded.
+
+:return: A boolean indicating if a Metal capture is currently loaded.
+:rtype: bool
+)");
+  bool IsCaptureMetal() const
+  {
+    return IsCaptureLoaded() && m_PipelineType == GraphicsAPI::Metal && m_Metal != NULL;
+  }
+
   // add a bunch of generic properties that people can check to save having to see which pipeline
   // state is valid and look at the appropriate part of it
   DOCUMENT(R"(Determines whether or not tessellation is currently enabled.
@@ -159,6 +183,9 @@ public:
 
       if(IsCaptureVK())
         return m_Vulkan != NULL && m_Vulkan->tessEvalShader.resourceId != ResourceId();
+
+      if(IsCaptureMetal())
+        return m_Metal != NULL && m_Metal->postTessShader.resourceId != ResourceId();
     }
 
     return false;
@@ -458,6 +485,7 @@ private:
   const D3D12Pipe::State *m_D3D12 = NULL;
   const GLPipe::State *m_GL = NULL;
   const VKPipe::State *m_Vulkan = NULL;
+  const MetalPipe::State *m_Metal = NULL;
   GraphicsAPI m_PipelineType = GraphicsAPI::D3D11;
 
   // helper functions
@@ -465,10 +493,12 @@ private:
   const D3D12Pipe::Shader &GetD3D12Stage(ShaderStage stage) const;
   const GLPipe::Shader &GetGLStage(ShaderStage stage) const;
   const VKPipe::Shader &GetVulkanStage(ShaderStage stage) const;
+  const MetalPipe::Shader &GetMetalStage(ShaderStage stage) const;
   bool IsD3D11Stage(ShaderStage stage) const;
   bool IsD3D12Stage(ShaderStage stage) const;
   bool IsGLStage(ShaderStage stage) const;
   bool IsVulkanStage(ShaderStage stage) const;
+  bool IsMetalStage(ShaderStage stage) const;
 
   rdcarray<DescriptorAccess> m_Access;
   rdcarray<Descriptor> m_Descriptors;

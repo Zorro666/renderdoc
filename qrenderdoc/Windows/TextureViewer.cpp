@@ -114,6 +114,7 @@ static QMap<QString, ShaderEncoding> encodingExtensions = {
     {lit("spvasm"), ShaderEncoding::SPIRVAsm},
     {lit("spvasm"), ShaderEncoding::OpenGLSPIRVAsm},
     {lit("slang"), ShaderEncoding::Slang},
+    {lit("metal"), ShaderEncoding::MSL},
 };
 
 Q_DECLARE_METATYPE(Following);
@@ -4607,6 +4608,10 @@ void TextureViewer::on_customCreate_clicked()
   else if(enc == ShaderEncoding::SPIRVAsm || enc == ShaderEncoding::OpenGLSPIRVAsm)
   {
     src = lit("; SPIR-V");
+  }
+  else if(enc == ShaderEncoding::MSL)
+  {
+    src = lit("// Metal SL - no template");
   }
   else
   {
