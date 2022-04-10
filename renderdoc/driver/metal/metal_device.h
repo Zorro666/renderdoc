@@ -121,7 +121,7 @@ private:
   bool Serialise_CaptureScope(SerialiserType &ser);
   template <typename SerialiserType>
   bool Serialise_BeginCaptureFrame(SerialiserType &ser);
-  void EndCaptureFrame();
+  void EndCaptureFrame(ResourceId backbuffer);
 
   bool Prepare_InitialState(WrappedMTLObject *res);
   uint64_t GetSize_InitialState(ResourceId id, const MetalInitialContents &initial);
@@ -131,6 +131,8 @@ private:
   void Create_InitialState(ResourceId id, WrappedMTLObject *live, bool hasData);
   void Apply_InitialState(WrappedMTLObject *live, const MetalInitialContents &initial);
 
+  void WaitForGPU();
+
   WrappedMTLTexture *Common_NewTexture(RDMTL::TextureDescriptor &descriptor, MetalChunk chunkType,
                                        bool ioSurfaceTexture, IOSurfaceRef iosurface,
                                        NS::UInteger plane);
@@ -138,6 +140,10 @@ private:
                                      MTL::ResourceOptions options);
 
   MetalResourceManager *m_ResourceManager;
+  ResourceId m_LastPresentedImage;
+
+  // Helper Metal objects
+  MTL::CommandQueue *m_mtlCommandQueue = NULL;
 
   // record the command buffer records so we can insert them
   // individually, that means even if they were recorded locklessly
@@ -152,6 +158,7 @@ private:
   std::unordered_set<WrappedMTLTexture *> m_PotentialBackBuffers;
   Threading::CriticalSection m_OutputLayersLock;
   std::unordered_set<CA::MetalLayer *> m_OutputLayers;
+  WrappedMTLTexture *m_CapturedBackbuffer = NULL;
 
   MetalCapturer *m_Capturer = NULL;
   CaptureState m_State;

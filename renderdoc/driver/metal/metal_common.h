@@ -298,3 +298,7 @@ DECLARE_REFLECTION_ENUM(MetalChunk);
       RDCWARN("Metal '%s' not implemented - " __VA_ARGS__, __PRETTY_FUNCTION__); \
     msgprinted = true;                                                           \
   } while((void)0, 0)
+
+ResourceFormat MakeResourceFormat(MTL::PixelFormat format);
+uint32_t GetByteSize(uint32_t width, uint32_t height, uint32_t depth, MTL::PixelFormat format,
+                     uint32_t mip);

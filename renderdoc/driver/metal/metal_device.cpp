@@ -93,6 +93,7 @@ WrappedMTLDevice::WrappedMTLDevice(MTL::Device *realMTLDevice, ResourceId objId)
     // TODO: implement RD MTL replay
   }
 
+  m_mtlCommandQueue = Unwrap(this)->newCommandQueue();
   FirstFrame();
 }
 

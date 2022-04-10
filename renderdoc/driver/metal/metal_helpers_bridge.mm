@@ -51,3 +51,10 @@ CA::MetalLayer *ObjC::Get_Layer(MTL::Drawable *drawableHandle)
   id<CAMetalDrawable> drawable = id<CAMetalDrawable>(drawableHandle);
   return (CA::MetalLayer *)drawable.layer;
 }
+
+void ObjC::Set_FramebufferOnly(void *layerHandle, bool enable)
+{
+  CAMetalLayer *layer = (CAMetalLayer *)layerHandle;
+  assert([layer isKindOfClass:[CAMetalLayer class]]);
+  layer.framebufferOnly = enable ? YES : NO;
+}

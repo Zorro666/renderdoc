@@ -31,4 +31,5 @@ namespace ObjC
 void Get_defaultLibraryData(bytebuf &buffer);
 MTL::Texture *Get_Texture(MTL::Drawable *drawable);
 CA::MetalLayer *Get_Layer(MTL::Drawable *drawable);
+void Set_FramebufferOnly(void *layerHandle, bool enable);
 };
