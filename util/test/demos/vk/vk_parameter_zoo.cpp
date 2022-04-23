@@ -776,7 +776,7 @@ void main()
 
       baked->pViewportState = (VkPipelineViewportStateCreateInfo *)0x1234;
       baked->pMultisampleState = (VkPipelineMultisampleStateCreateInfo *)0x1234;
-      baked->pDepthStencilState = (VkPipelineDepthStencilStateCreateInfo *)0x1234;
+      //      baked->pDepthStencilState = (VkPipelineDepthStencilStateCreateInfo *)0x1234;
       baked->pColorBlendState = (VkPipelineColorBlendStateCreateInfo *)0x1234;
 
       CHECK_VKR(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, baked, NULL, &dummy));
