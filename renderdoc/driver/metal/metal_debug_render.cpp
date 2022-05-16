@@ -116,8 +116,7 @@ void MetalReplay::RenderCheckerboard(FloatVector dark, FloatVector light)
   data->SecondaryColor = dark;
 
   WrappedMTLTexture *fb = outw.fb;
-  MTL::RenderPassDescriptor *mtlRenderPass = MTL::RenderPassDescriptor::alloc();
-  mtlRenderPass = mtlRenderPass->init();
+  MTL::RenderPassDescriptor *mtlRenderPass = MTL::RenderPassDescriptor::alloc()->init();
   MTL::RenderPassColorAttachmentDescriptor *mtlColorAttachment0 =
       mtlRenderPass->colorAttachments()->object(0);
   mtlColorAttachment0->setTexture(Unwrap(fb));

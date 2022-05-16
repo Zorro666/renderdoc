@@ -1073,8 +1073,7 @@ void MetalReplay::ClearOutputWindowColor(uint64_t id, FloatVector col)
   WrappedMTLCommandBuffer *commandBuffer = m_pDriver->GetNextCommandBuffer();
   if(commandBuffer)
   {
-    MTL::RenderPassDescriptor *mtlRenderPass = MTL::RenderPassDescriptor::alloc();
-    mtlRenderPass = mtlRenderPass->init();
+    MTL::RenderPassDescriptor *mtlRenderPass = MTL::RenderPassDescriptor::alloc()->init();
     MTL::RenderPassColorAttachmentDescriptor *mtlColorAttachment0 =
         mtlRenderPass->colorAttachments()->object(0);
     mtlColorAttachment0->setTexture(Unwrap(outw.fb));

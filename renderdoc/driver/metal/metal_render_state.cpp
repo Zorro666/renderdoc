@@ -23,6 +23,8 @@
  ******************************************************************************/
 
 #include "metal_render_state.h"
+#include "metal_command_buffer.h"
+#include "metal_debug_manager.h"
 #include "metal_render_command_encoder.h"
 
 void MetalStatePipeline::Init()
@@ -58,17 +60,46 @@ void MetalRenderState::Init()
 }
 
 void MetalRenderState::BeginRenderPassAndApplyState(WrappedMTLDevice *device,
-                                                    WrappedMTLCommandBuffer *cmd,
+                                                    WrappedMTLCommandBuffer *cmdBuffer,
                                                     PipelineBinding binding)
 {
+  const MetalCreationInfo::RenderPass &rpInfo = device->GetDebugManager()->GetRenderPassInfo(
+      device->GetResourceManager()->GetOriginalID(renderPass));
+
+  RDMTL::RenderPassDescriptor descriptor;
+  rpInfo.CopyTo(device->GetResourceManager(), descriptor);
+  descriptor.colorAttachments[0].loadAction = MTL::LoadActionLoad;
+  renderCommandEncoder = cmdBuffer->renderCommandEncoderWithDescriptor(descriptor);
+  if(graphics.pipeline != ResourceId())
+  {
+    BindPipeline(device, cmdBuffer, binding);
+  }
 }
 
-void MetalRenderState::BindPipeline(WrappedMTLDevice *device, WrappedMTLCommandBuffer *cmd,
-                                    PipelineBinding binding, bool subpass0)
+void MetalRenderState::BindPipeline(WrappedMTLDevice *device, WrappedMTLCommandBuffer *cmdBuffer,
+                                    PipelineBinding binding)
 {
+  const MetalCreationInfo::Pipeline pipeInfo =
+      device->GetDebugManager()->GetPipelineInfo(graphics.pipeline);
+
+  RDMTL::RenderPipelineDescriptor descriptor;
+  pipeInfo.CopyTo(device->GetResourceManager(), descriptor);
+
+  WrappedMTLRenderPipelineState *pipelineState =
+      device->newRenderPipelineStateWithDescriptor(descriptor, NULL);
+  renderCommandEncoder->setRenderPipelineState(pipelineState);
+
+  for(int i = 0; i < graphics.vertexBuffers.count(); ++i)
+  {
+    MetalStatePipeline::VertexBuffer &vertexBuffer = graphics.vertexBuffers[i];
+    WrappedMTLBuffer *buffer =
+        device->GetResourceManager()->GetCurrentResourceTyped<MTL::Buffer *>(vertexBuffer.buffer);
+    renderCommandEncoder->setVertexBuffer(buffer, vertexBuffer.offset, vertexBuffer.index);
+  }
 }
 
-void MetalRenderState::EndRenderPass(WrappedMTLRenderCommandEncoder *encoder)
+void MetalRenderState::EndRenderPass()
 {
-  encoder->endEncoding();
+  renderCommandEncoder->endEncoding();
+  renderCommandEncoder = NULL;
 }

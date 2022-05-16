@@ -58,121 +58,59 @@ bool WrappedMTLCommandBuffer::Serialise_renderCommandEncoderWithDescriptor(
   // TODO: implement RD MTL replay
   if(IsReplayingAndReading())
   {
-    if(IsLoading(m_State))
+    m_Device->SetCurrentCommandBuffer(CommandBuffer);
+    if(IsActiveReplaying(m_State))
     {
-      AddEvent();
-
-      ActionDescription action;
-      action.flags |= ActionFlags::PassBoundary;
-      action.flags |= ActionFlags::BeginPass;
-
-      AddAction(action);
+      if(!m_Device->IsCurrentCommandBufferEventInReplayRange())
+        return true;
     }
-    ResourceId liveID;
-
+    WrappedMTLCommandBuffer *cmdBuffer = m_Device->GetCurrentReplayCommandBuffer();
+    //    if(IsLoading(m_State))
+    //    {
+    //      AddEvent();
+    //
+    //      ActionDescription action;
+    //      action.flags |= ActionFlags::PassBoundary;
+    //      action.flags |= ActionFlags::BeginPass;
+    //
+    //      AddAction(action);
+    //    }
     MTL::RenderPassDescriptor *mtlDescriptor(descriptor);
-    MTL::RenderCommandEncoder *realMTLRenderCommandEncoder =
-        Unwrap(CommandBuffer)->renderCommandEncoder(mtlDescriptor);
+    MTL::RenderCommandEncoder *mtlRenderCommandEncoder =
+        Unwrap(cmdBuffer)->renderCommandEncoder(mtlDescriptor);
     mtlDescriptor->release();
     WrappedMTLRenderCommandEncoder *wrappedMTLRenderCommandEncoder;
-    liveID = GetResourceManager()->WrapResource(realMTLRenderCommandEncoder,
-                                                wrappedMTLRenderCommandEncoder);
-    wrappedMTLRenderCommandEncoder->SetCommandBuffer(CommandBuffer);
-    if(GetResourceManager()->HasLiveResource(RenderCommandEncoder))
+    ResourceId liveID =
+        GetResourceManager()->WrapResource(mtlRenderCommandEncoder, wrappedMTLRenderCommandEncoder);
+    wrappedMTLRenderCommandEncoder->SetCommandBuffer(cmdBuffer);
+    if(!m_Device->IsPartialReplay())
     {
-      // TODO: we are leaking the original WrappedMTLRenderCommandEncoder
-      GetResourceManager()->EraseLiveResource(RenderCommandEncoder);
+      if(GetResourceManager()->HasLiveResource(RenderCommandEncoder))
+      {
+        // TODO: we are leaking the original WrappedMTLRenderCommandEncoder
+        GetResourceManager()->EraseLiveResource(RenderCommandEncoder);
+      }
+      GetResourceManager()->AddLiveResource(RenderCommandEncoder, wrappedMTLRenderCommandEncoder);
+      m_Device->AddResource(RenderCommandEncoder, ResourceType::RenderPass, "Render Encoder");
+      m_Device->DerivedResource(cmdBuffer, RenderCommandEncoder);
     }
-    GetResourceManager()->AddLiveResource(RenderCommandEncoder, wrappedMTLRenderCommandEncoder);
-    m_Device->AddResource(RenderCommandEncoder, ResourceType::RenderPass, "Render Encoder");
-    m_Device->DerivedResource(CommandBuffer, RenderCommandEncoder);
+    RDCLOG("M %s renderCommandEncoder %s",
+           ToStr(GetResourceManager()->GetOriginalID(GetResID(cmdBuffer))).c_str(),
+           ToStr(RenderCommandEncoder).c_str());
 
-    m_Device->SetRenderPassActiveState(WrappedMTLDevice::Primary, true);
+    RDCLOG("S %s renderCommandEncoder %s %s",
+           ToStr(GetResourceManager()->GetOriginalID(GetResID(cmdBuffer))).c_str(),
+           ToStr(RenderCommandEncoder).c_str(), ToStr(liveID).c_str());
     m_Device->SetActiveRenderCommandEncoder(wrappedMTLRenderCommandEncoder);
-    MetalRenderState &renderstate = m_Device->GetCmdRenderState();
-    renderstate.Init();
-    renderstate.renderPass = liveID;
-    MetalCreationInfo &c = m_Device->GetCreationInfo();
-    MetalCreationInfo::RenderPass &rp = c.m_RenderPass[liveID];
-    rp.colorAttachments.resize(descriptor.colorAttachments.count());
-    // Save render stage settings from MTLRenderPassDescriptor
-    for(int i = 0; i < descriptor.colorAttachments.count(); ++i)
+    MetalRenderState &renderState = m_Device->GetCmdRenderState();
+    renderState.Init();
+    renderState.renderPass = liveID;
+    if(IsLoading(m_State))
     {
-      RDMTL::RenderPassColorAttachmentDescriptor &mtlColorAttachment = descriptor.colorAttachments[i];
-      MetalCreationInfo::RenderPass::ColorAttachment &rdColorAttachment = rp.colorAttachments[i];
-      WrappedMTLTexture *texture = mtlColorAttachment.texture;
-      rdColorAttachment.texture = GetResID(texture);
-      rdColorAttachment.level = mtlColorAttachment.level;
-      rdColorAttachment.slice = mtlColorAttachment.slice;
-      rdColorAttachment.depthPlane = mtlColorAttachment.depthPlane;
-      WrappedMTLTexture *resolveTexture = mtlColorAttachment.resolveTexture;
-      rdColorAttachment.resolveTexture = GetResID(resolveTexture);
-      rdColorAttachment.resolveLevel = mtlColorAttachment.resolveLevel;
-      rdColorAttachment.resolveSlice = mtlColorAttachment.resolveSlice;
-      rdColorAttachment.resolveDepthPlane = mtlColorAttachment.resolveDepthPlane;
-      rdColorAttachment.loadAction = mtlColorAttachment.loadAction;
-      rdColorAttachment.storeAction = mtlColorAttachment.storeAction;
-      rdColorAttachment.storeActionOptions = mtlColorAttachment.storeActionOptions;
-      rdColorAttachment.clearColor = mtlColorAttachment.clearColor;
+      MetalCreationInfo &c = m_Device->GetCreationInfo();
+      c.m_RenderPass[RenderCommandEncoder].Init(descriptor);
+      RDCLOG("S CreateInfo %s", ToStr(RenderCommandEncoder).c_str());
     }
-
-    // depthAttachment
-    // stencilAttachment
-    // visibilityResultBuffer
-    // renderTargetArrayLength
-    // imageblockSampleLength
-    // threadgroupMemoryLength
-    // tileWidth
-    // tileHeight
-    // defaultRasterSampleCount
-    // renderTargetWidth
-    // renderTargetHeight
-    // samplePositions
-    // rasterizationRateMap
-    // sampleBufferAttachments
-
-    // MTLRenderPassAttachmentDescriptor
-    // texture
-    // level
-    // slice
-    // depthPlane
-    // resolveTexture
-    // resolveLevel
-    // resolveSlice
-    // resolveDepthPlane
-    // loadAction
-    // storeAction
-    // storeActionOptions
-
-    // MTLRenderPassDepthAttachmentDescriptor
-    // texture
-    // level
-    // slice
-    // depthPlane
-    // resolveTexture
-    // resolveLevel
-    // resolveSlice
-    // resolveDepthPlane
-    // loadAction
-    // storeAction
-    // storeActionOptions
-    // clearDepth
-    // depthResolveFilter
-
-    // MTLRenderPassStencilAttachmentDescriptor : MTLRenderPassAttachmentDescriptor
-    // texture
-    // level
-    // slice
-    // depthPlane
-    // resolveTexture
-    // resolveLevel
-    // resolveSlice
-    // resolveDepthPlane
-    // loadAction
-    // storeAction
-    // storeActionOptions
-    // clearStencil
-    // stencilResolveFilter
   }
   return true;
 }
@@ -231,6 +169,23 @@ bool WrappedMTLCommandBuffer::Serialise_presentDrawable(SerialiserType &ser, MTL
   // TODO: implement RD MTL replay
   if(IsReplayingAndReading())
   {
+    m_Device->SetCurrentCommandBuffer(CommandBuffer);
+    if(IsLoading(m_State))
+    {
+      AddEvent();
+
+      ActionDescription action;
+      action.flags |= ActionFlags::Present;
+
+      AddAction(action);
+    }
+    if(IsActiveReplaying(m_State))
+    {
+      if(!m_Device->IsCurrentCommandBufferEventInReplayRange())
+        return true;
+    }
+    WrappedMTLCommandBuffer *cmdBuffer = m_Device->GetCurrentReplayCommandBuffer();
+    RDCLOG("M %s present", ToStr(GetResourceManager()->GetOriginalID(GetResID(cmdBuffer))).c_str());
   }
   return true;
 }
@@ -263,12 +218,56 @@ void WrappedMTLCommandBuffer::presentDrawable(MTL::Drawable *drawable)
   }
 }
 
+template <typename SerialiserType>
+bool WrappedMTLCommandBuffer::Serialise_enqueue(SerialiserType &ser)
+{
+  SERIALISE_ELEMENT_LOCAL(CommandBuffer, this);
+
+  SERIALISE_CHECK_READ_ERRORS();
+
+  // TODO: implement RD MTL replay
+  if(IsReplayingAndReading())
+  {
+    m_Device->SetCurrentCommandBuffer(CommandBuffer);
+    //    if(IsLoading(m_State))
+    //    {
+    //      AddEvent();
+    //
+    //      ActionDescription action;
+    //      action.flags |= ActionFlags::NoFlags;
+    //
+    //      AddAction(action);
+    //    }
+    if(IsActiveReplaying(m_State))
+    {
+      if(!m_Device->IsCurrentCommandBufferEventInReplayRange())
+        return true;
+    }
+    WrappedMTLCommandBuffer *cmdBuffer = m_Device->GetCurrentReplayCommandBuffer();
+    RDCLOG("M %s enqueue", ToStr(GetResourceManager()->GetOriginalID(GetResID(cmdBuffer))).c_str());
+  }
+  return true;
+}
+
 void WrappedMTLCommandBuffer::enqueue()
 {
   SERIALISE_TIME_CALL(Unwrap(this)->enqueue());
   if(IsCaptureMode(m_State))
   {
-    METAL_NOT_IMPLEMENTED();
+    bool capframe = IsActiveCapturing(m_State);
+    if(capframe)
+    {
+      Chunk *chunk = NULL;
+      {
+        CACHE_THREAD_SERIALISER();
+        SCOPED_SERIALISE_CHUNK(MetalChunk::MTLCommandBuffer_enqueue);
+        Serialise_enqueue(ser);
+        chunk = scope.Get();
+      }
+      MetalResourceRecord *bufferRecord = GetRecord(this);
+      bufferRecord->AddChunk(chunk);
+      m_Device->EnqueueCommandBufferRecord(bufferRecord);
+    }
   }
   else
   {
@@ -286,16 +285,13 @@ bool WrappedMTLCommandBuffer::Serialise_waitUntilCompleted(SerialiserType &ser)
   // TODO: implement RD MTL replay
   if(IsReplayingAndReading())
   {
-    //    if(IsLoading(m_State))
-    //    {
-    //      AddEvent();
-    //
-    //      ActionDescription action;
-    //      action.flags |= ActionFlags::NoFlags;
-    //
-    //      AddAction(action);
-    //    }
-    Unwrap(CommandBuffer)->waitUntilCompleted();
+    m_Device->SetCurrentCommandBuffer(NULL);
+    if(IsActiveReplaying(m_State))
+    {
+      RDCLOG("M %s wait",
+             ToStr(GetResourceManager()->GetOriginalID(GetResID(CommandBuffer))).c_str());
+      Unwrap(CommandBuffer)->waitUntilCompleted();
+    }
   }
   return true;
 }
@@ -349,18 +345,9 @@ bool WrappedMTLCommandBuffer::Serialise_commit(SerialiserType &ser)
   // TODO: implement RD MTL replay
   if(IsReplayingAndReading())
   {
-    if(IsLoading(m_State))
-    {
-      AddEvent();
-
-      ActionDescription action;
-      action.flags |= ActionFlags::NoFlags;
-      action.flags |= ActionFlags::CommandBufferBoundary;
-
-      AddAction(action);
-    }
-    m_Device->RemovePendingCommandBuffer(CommandBuffer);
-    CommandBuffer->commit();
+    m_Device->SetCurrentCommandBuffer(CommandBuffer);
+    WrappedMTLCommandBuffer *cmdBuffer = m_Device->GetCurrentReplayCommandBuffer();
+    m_Device->ReplayCommandBufferCommit(cmdBuffer);
   }
   return true;
 }
@@ -456,5 +443,6 @@ INSTANTIATE_FUNCTION_WITH_RETURN_SERIALISED(WrappedMTLCommandBuffer,
                                             RDMTL::RenderPassDescriptor &descriptor);
 INSTANTIATE_FUNCTION_SERIALISED(WrappedMTLCommandBuffer, void, presentDrawable,
                                 MTL::Drawable *drawable);
+INSTANTIATE_FUNCTION_SERIALISED(WrappedMTLCommandBuffer, void, enqueue);
 INSTANTIATE_FUNCTION_SERIALISED(WrappedMTLCommandBuffer, void, commit);
 INSTANTIATE_FUNCTION_SERIALISED(WrappedMTLCommandBuffer, void, waitUntilCompleted);

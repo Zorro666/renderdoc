@@ -27,6 +27,7 @@
 #include "metal_command_buffer.h"
 #include "metal_command_queue.h"
 #include "metal_core.h"
+#include "metal_debug_manager.h"
 #include "metal_function.h"
 #include "metal_helpers_bridge.h"
 #include "metal_library.h"
@@ -82,6 +83,7 @@ void WrappedMTLDevice::Construct()
   m_ResourceManager = new MetalResourceManager(m_State, this);
 
   m_Replay = new MetalReplay(this);
+  m_DebugManager = new MetalDebugManager(this);
 
   m_HeaderChunk = NULL;
 
@@ -489,49 +491,7 @@ bool WrappedMTLDevice::Serialise_newRenderPipelineStateWithDescriptor(
     AddResource(RenderPipelineState, ResourceType::PipelineState, "Pipeline State");
     DerivedResource(this, RenderPipelineState);
 
-    MetalCreationInfo::Pipeline &pipeline = m_CreationInfo.m_Pipeline[liveID];
-    // Save pipeline settings from MTLRenderPipelineDescriptor
-    // MTL::Function* = MTLRenderPipelineDescriptor::vertexFunction
-    // MTL::Function* = MTLRenderPipelineDescriptor::fragmentFunction
-    // TODO: vertexDescriptor : MTLVertexDescriptor
-    // TODO: vertexBuffers : MTLPipelineBufferDescriptorArray *
-    // TODO: fragmentBuffers : MTLPipelineBufferDescriptorArray *
-    const uint32_t colorAttachmentCount = descriptor.colorAttachments.count();
-    pipeline.attachments.resize(colorAttachmentCount);
-    for(uint32_t i = 0; i < colorAttachmentCount; ++i)
-    {
-      RDMTL::RenderPipelineColorAttachmentDescriptor &mtlAttachment = descriptor.colorAttachments[i];
-      MetalCreationInfo::Pipeline::Attachment &attachment = pipeline.attachments[i];
-      attachment.pixelFormat = mtlAttachment.pixelFormat;
-      attachment.blendingEnabled = mtlAttachment.blendingEnabled;
-      attachment.sourceRGBBlendFactor = mtlAttachment.sourceAlphaBlendFactor;
-      attachment.destinationRGBBlendFactor = mtlAttachment.destinationRGBBlendFactor;
-      attachment.rgbBlendOperation = mtlAttachment.rgbBlendOperation;
-      attachment.sourceAlphaBlendFactor = mtlAttachment.sourceAlphaBlendFactor;
-      attachment.destinationAlphaBlendFactor = mtlAttachment.destinationAlphaBlendFactor;
-      attachment.alphaBlendOperation = mtlAttachment.alphaBlendOperation;
-      attachment.writeMask = mtlAttachment.writeMask;
-    }
-    // MTLPixelFormat = MTLRenderPipelineDescriptor::depthAttachmentPixelFormat
-    // MTLPixelFormat = MTLRenderPipelineDescriptor::stencilAttachmentPixelFormat
-    // NSUInteger = MTLRenderPipelineDescriptor::sampleCount
-    pipeline.alphaToCoverageEnabled = descriptor.alphaToCoverageEnabled;
-    pipeline.alphaToOneEnabled = descriptor.alphaToOneEnabled;
-    pipeline.rasterizationEnabled = descriptor.rasterizationEnabled;
-    // MTLPrimitiveTopologyClass = MTLRenderPipelineDescriptor::inputPrimitiveTopology
-    // NSUInteger = MTLRenderPipelineDescriptor::rasterSampleCount
-    // NSUInteger = MTLRenderPipelineDescriptor::maxTessellationFactor
-    // bool = MTLRenderPipelineDescriptor::tessellationFactorScaleEnabled
-    // MTLTessellationFactorFormat = MTLRenderPipelineDescriptor::tessellationFactorFormat
-    // MTLTessellationControlPointIndexType =
-    // MTLRenderPipelineDescriptor::tessellationControlPointIndexType
-    // MTLTessellationFactorStepFunction =
-    // MTLRenderPipelineDescriptor::tessellationFactorStepFunction
-    // MTLWinding = MTLRenderPipelineDescriptor::tessellationOutputWindingOrder
-    // MTLTessellationPartitionMode = MTLRenderPipelineDescriptor::tessellationPartitionMode
-    // bool = MTLRenderPipelineDescriptor::supportIndirectCommandBuffers
-    // NSUInteger = MTLRenderPipelineDescriptor::maxVertexAmplificationCount
-    // TODO: binaryArchives : NSArray<id<MTLBinaryArchive>>
+    m_CreationInfo.m_Pipeline[liveID].Init(descriptor);
   }
   return true;
 }

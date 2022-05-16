@@ -56,6 +56,8 @@ set(sources
     metal_render_state.h
     metal_info.cpp
     metal_info.h
+    metal_debug_manager.h
+    metal_debug_manager.cpp
     metal_debug_render.cpp
     metal_outputwindow.cpp
     metal_rendertexture.cpp

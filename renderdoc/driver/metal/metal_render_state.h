@@ -30,6 +30,15 @@ struct MetalStatePipeline
 {
   void Init();
   ResourceId pipeline;
+
+  struct VertexBuffer
+  {
+    ResourceId buffer;
+    NS::UInteger offset;
+    NS::UInteger index;
+  };
+
+  rdcarray<VertexBuffer> vertexBuffers;
 };
 
 struct MetalRenderState
@@ -45,11 +54,13 @@ struct MetalRenderState
   MetalRenderState();
   void Init();
 
-  void BeginRenderPassAndApplyState(WrappedMTLDevice *device, WrappedMTLCommandBuffer *cmd,
+  void BeginRenderPassAndApplyState(WrappedMTLDevice *device, WrappedMTLCommandBuffer *cmdBuffer,
                                     PipelineBinding binding);
-  void BindPipeline(WrappedMTLDevice *device, WrappedMTLCommandBuffer *cmd, PipelineBinding binding,
-                    bool subpass0);
-  void EndRenderPass(WrappedMTLRenderCommandEncoder *encoder);
+  void BindPipeline(WrappedMTLDevice *device, WrappedMTLCommandBuffer *cmdBuffer,
+                    PipelineBinding binding);
+  void EndRenderPass();
+
+  WrappedMTLRenderCommandEncoder *renderCommandEncoder = NULL;
 
   MetalStatePipeline graphics;
   // MTLRenderCommandEncoder
@@ -57,7 +68,7 @@ struct MetalRenderState
   // setViewport, setViewports, setScissor, setScissors
   rdcarray<MTL::Viewport> viewports;
   rdcarray<MTL::ScissorRect> scissors;
-  // setBlendColorRed
+  // setBlendColor
   rdcfixedarray<float, 4> blendColor;
   // setDepthClipMode
   MTL::DepthClipMode depthClipMode;

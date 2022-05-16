@@ -30,6 +30,9 @@ struct MetalCreationInfo
 {
   struct Pipeline
   {
+    void Init(const RDMTL::RenderPipelineDescriptor &descriptor);
+    void CopyTo(MetalResourceManager *rm, RDMTL::RenderPipelineDescriptor &descriptor) const;
+
     struct Attachment
     {
       MTL::BlendOperation alphaBlendOperation;
@@ -44,19 +47,58 @@ struct MetalCreationInfo
       MTL::ColorWriteMask writeMask;
       bool blendingEnabled;
     };
-    rdcarray<Attachment> attachments;
 
+    struct PipelineBufferDescriptor
+    {
+      MTL::Mutability mutability;
+    };
+
+    rdcstr label;
+    ResourceId vertexFunction;
+    ResourceId fragmentFunction;
+    // TODO: VertexDescriptor vertexDescriptor;
+    NS::UInteger sampleCount;
+    NS::UInteger rasterSampleCount;
     bool alphaToCoverageEnabled;
     bool alphaToOneEnabled;
     bool rasterizationEnabled;
+    NS::UInteger maxVertexAmplificationCount;
+    rdcarray<Attachment> colorAttachments;
+    MTL::PixelFormat depthAttachmentPixelFormat;
+    MTL::PixelFormat stencilAttachmentPixelFormat;
+    MTL::PrimitiveTopologyClass inputPrimitiveTopology;
+    MTL::TessellationPartitionMode tessellationPartitionMode;
+    NS::UInteger maxTessellationFactor;
+    bool tessellationFactorScaleEnabled;
+    MTL::TessellationFactorFormat tessellationFactorFormat;
+    MTL::TessellationControlPointIndexType tessellationControlPointIndexType;
+    MTL::TessellationFactorStepFunction tessellationFactorStepFunction;
+    MTL::Winding tessellationOutputWindingOrder;
+    rdcarray<PipelineBufferDescriptor> vertexBuffers;
+    rdcarray<PipelineBufferDescriptor> fragmentBuffers;
+    bool supportIndirectCommandBuffers;
+    // TODO: rdcarray<MTL::BinaryArchive*> binaryArchives;
+    // TODO: rdcarray<MTL::DynamicLibrary*> vertexPreloadedLibraries;
+    // TODO: rdcarray<MTL::DynamicLibrary*> fragmentPreloadedLibraries;
+    // TODO: LinkedFunctions vertexLinkedFunctions;
+    // TODO: LinkedFunctions fragmentLinkedFunctions;
+    bool supportAddingVertexBinaryFunctions;
+    bool supportAddingFragmentBinaryFunctions;
+    NS::UInteger maxVertexCallStackDepth;
+    NS::UInteger maxFragmentCallStackDepth;
   };
 
   std::unordered_map<ResourceId, Pipeline> m_Pipeline;
 
   struct RenderPass
   {
+    void Init(const RDMTL::RenderPassDescriptor &descriptor);
+    void CopyTo(MetalResourceManager *rm, RDMTL::RenderPassDescriptor &descriptor) const;
+
     struct Attachment
     {
+      void Init(const RDMTL::RenderPassAttachmentDescriptor &attachment);
+      void CopyTo(MetalResourceManager *rm, RDMTL::RenderPassAttachmentDescriptor &attachment) const;
       ResourceId texture;
       NS::UInteger level;
       NS::UInteger slice;
@@ -69,11 +111,39 @@ struct MetalCreationInfo
       NS::UInteger resolveSlice;
       NS::UInteger resolveDepthPlane;
     };
+
     struct ColorAttachment : Attachment
     {
       MTL::ClearColor clearColor;
     };
+
+    struct DepthAttachment : Attachment
+    {
+      double clearDepth;
+      MTL::MultisampleDepthResolveFilter depthResolveFilter;
+    };
+
+    struct StencilAttachment : Attachment
+    {
+      uint32_t clearStencil;
+      MTL::MultisampleStencilResolveFilter stencilResolveFilter;
+    };
+
     rdcarray<ColorAttachment> colorAttachments;
+    DepthAttachment depthAttachment;
+    StencilAttachment stencilAttachment;
+    // TODO: WrappedMTLBuffer *visibilityResultBuffer;
+    NS::UInteger renderTargetArrayLength;
+    NS::UInteger imageblockSampleLength;
+    NS::UInteger threadgroupMemoryLength;
+    NS::UInteger tileWidth;
+    NS::UInteger tileHeight;
+    NS::UInteger defaultRasterSampleCount;
+    NS::UInteger renderTargetWidth;
+    NS::UInteger renderTargetHeight;
+    // TODO: rdcarray<MTL::SamplePosition> samplePositions;
+    // TODO MTL::RasterizationRateMap rasterizationRateMap;
+    // TODO: rdcarray<RenderPassSampleBufferAttachmentDescriptor> sampleBufferAttachments;
   };
 
   std::unordered_map<ResourceId, RenderPass> m_RenderPass;
@@ -81,15 +151,25 @@ struct MetalCreationInfo
   struct Texture
   {
     void Init(MetalResourceManager *rm, MetalCreationInfo &creationInfo,
-              RDMTL::TextureDescriptor &descriptor);
+              const RDMTL::TextureDescriptor &descriptor);
 
-    MTL::Size extent;
+    MTL::TextureType textureType;
+    MTL::PixelFormat pixelFormat;
+    NS::UInteger width;
+    NS::UInteger height;
+    NS::UInteger depth;
+    NS::UInteger mipmapLevelCount;
+    NS::UInteger sampleCount;
+    NS::UInteger arrayLength;
+    MTL::ResourceOptions resourceOptions;
+    MTL::CPUCacheMode cpuCacheMode;
+    MTL::StorageMode storageMode;
+    MTL::HazardTrackingMode hazardTrackingMode;
+    MTL::TextureUsage usage;
+    bool allowGPUOptimizedContents;
+    MTL::TextureSwizzleChannels swizzle;
+
     TextureCategory creationFlags;
-    MTL::TextureType type;
-    MTL::PixelFormat format;
-    uint32_t arrayLayers;
-    uint32_t mipLevels;
-    uint32_t samples;
     bool cube;
   };
 

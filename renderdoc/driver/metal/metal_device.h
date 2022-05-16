@@ -32,13 +32,14 @@
 #include "metal_resources.h"
 #include "metal_types.h"
 
-class MetalReplay;
-
 class MetalCapturer;
+class MetalDebugManager;
+class MetalReplay;
 
 class WrappedMTLDevice : public WrappedMTLObject
 {
   friend class MetalResourceManager;
+  friend class MetalDebugManager;
   friend class MetalReplay;
 
 public:
@@ -98,6 +99,7 @@ public:
   CaptureState &GetStateRef() { return m_State; }
   CaptureState GetState() { return m_State; }
   MetalResourceManager *GetResourceManager() { return m_ResourceManager; };
+  MetalDebugManager *GetDebugManager() { return m_DebugManager; };
   WriteSerialiser &GetThreadSerialiser();
 
   // IFrameCapturer interface
@@ -111,6 +113,7 @@ public:
   void Present(WrappedMTLTexture *backBuffer, CA::MetalLayer *outputLayer);
 
   void AddCommandBufferRecord(MetalResourceRecord *record);
+  void EnqueueCommandBufferRecord(MetalResourceRecord *record);
 
   RDResult Initialise(MetalInitParams &params, uint64_t sectionVersion, const ReplayOptions &opts);
   uint64_t GetLogVersion() { return m_SectionVersion; }
@@ -132,34 +135,32 @@ public:
     DerivedResource(GetResID(parent), child);
   }
 
+  bool IsPartialReplay() { return m_ReplayPartialCmdBufferID != ResourceId(); }
+  bool IsCurrentCommandBufferEventInReplayRange();
+  WrappedMTLCommandBuffer *GetCurrentReplayCommandBuffer();
+  void NewReplayCommandBuffer(WrappedMTLCommandBuffer *cmdBuffer);
+  void ReplayCommandBufferCommit(WrappedMTLCommandBuffer *cmdBuffer);
+  void ResetReplayCommandBuffer(WrappedMTLCommandBuffer *cmdBuffer);
+  void SetCurrentCommandBuffer(WrappedMTLCommandBuffer *cmdBuffer);
+
   void AddEvent();
   void AddAction(const ActionDescription &a);
   const ActionDescription *GetAction(uint32_t eventId);
 
   MetalRenderState &GetCmdRenderState()
   {
-    //    RDCASSERT(m_LastCmdBufferID != ResourceId());
-    // auto it = m_BakedCmdBufferInfo.find(m_LastCmdBufferID);
-    // RDCASSERT(it != m_BakedCmdBufferInfo.end());
-    return m_RenderState;
+    if(m_ReplayPartialCmdBufferID != ResourceId())
+      return m_RenderState;
+
+    RDCASSERT(m_ReplayCurrentCmdBufferID != ResourceId());
+    auto it = m_ReplayCmdBufferInfos.find(m_ReplayCurrentCmdBufferID);
+    RDCASSERT(it != m_ReplayCmdBufferInfos.end());
+    return it->second.renderState;
   }
 
-  enum PartialReplayIndex
-  {
-    Primary,
-    Secondary,
-    ePartialNum
-  };
-
-  void SetActiveRenderCommandEncoder(WrappedMTLRenderCommandEncoder *renderCommandEncoder)
-  {
-    m_ActiveRenderCommandEncoder = renderCommandEncoder;
-  }
-
-  void SetRenderPassActiveState(PartialReplayIndex index, bool state)
-  {
-    m_Partial[index].renderPassActive = state;
-  }
+  void ClearActiveRenderCommandEncoder();
+  void SetActiveRenderCommandEncoder(WrappedMTLRenderCommandEncoder *renderCommandEncoder);
+  WrappedMTLRenderCommandEncoder *GetCurrentReplayRenderEncoder();
 
   WrappedMTLCommandBuffer *GetNextCommandBuffer();
   void RemovePendingCommandBuffer(WrappedMTLCommandBuffer *cmdBuffer);
@@ -175,6 +176,7 @@ public:
   static IMP g_real_CAMetalLayer_nextDrawable;
 
 private:
+  struct ReplayCmdBufferInfo;
   static void MTLFixupForMetalDriverAssert();
   static void MTLHookObjcMethods();
   void FirstFrame();
@@ -184,16 +186,14 @@ private:
 
   RDResult FatalErrorCheck() { return m_FatalError; }
   bool HasFatalError() { return m_FatalError != ResultCode::Succeeded; }
-  rdcarray<ActionDescription *> &GetActionStack()
+  rdcarray<MetalActionTreeNode *> &GetActionStack()
   {
-    /*
-        if(m_LastCmdBufferID != ResourceId())
-          return m_BakedCmdBufferInfo[m_LastCmdBufferID].actionStack;
-    */
+    if(m_ReplayCurrentCmdBufferID != ResourceId())
+      return m_ReplayCmdBufferInfos[m_ReplayCurrentCmdBufferID].actionStack;
     return m_ActionStack;
   }
-
   const APIEvent &GetEvent(uint32_t eventId);
+
   template <typename SerialiserType>
   bool Serialise_CaptureScope(SerialiserType &ser);
   template <typename SerialiserType>
@@ -222,10 +222,12 @@ private:
   CA::MetalDrawable *GetNextDrawable(void *layer);
   WrappedMTLCommandBuffer *GetInitStateCmd();
   void CloseInitStateCmd();
-  void AddPendingCommandBuffer(WrappedMTLCommandBuffer *cmd);
+  void AddPendingCommandBuffer(WrappedMTLCommandBuffer *cmdBuffer);
   void SubmitCmds();
   void FlushQ();
   void WaitForGPU();
+  void ClearTrackedCmdBuffers();
+  void InsertCommandBufferActionsAndRefreshIDs(ReplayCmdBufferInfo &cmdBufInfo);
 
   MetalLockedTextureStateRef FindTextureState(ResourceId id);
   MetalLockedConstTextureStateRef FindConstTextureState(ResourceId id);
@@ -249,6 +251,7 @@ private:
   rdcarray<DebugMessage> m_DebugMessages;
 
   MetalReplay *m_Replay = NULL;
+  MetalDebugManager *m_DebugManager = NULL;
   ReplayOptions m_ReplayOptions;
 
   MetalRenderState m_RenderState;
@@ -257,14 +260,14 @@ private:
   {
     void Reset()
     {
-      pendingcmds.clear();
-      submittedcmds.clear();
+      m_PendingCmds.clear();
+      m_SubmittedCmds.clear();
     }
 
     // GetNextCommandBuffer() ->
-    rdcarray<WrappedMTLCommandBuffer *> pendingcmds;
+    rdcarray<WrappedMTLCommandBuffer *> m_PendingCmds;
     // -> SubmitCmds() ->
-    rdcarray<WrappedMTLCommandBuffer *> submittedcmds;
+    rdcarray<WrappedMTLCommandBuffer *> m_SubmittedCmds;
     // -> FlushQ()
 
   } m_InternalCmds;
@@ -273,69 +276,51 @@ private:
   int initStateCurBatch = 0;
   WrappedMTLCommandBuffer *initStateCurCmd = NULL;
 
-  struct Submission
+  struct ReplayCmdBufferInfo
   {
-    Submission(uint32_t eid) : baseEvent(eid), rebased(false) {}
-    uint32_t baseEvent = 0;
-    bool rebased = false;
+    ReplayCmdBufferInfo() {}
+    ~ReplayCmdBufferInfo() { SAFE_DELETE(action); }
+    rdcarray<APIEvent> curEvents;
+    rdcarray<MetalActionTreeNode *> actionStack;
+
+    uint32_t beginChunk = 0;
+    uint32_t endChunk = 0;
+
+    MetalRenderState renderState;
+
+    // whether the renderdoc commandbuffer execution has a render pass currently
+    // open and replaying and need to end the render pass before commit
+    bool renderPassOpen = false;
+    WrappedMTLCommandBuffer *cmdBuffer = NULL;
+
+    MetalActionTreeNode *action = NULL;    // the root action to copy from when submitting
+    uint32_t baseRootEvent = 0;            // which root event ID this cmd buffer starts from
+    uint32_t actionCount = 0;              // how many actions are in this cmd buffer
+    uint32_t eventCount = 0;    // how many events are in this cmd buffer, for quick skipping
+    uint32_t curEventID = 0;    // current event ID while reading or executing
   };
 
-  // by definition, when replaying we must have N completely submitted command buffers, and at most
-  // two partially-submitted command buffers. One primary, that we're part-way through, and then
-  // if we're part-way through a vkCmdExecuteCommandBuffers inside that primary then there's one
-  // secondary.
-  struct PartialReplayData
-  {
-    PartialReplayData() { Reset(); }
-    void Reset()
-    {
-      partialParent = ResourceId();
-      baseEvent = 0;
-      renderPassActive = false;
-    }
+  // on replay, the current command buffer for the last chunk we handled.
+  ResourceId m_ReplayCurrentCmdBufferID;
+  // data for a command buffer - its actions and events
+  std::map<ResourceId, ReplayCmdBufferInfo> m_ReplayCmdBufferInfos;
+  // on replay, the command buffer which was only partially committed
+  ResourceId m_ReplayPartialCmdBufferID;
 
-    // this records where in the frame a command buffer was submitted, so that we know if our replay
-    // range ends in one of these ranges we need to construct a partial command buffer for future
-    // replaying. Note that we always have the complete command buffer around - it's the bakeID
-    // itself.
-    // Since we only ever record a bakeID once the key is unique - note that the same command buffer
-    // could be recorded multiple times a frame, so the parent command buffer ID (the one recorded
-    // in vkCmd chunks) is NOT unique.
-    // However, a single baked command list can be submitted multiple times - so we have to have a
-    // list of base events
-    // Note in the case of secondary command buffers we mark when these are rebased to 'absolute'
-    // event IDs, since they could be submitted multiple times in the frame and we don't want to
-    // rebase all of them each time.
-    // Map from bakeID -> vector<Submission>
-    std::map<ResourceId, rdcarray<Submission>> cmdBufferSubmits;
-
-    // identifies the baked ID of the command buffer that's actually partial at each level.
-    ResourceId partialParent;
-
-    // the base even of the submission that's partial, as defined above in partialParent
-    uint32_t baseEvent;
-
-    // whether a renderpass is currently active in the partial recording - as with baseEvent, only
-    // valid for the command buffer referred to by partialParent.
-    bool renderPassActive;
-  } m_Partial[ePartialNum];
-
-  // if we're replaying just a single action or a particular command
-  // buffer subsection of command events, we don't go through the
+  // if we're replaying just a single action, we don't go through the
   // whole original command buffers to set up the partial replay,
-  // so we just set this command buffer
-  WrappedMTLCommandBuffer *m_OutsideCmdBuffer = NULL;
-  WrappedMTLRenderCommandEncoder *m_ActiveRenderCommandEncoder = NULL;
+  // we just set this command buffer
+  WrappedMTLCommandBuffer *m_ReplayPartialCmdBuffer = NULL;
 
-  // used both on capture and replay side to track texture state. Only locked
-  // in capture
+  // used both on capture and replay side to track texture state.
+  // Only locked in capture
   std::map<ResourceId, MetalLockingTextureState> m_TextureStates;
   Threading::CriticalSection m_TextureStatesLock;
 
   rdcarray<APIEvent> m_RootEvents, m_Events;
   bool m_AddedAction = false;
-  ActionDescription m_ParentAction;
-  rdcarray<ActionDescription *> m_ActionStack;
+  MetalActionTreeNode m_ParentAction;
+  rdcarray<MetalActionTreeNode *> m_ActionStack;
   rdcarray<ActionDescription *> m_Actions;
 
   uint64_t m_CurChunkOffset = 0;
@@ -345,9 +330,6 @@ private:
   uint32_t m_FirstEventID = 0;
   uint32_t m_LastEventID = ~0U;
   MetalChunk m_LastChunk;
-  // on replay, the current command buffer for the last chunk we
-  // handled.
-  ResourceId m_LastCmdBufferID;
 
   // Dummy objects used for serialisation replay
   WrappedMTLBuffer *m_DummyBuffer = NULL;
@@ -368,7 +350,9 @@ private:
   // much easier to process (queue submit order will enforce/display
   // ordering, record order is not important)
   Threading::CriticalSection m_CommandBufferRecordsLock;
-  rdcarray<MetalResourceRecord *> m_CommandBufferRecords;
+  std::unordered_set<MetalResourceRecord *> m_CommittedCommandBufferRecords;
+  std::unordered_set<MetalResourceRecord *> m_EnqueuedCommandBuffers;
+  rdcarray<MetalResourceRecord *> m_SubmitOrderCommandBuffers;
 
   // Back buffer and swap chain emulation
   Threading::CriticalSection m_PotentialBackBuffersLock;

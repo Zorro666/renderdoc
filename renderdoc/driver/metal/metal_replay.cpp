@@ -118,39 +118,39 @@ TextureDescription MetalReplay::GetTexture(ResourceId id)
 
   TextureDescription ret = {};
   ret.resourceId = m_pDriver->GetResourceManager()->GetOriginalID(id);
-  ret.arraysize = texInfo.arrayLayers;
+  ret.arraysize = texInfo.arrayLength;
   ret.creationFlags = texInfo.creationFlags;
   ret.cubemap = texInfo.cube;
-  ret.width = texInfo.extent.width;
-  ret.height = texInfo.extent.height;
-  ret.depth = texInfo.extent.depth;
-  ret.mips = texInfo.mipLevels;
+  ret.width = texInfo.width;
+  ret.height = texInfo.height;
+  ret.depth = texInfo.depth;
+  ret.mips = texInfo.mipmapLevelCount;
 
   ret.byteSize = 0;
   for(uint32_t s = 0; s < ret.mips; s++)
-    ret.byteSize += GetByteSize(ret.width, ret.height, ret.depth, texInfo.format, s);
+    ret.byteSize += GetByteSize(ret.width, ret.height, ret.depth, texInfo.pixelFormat, s);
   ret.byteSize *= ret.arraysize;
 
   ret.msQual = 0;
-  ret.msSamp = RDCMAX(1U, (uint32_t)texInfo.samples);
+  ret.msSamp = RDCMAX(1U, (uint32_t)texInfo.sampleCount);
 
   ret.byteSize *= ret.msSamp;
 
-  ret.format = MakeResourceFormat(texInfo.format);
+  ret.format = MakeResourceFormat(texInfo.pixelFormat);
 
-  switch(texInfo.type)
+  switch(texInfo.textureType)
   {
     case MTL::TextureType1D:
-      ret.type = texInfo.arrayLayers > 1 ? TextureType::Texture1DArray : TextureType::Texture1D;
+      ret.type = texInfo.arrayLength > 1 ? TextureType::Texture1DArray : TextureType::Texture1D;
       ret.dimension = 1;
       break;
     case MTL::TextureType2D:
       if(ret.msSamp > 1)
-        ret.type = texInfo.arrayLayers > 1 ? TextureType::Texture2DMSArray : TextureType::Texture2DMS;
+        ret.type = texInfo.arrayLength > 1 ? TextureType::Texture2DMSArray : TextureType::Texture2DMS;
       else if(ret.cubemap)
-        ret.type = texInfo.arrayLayers > 6 ? TextureType::TextureCubeArray : TextureType::TextureCube;
+        ret.type = texInfo.arrayLength > 6 ? TextureType::TextureCubeArray : TextureType::TextureCube;
       else
-        ret.type = texInfo.arrayLayers > 1 ? TextureType::Texture2DArray : TextureType::Texture2D;
+        ret.type = texInfo.arrayLength > 1 ? TextureType::Texture2DArray : TextureType::Texture2D;
       ret.dimension = 2;
       break;
     case MTL::TextureType3D:
@@ -298,29 +298,30 @@ void MetalReplay::SavePipelineState(uint32_t eventId)
     ret.colorBlend.alphaToOneEnable = p.alphaToOneEnabled;
     ret.rasterizer.rasterizerDiscardEnable = !p.rasterizationEnabled;
 
-    ret.colorBlend.blends.resize(p.attachments.size());
-    for(size_t i = 0; i < p.attachments.size(); i++)
+    ret.colorBlend.blends.resize(p.colorAttachments.size());
+    for(size_t i = 0; i < p.colorAttachments.size(); i++)
     {
-      ret.colorBlend.blends[i].enabled = p.attachments[i].blendingEnabled;
+      const MetalCreationInfo::Pipeline::Attachment &colorAttachment = p.colorAttachments[i];
+      ret.colorBlend.blends[i].enabled = colorAttachment.blendingEnabled;
 
       // TODO: RenderDoc Metal support for logic operation
       ret.colorBlend.blends[i].logicOperationEnabled = false;
       ret.colorBlend.blends[i].logicOperation = LogicOperation::NoOp;
 
       ret.colorBlend.blends[i].colorBlend.source =
-          MakeBlendMultiplier(p.attachments[i].sourceRGBBlendFactor);
+          MakeBlendMultiplier(colorAttachment.sourceRGBBlendFactor);
       ret.colorBlend.blends[i].colorBlend.destination =
-          MakeBlendMultiplier(p.attachments[i].destinationRGBBlendFactor);
-      ret.colorBlend.blends[i].colorBlend.operation = MakeBlendOp(p.attachments[i].rgbBlendOperation);
+          MakeBlendMultiplier(colorAttachment.destinationRGBBlendFactor);
+      ret.colorBlend.blends[i].colorBlend.operation = MakeBlendOp(colorAttachment.rgbBlendOperation);
 
       ret.colorBlend.blends[i].alphaBlend.source =
-          MakeBlendMultiplier(p.attachments[i].sourceAlphaBlendFactor);
+          MakeBlendMultiplier(colorAttachment.sourceAlphaBlendFactor);
       ret.colorBlend.blends[i].alphaBlend.destination =
-          MakeBlendMultiplier(p.attachments[i].destinationAlphaBlendFactor);
+          MakeBlendMultiplier(colorAttachment.destinationAlphaBlendFactor);
       ret.colorBlend.blends[i].alphaBlend.operation =
-          MakeBlendOp(p.attachments[i].alphaBlendOperation);
+          MakeBlendOp(colorAttachment.alphaBlendOperation);
 
-      ret.colorBlend.blends[i].writeMask = MakeWriteMask(p.attachments[i].writeMask);
+      ret.colorBlend.blends[i].writeMask = MakeWriteMask(colorAttachment.writeMask);
     }
 
     ret.colorBlend.blendFactor = state.blendColor;
@@ -402,7 +403,7 @@ void MetalReplay::SavePipelineState(uint32_t eventId)
       //          rm->GetOriginalID(viewid);
       ret.currentPass.framebuffer.attachments[i].imageResourceId = rm->GetOriginalID(texID);
       ret.currentPass.framebuffer.attachments[i].viewFormat =
-          MakeResourceFormat(c.m_Texture[texID].format);
+          MakeResourceFormat(c.m_Texture[texID].pixelFormat);
       //          ret.currentPass.framebuffer.attachments[i].firstMip =
       //              c.m_ImageView[viewid].range.baseMipLevel;
       //          ret.currentPass.framebuffer.attachments[i].firstSlice =

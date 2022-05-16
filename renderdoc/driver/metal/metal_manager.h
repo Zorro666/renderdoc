@@ -172,6 +172,21 @@ public:
     return ret;
   }
 
+  // easy path for getting the wrapped resource cast to the correct type
+  template <typename realtype>
+  typename UnwrapHelper<realtype>::Outer *GetLiveResourceTyped(ResourceId origid)
+  {
+    using WrappedType = typename UnwrapHelper<realtype>::Outer;
+    return (WrappedType *)(ResourceManager::GetLiveResource(origid));
+  }
+
+  template <typename realtype>
+  typename UnwrapHelper<realtype>::Outer *GetCurrentResourceTyped(ResourceId id)
+  {
+    using WrappedType = typename UnwrapHelper<realtype>::Outer;
+    return (WrappedType *)(ResourceManager::GetCurrentResource(id));
+  }
+
   // ResourceRecordHandler interface implemented in ResourceManager
   //  void MarkDirtyResource(ResourceId id);
   //  void RemoveResourceRecord(ResourceId id);

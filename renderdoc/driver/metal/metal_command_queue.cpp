@@ -52,8 +52,6 @@ bool WrappedMTLCommandQueue::Serialise_commandBuffer(SerialiserType &ser,
 
   if(IsReplayingAndReading())
   {
-    //    if(IsLoading(m_State))
-    //    {
     //      AddEvent();
     //
     //      ActionDescription action;
@@ -79,6 +77,19 @@ bool WrappedMTLCommandQueue::Serialise_commandBuffer(SerialiserType &ser,
 
     m_Device->AddResource(CommandBuffer, ResourceType::CommandBuffer, "Command Buffer");
     m_Device->DerivedResource(CommandQueue, CommandBuffer);
+    RDCLOG("M %s commandBuffer %s",
+           ToStr(GetResourceManager()->GetOriginalID(GetResID(CommandQueue))).c_str(),
+           ToStr(CommandBuffer).c_str());
+
+    if(IsLoading(m_State))
+    {
+      AddEvent();
+      m_Device->NewReplayCommandBuffer(wrappedMTLCommandBuffer);
+    }
+    else
+    {
+      m_Device->ResetReplayCommandBuffer(wrappedMTLCommandBuffer);
+    }
   }
   return true;
 }
