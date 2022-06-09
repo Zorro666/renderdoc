@@ -141,8 +141,7 @@ bool WrappedMTLBuffer::Serialise_InternalModifyCPUContents(SerialiserType &ser, 
 
   SERIALISE_CHECK_READ_ERRORS();
 
-  RDCLOG("M %s InternalModifyCPUContents",
-         ToStr(GetResourceManager()->GetOriginalID(GetResID(Buffer))).c_str());
+  RDCLOG("M %s InternalModifyCPUContents", ToStr(GetResID(Buffer)).c_str());
 
   return true;
 }

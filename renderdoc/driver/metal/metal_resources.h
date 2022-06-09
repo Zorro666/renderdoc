@@ -117,10 +117,7 @@ METALCPP_WRAPPED_PROTOCOLS(WRAPPED_TYPE_HELPERS)
 
 struct MetalCmdBufferRecordingInfo
 {
-  MetalCmdBufferRecordingInfo(WrappedMTLCommandQueue *parentQueue)
-      : queue(parentQueue), present(false), outputLayer(NULL), backBuffer(NULL)
-  {
-  }
+  MetalCmdBufferRecordingInfo(WrappedMTLCommandQueue *parentQueue) : queue(parentQueue) {}
   MetalCmdBufferRecordingInfo() = delete;
   MetalCmdBufferRecordingInfo(const MetalCmdBufferRecordingInfo &) = delete;
   MetalCmdBufferRecordingInfo(MetalCmdBufferRecordingInfo &&) = delete;
@@ -129,11 +126,13 @@ struct MetalCmdBufferRecordingInfo
   WrappedMTLCommandQueue *queue;
 
   // The MetalLayer to present
-  CA::MetalLayer *outputLayer;
+  CA::MetalLayer *outputLayer = NULL;
   // The texture to present
-  WrappedMTLTexture *backBuffer;
+  WrappedMTLTexture *backBuffer = NULL;
+  // The enqueue global submission index
+  int64_t submitIndex = 0;
   // AdvanceFrame/Present should be called after this buffer is committed.
-  bool present;
+  bool present = false;
 };
 
 struct MetalTextureInfo

@@ -223,7 +223,8 @@ bool WrappedMTLDevice::ContextProcessChunk(ReadSerialiser &ser, MetalChunk chunk
 
   if(IsLoading(m_State))
   {
-    if(chunk == MetalChunk::MTLCommandQueue_commandBuffer)
+    if((chunk == MetalChunk::MTLCommandQueue_commandBuffer) ||
+       (chunk == MetalChunk::MTLCommandBuffer_enqueue))
     {
       // don't add these events - they will be handled when inserted in-line into queue submit
     }
@@ -924,7 +925,7 @@ RDResult WrappedMTLDevice::ContextReplayLog(CaptureState readType, uint32_t star
 
     m_CurChunkOffset = ser.GetReader()->GetOffset();
 
-    MetalChunk chunkType = ser.ReadChunk<MetalChunk>();
+    MetalChunk chunk = ser.ReadChunk<MetalChunk>();
 
     if(ser.GetReader()->IsErrored())
       return ResultCode::APIDataCorrupted;
@@ -933,8 +934,8 @@ RDResult WrappedMTLDevice::ContextReplayLog(CaptureState readType, uint32_t star
 
     m_ReplayCurrentCmdBufferID = ResourceId();
 
-    RDCLOG("J %d '%s' %lu", m_RootEventID, ToStr(chunkType).c_str(), m_CurChunkOffset);
-    bool success = ContextProcessChunk(ser, chunkType);
+    RDCLOG("J %d '%s' %lu", m_RootEventID, ToStr(chunk).c_str(), m_CurChunkOffset);
+    bool success = ContextProcessChunk(ser, chunk);
 
     ser.EndChunk();
 
@@ -957,14 +958,14 @@ RDResult WrappedMTLDevice::ContextReplayLog(CaptureState readType, uint32_t star
         LoadProgress::FrameEventsRead,
         float(m_CurChunkOffset - startOffset) / float(ser.GetReader()->GetSize()));
 
-    if((SystemChunk)chunkType == SystemChunk::CaptureEnd || ser.GetReader()->AtEnd())
+    if((SystemChunk)chunk == SystemChunk::CaptureEnd || ser.GetReader()->AtEnd())
       break;
 
     // break out if we were only executing one event
     if(IsActiveReplaying(m_State) && startEventID == endEventID)
       break;
 
-    m_LastChunk = chunkType;
+    m_LastChunk = chunk;
 
     // increment root event ID either if we didn't just replay a cmd
     // buffer event, OR if we are doing a frame sub-section replay,
@@ -978,8 +979,9 @@ RDResult WrappedMTLDevice::ContextReplayLog(CaptureState readType, uint32_t star
     else
     {
       // these events are completely omitted, so don't increment the curEventID
-      //      if(chunkType != MetalChunk::MTLCommandQueue_commandBuffer)
-      m_ReplayCmdBufferInfos[m_ReplayCurrentCmdBufferID].curEventID++;
+      if((chunk != MetalChunk::MTLCommandQueue_commandBuffer) &&
+         (chunk != MetalChunk::MTLCommandBuffer_enqueue))
+        m_ReplayCmdBufferInfos[m_ReplayCurrentCmdBufferID].curEventID++;
     }
   }
 
@@ -1391,6 +1393,12 @@ void WrappedMTLDevice::StartFrameCapture(void *dev, void *wnd)
     return;
 
   RDCLOG("Starting capture");
+  {
+    SCOPED_LOCK(m_CommandBuffersLock);
+    m_CaptureCommandBufferStartSubmitIndex = m_CommandBufferNextSubmitIndex;
+    m_CaptureCommandBufferEndSubmitIndex = LONG_MAX;
+    RDCASSERT(m_CommandBuffersQueuedPendingPresent.empty());
+  }
 
   m_CaptureTimer.Restart();
 
@@ -1406,22 +1414,12 @@ void WrappedMTLDevice::StartFrameCapture(void *dev, void *wnd)
   GetResourceManager()->ClearReferencedResources();
   // TODO: handle tracked memory
 
-  //  for(size_t i = 0; i < m_CommandBufferRecords.size(); i++)
-  //  {
-  //    WrappedMTLCommandBuffer *commandBuffer =
-  //    (WrappedMTLCommandBuffer*)m_CommandBufferRecords[i]->Resource;
-  //    WrappedMTLCommandQueue *commandQueue =
-  //    GetWrapped(commandBuffer->GetObjCBridgeMTLCommandQueue());
-  //    GetResourceManager()->MarkResourceFrameReferenced(GetResID(commandQueue),
-  //    eFrameRef_CompleteWrite);
-  //    RDCWARN("Marking CommandQueue as referenced");
-  //  }
   // need to do all this atomically so that no other commands
   // will check to see if they need to mark dirty or
   // mark pending dirty and go into the frame record.
   {
     SCOPED_WRITELOCK(m_CapTransitionLock);
-    // TODO: sync all active command buffers
+    // TODO: sync all active (enqueued and committed) command buffers
 
     GetResourceManager()->PrepareInitialContents();
     /*
@@ -1480,7 +1478,7 @@ void WrappedMTLDevice::EndCaptureFrame(ResourceId backbuffer)
 
 bool WrappedMTLDevice::EndFrameCapture(void *dev, void *wnd)
 {
-  if(!IsActiveCapturing(m_State))
+  if(!IsActiveCapturing(m_State) && !m_DeferredCapture)
     return true;
 
   RDCLOG("Finished capture, Frame %u", m_CapturedFrames.back().frameNumber);
@@ -1505,17 +1503,18 @@ bool WrappedMTLDevice::EndFrameCapture(void *dev, void *wnd)
     EndCaptureFrame(bbId);
 
     m_State = CaptureState::BackgroundCapturing;
+    m_DeferredCapture = false;
   }
 
   // wait for the GPU to be idle
-  for(auto it = m_CommittedCommandBufferRecords.begin();
-      it != m_CommittedCommandBufferRecords.end(); ++it)
+  for(auto it = m_CommandBuffersCommittedRecords.begin();
+      it != m_CommandBuffersCommittedRecords.end(); ++it)
   {
     WrappedMTLCommandBuffer *commandBuffer = (WrappedMTLCommandBuffer *)((*it)->m_Resource);
     Unwrap(commandBuffer)->waitUntilCompleted();
   }
 
-  if(m_CommittedCommandBufferRecords.empty())
+  if(m_CommandBuffersCommittedRecords.empty())
   {
     WaitForGPU();
   }
@@ -1653,24 +1652,22 @@ bool WrappedMTLDevice::EndFrameCapture(void *dev, void *wnd)
 
     {
       std::map<int64_t, Chunk *> recordlist;
-      size_t countQueuedCmdBuffers = m_SubmitOrderCommandBuffers.size();
-      RDCDEBUG("Flushing %zu command buffer records to file serialiser", countQueuedCmdBuffers);
+      size_t countCmdBuffers = m_CommandBuffersCommittedRecords.size();
+      RDCDEBUG("Flushing %zu command buffer records to file serialiser", countCmdBuffers);
       // ensure all command buffer records within the frame even if recorded before, but
       // otherwise order must be preserved (vs. queue submits and desc set updates)
-      for(size_t i = 0; i < countQueuedCmdBuffers; ++i)
+      for(auto it = m_CommandBuffersCommittedRecords.begin();
+          it != m_CommandBuffersCommittedRecords.end(); ++it)
       {
-        MetalResourceRecord *record = m_SubmitOrderCommandBuffers[i];
-        if(m_CommittedCommandBufferRecords.count(record))
-        {
-          RDCDEBUG("Adding chunks from command buffer %s", ToStr(record->GetResourceID()).c_str());
+        MetalResourceRecord *record = *it;
+        RDCDEBUG("Adding chunks from command buffer %s", ToStr(record->GetResourceID()).c_str());
 
-          size_t prevSize = recordlist.size();
-          (void)prevSize;
+        size_t prevSize = recordlist.size();
+        (void)prevSize;
 
-          record->Insert(recordlist);
+        record->Insert(recordlist);
 
-          RDCDEBUG("Added %zu chunks to file serialiser", recordlist.size() - prevSize);
-        }
+        RDCDEBUG("Added %zu chunks to file serialiser", recordlist.size() - prevSize);
       }
 
       size_t prevSize = recordlist.size();
@@ -1703,8 +1700,6 @@ bool WrappedMTLDevice::EndFrameCapture(void *dev, void *wnd)
 
   m_HeaderChunk->Delete();
   m_HeaderChunk = NULL;
-
-  m_State = CaptureState::BackgroundCapturing;
 
   // delete cmd buffers now - had to keep them alive until after serialiser flush.
   ClearTrackedCmdBuffers();
@@ -1742,6 +1737,7 @@ bool WrappedMTLDevice::DiscardFrameCapture(void *dev, void *wnd)
     SCOPED_WRITELOCK(m_CapTransitionLock);
 
     m_State = CaptureState::BackgroundCapturing;
+    m_DeferredCapture = false;
 
     /*
     ObjDisp(GetDev())->DeviceWaitIdle(Unwrap(GetDev()));
@@ -1790,25 +1786,67 @@ bool WrappedMTLDevice::Serialise_CaptureScope(SerialiserType &ser)
   return true;
 }
 
-void WrappedMTLDevice::AddCommandBufferRecord(MetalResourceRecord *record)
+void WrappedMTLDevice::CommitCommandBufferRecord(MetalResourceRecord *record)
 {
-  SCOPED_LOCK(m_CommandBufferRecordsLock);
-  if(m_EnqueuedCommandBuffers.count(record) == 0)
+  SCOPED_LOCK(m_CommandBuffersLock);
+  int64_t submitIndex = record->cmdInfo->submitIndex;
+  RDCASSERTNOTEQUAL(0, submitIndex);
+  m_CommandBuffersEnqueued.erase(record);
+  if(ShouldCaptureEnqueuedCommandBuffer(submitIndex))
   {
-    EnqueueCommandBufferRecord(record);
+    int64_t presentSubmitIndex = m_CommandBuffersPresentRecord->cmdInfo->submitIndex;
+    m_CommandBuffersQueuedPendingPresent.erase(record);
+    if(m_CommandBuffersQueuedPendingPresent.empty())
+    {
+      RDCLOG("Capture triggering deferred capture %ld %ld", submitIndex, presentSubmitIndex);
+      CA::MetalLayer *outputLayer = m_CommandBuffersPresentRecord->cmdInfo->outputLayer;
+      RenderDoc::Inst().EndFrameCapture(this, outputLayer);
+    }
   }
-  m_CommittedCommandBufferRecords.insert(record);
-  RDCDEBUG("Adding CommandBufferRecord Count %zu %s", m_CommittedCommandBufferRecords.size(),
-           ToStr(record->GetResourceID()).c_str());
+}
+
+void WrappedMTLDevice::StartAddCommandBufferRecord(MetalResourceRecord *record)
+{
+  if(m_DeferredCapture)
+  {
+    RDCASSERTEQUAL(CaptureState::BackgroundCapturing, m_State);
+    m_CapTransitionLock.WriteLock();
+    m_State = CaptureState::ActiveCapturing;
+  }
+}
+
+void WrappedMTLDevice::EndAddCommandBufferRecord(MetalResourceRecord *record)
+{
+  SCOPED_LOCK(m_CommandBuffersLock);
+  if(record->cmdInfo->submitIndex == 0)
+    EnqueueCommandBufferRecord(record);
+
+  int64_t submitIndex = record->cmdInfo->submitIndex;
+  m_CommandBuffersCommittedRecords.insert(record);
+
+  RDCDEBUG("Adding CommandBufferRecord %s Count %zu %ld", ToStr(record->GetResourceID()).c_str(),
+           m_CommandBuffersCommittedRecords.size(), submitIndex);
+
+  CommitCommandBufferRecord(record);
+
+  if(m_DeferredCapture)
+  {
+    RDCASSERTEQUAL(CaptureState::ActiveCapturing, m_State);
+    m_State = CaptureState::BackgroundCapturing;
+    m_CapTransitionLock.WriteUnlock();
+  }
 }
 
 void WrappedMTLDevice::EnqueueCommandBufferRecord(MetalResourceRecord *record)
 {
-  SCOPED_LOCK(m_CommandBufferRecordsLock);
-  size_t index = m_SubmitOrderCommandBuffers.size();
-  m_EnqueuedCommandBuffers.insert(record);
-  m_SubmitOrderCommandBuffers.push_back(record);
-  RDCDEBUG("Enqueing CommandBufferRecord %s Index %d", ToStr(record->GetResourceID()).c_str(), index);
+  SCOPED_LOCK(m_CommandBuffersLock);
+  RDCASSERTEQUAL(0, record->cmdInfo->submitIndex);
+  int64_t submitIndex = Atomic::Inc64(&m_CommandBufferNextSubmitIndex) - 1;
+  record->cmdInfo->submitIndex = submitIndex;
+  m_CommandBuffersEnqueued.insert(record);
+
+  RDCDEBUG("Enqueing CommandBufferRecord %s %ld", ToStr(record->GetResourceID()).c_str(),
+           submitIndex);
 }
 
 void WrappedMTLDevice::AdvanceFrame()
@@ -1831,8 +1869,9 @@ void WrappedMTLDevice::FirstFrame()
   }
 }
 
-void WrappedMTLDevice::Present(WrappedMTLTexture *backBuffer, CA::MetalLayer *outputLayer)
+void WrappedMTLDevice::Present(MetalResourceRecord *record)
 {
+  WrappedMTLTexture *backBuffer = record->cmdInfo->backBuffer;
   {
     SCOPED_LOCK(m_PotentialBackBuffersLock);
     if(m_PotentialBackBuffers.count(backBuffer) == 0)
@@ -1842,6 +1881,7 @@ void WrappedMTLDevice::Present(WrappedMTLTexture *backBuffer, CA::MetalLayer *ou
     }
   }
 
+  CA::MetalLayer *outputLayer = record->cmdInfo->outputLayer;
   {
     SCOPED_LOCK(m_OutputLayersLock);
     if(m_OutputLayers.count(outputLayer) == 0)
@@ -1861,9 +1901,32 @@ void WrappedMTLDevice::Present(WrappedMTLTexture *backBuffer, CA::MetalLayer *ou
 
   if(IsActiveCapturing(m_State) && !m_AppControlledCapture)
   {
+    m_CommandBuffersPresentRecord = record;
+    int64_t presentSubmitIndex = record->cmdInfo->submitIndex;
+    bool captureNow;
+    {
+      SCOPED_LOCK(m_CommandBuffersLock);
+      m_CaptureCommandBufferEndSubmitIndex = presentSubmitIndex;
+      m_CommandBuffersQueuedPendingPresent.swap(m_CommandBuffersEnqueued);
+      captureNow = m_CommandBuffersQueuedPendingPresent.empty();
+      RDCASSERT(m_CommandBuffersEnqueued.empty());
+    }
+
     RDCASSERT(m_CapturedBackbuffer == NULL);
     m_CapturedBackbuffer = backBuffer;
-    RenderDoc::Inst().EndFrameCapture(this, outputLayer);
+    if(captureNow)
+    {
+      m_DeferredCapture = false;
+      RenderDoc::Inst().EndFrameCapture(this, outputLayer);
+    }
+    else
+    {
+      SCOPED_WRITELOCK(m_CapTransitionLock);
+      m_State = CaptureState::BackgroundCapturing;
+      m_DeferredCapture = true;
+      RDCERR("Capture Present deferring end capture %ld %zu", presentSubmitIndex,
+             m_CommandBuffersQueuedPendingPresent.size());
+    }
   }
 
   if(RenderDoc::Inst().ShouldTriggerCapture(m_FrameCounter) && IsBackgroundCapturing(m_State))
@@ -1877,16 +1940,19 @@ void WrappedMTLDevice::Present(WrappedMTLTexture *backBuffer, CA::MetalLayer *ou
 
 void WrappedMTLDevice::ClearTrackedCmdBuffers()
 {
-  SCOPED_LOCK(m_CommandBufferRecordsLock);
-  for(auto it = m_CommittedCommandBufferRecords.begin();
-      it != m_CommittedCommandBufferRecords.end(); ++it)
+  SCOPED_LOCK(m_CommandBuffersLock);
+  for(auto it = m_CommandBuffersCommittedRecords.begin();
+      it != m_CommandBuffersCommittedRecords.end(); ++it)
   {
     (*it)->Delete(GetResourceManager());
   }
 
-  m_CommittedCommandBufferRecords.clear();
-  m_EnqueuedCommandBuffers.clear();
-  m_SubmitOrderCommandBuffers.clear();
+  m_CommandBuffersCommittedRecords.clear();
+  m_CommandBuffersPresentRecord = NULL;
+  m_CaptureCommandBufferStartSubmitIndex = LONG_MAX;
+  m_CaptureCommandBufferEndSubmitIndex = LONG_MAX;
+  m_CommandBuffersEnqueued.clear();
+  m_CommandBuffersQueuedPendingPresent.clear();
 }
 
 void WrappedMTLDevice::ClearActiveRenderCommandEncoder()

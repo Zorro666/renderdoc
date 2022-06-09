@@ -110,10 +110,18 @@ public:
   // IFrameCapturer interface
 
   void AdvanceFrame();
-  void Present(WrappedMTLTexture *backBuffer, CA::MetalLayer *outputLayer);
+  void Present(MetalResourceRecord *record);
 
-  void AddCommandBufferRecord(MetalResourceRecord *record);
+  void StartAddCommandBufferRecord(MetalResourceRecord *record);
+  void EndAddCommandBufferRecord(MetalResourceRecord *record);
+  void CommitCommandBufferRecord(MetalResourceRecord *record);
   void EnqueueCommandBufferRecord(MetalResourceRecord *record);
+  bool ShouldCaptureEnqueuedCommandBuffer(int64_t submitIndex)
+  {
+    RDCASSERTNOTEQUAL(0, submitIndex);
+    return m_DeferredCapture && ((m_CaptureCommandBufferStartSubmitIndex <= submitIndex) &&
+                                 (submitIndex <= m_CaptureCommandBufferEndSubmitIndex));
+  }
 
   RDResult Initialise(MetalInitParams &params, uint64_t sectionVersion, const ReplayOptions &opts);
   uint64_t GetLogVersion() { return m_SectionVersion; }
@@ -349,10 +357,15 @@ private:
   // in parallel, on replay they are disjoint and it makes things
   // much easier to process (queue submit order will enforce/display
   // ordering, record order is not important)
-  Threading::CriticalSection m_CommandBufferRecordsLock;
-  std::unordered_set<MetalResourceRecord *> m_CommittedCommandBufferRecords;
-  std::unordered_set<MetalResourceRecord *> m_EnqueuedCommandBuffers;
-  rdcarray<MetalResourceRecord *> m_SubmitOrderCommandBuffers;
+  Threading::CriticalSection m_CommandBuffersLock;
+  std::unordered_set<MetalResourceRecord *> m_CommandBuffersEnqueued;
+  std::unordered_set<MetalResourceRecord *> m_CommandBuffersQueuedPendingPresent;
+  std::unordered_set<MetalResourceRecord *> m_CommandBuffersCommittedRecords;
+  // 0 is reserved index, valid indeces from 1
+  int64_t m_CommandBufferNextSubmitIndex = 1;
+  int64_t m_CaptureCommandBufferStartSubmitIndex = LONG_MAX;
+  int64_t m_CaptureCommandBufferEndSubmitIndex = LONG_MAX;
+  MetalResourceRecord *m_CommandBuffersPresentRecord = NULL;
 
   // Back buffer and swap chain emulation
   Threading::CriticalSection m_PotentialBackBuffersLock;
@@ -363,6 +376,7 @@ private:
 
   MetalCapturer *m_Capturer = NULL;
   CaptureState m_State;
+  bool m_DeferredCapture = false;
   bool m_AppControlledCapture = false;
   RDResult m_FailedReplayResult = ResultCode::APIUnsupported;
   RDResult m_FatalError = ResultCode::Succeeded;

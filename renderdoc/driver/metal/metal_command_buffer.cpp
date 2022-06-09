@@ -229,15 +229,6 @@ bool WrappedMTLCommandBuffer::Serialise_enqueue(SerialiserType &ser)
   if(IsReplayingAndReading())
   {
     m_Device->SetCurrentCommandBuffer(CommandBuffer);
-    //    if(IsLoading(m_State))
-    //    {
-    //      AddEvent();
-    //
-    //      ActionDescription action;
-    //      action.flags |= ActionFlags::NoFlags;
-    //
-    //      AddAction(action);
-    //    }
     if(IsActiveReplaying(m_State))
     {
       if(!m_Device->IsCurrentCommandBufferEventInReplayRange())
@@ -254,20 +245,16 @@ void WrappedMTLCommandBuffer::enqueue()
   SERIALISE_TIME_CALL(Unwrap(this)->enqueue());
   if(IsCaptureMode(m_State))
   {
-    bool capframe = IsActiveCapturing(m_State);
-    if(capframe)
+    Chunk *chunk = NULL;
     {
-      Chunk *chunk = NULL;
-      {
-        CACHE_THREAD_SERIALISER();
-        SCOPED_SERIALISE_CHUNK(MetalChunk::MTLCommandBuffer_enqueue);
-        Serialise_enqueue(ser);
-        chunk = scope.Get();
-      }
-      MetalResourceRecord *bufferRecord = GetRecord(this);
-      bufferRecord->AddChunk(chunk);
-      m_Device->EnqueueCommandBufferRecord(bufferRecord);
+      CACHE_THREAD_SERIALISER();
+      SCOPED_SERIALISE_CHUNK(MetalChunk::MTLCommandBuffer_enqueue);
+      Serialise_enqueue(ser);
+      chunk = scope.Get();
     }
+    MetalResourceRecord *bufferRecord = GetRecord(this);
+    bufferRecord->AddChunk(chunk);
+    m_Device->EnqueueCommandBufferRecord(bufferRecord);
   }
   else
   {
@@ -358,9 +345,12 @@ void WrappedMTLCommandBuffer::commit()
   if(IsCaptureMode(m_State))
   {
     MetalResourceRecord *bufferRecord = GetRecord(this);
-    bool capframe = IsActiveCapturing(m_State);
-    if(capframe)
+    int64_t submitIndex = bufferRecord->cmdInfo->submitIndex;
+    bool capture = ((submitIndex == 0) && IsActiveCapturing(m_State)) ||
+                   ((submitIndex > 0) && m_Device->ShouldCaptureEnqueuedCommandBuffer(submitIndex));
+    if(capture)
     {
+      m_Device->StartAddCommandBufferRecord(bufferRecord);
       bufferRecord->AddRef();
       Chunk *chunk = NULL;
       std::unordered_set<ResourceId> refIDs;
@@ -422,13 +412,20 @@ void WrappedMTLCommandBuffer::commit()
         chunk = scope.Get();
       }
       bufferRecord->AddChunk(chunk);
-      m_Device->AddCommandBufferRecord(bufferRecord);
+      m_Device->EndAddCommandBufferRecord(bufferRecord);
+    }
+    else
+    {
+      if(bufferRecord->cmdInfo->submitIndex != 0)
+      {
+        m_Device->CommitCommandBufferRecord(bufferRecord);
+      }
     }
     bool present = bufferRecord->cmdInfo->present;
     if(present)
     {
       m_Device->AdvanceFrame();
-      m_Device->Present(bufferRecord->cmdInfo->backBuffer, bufferRecord->cmdInfo->outputLayer);
+      m_Device->Present(bufferRecord);
     }
   }
   else
