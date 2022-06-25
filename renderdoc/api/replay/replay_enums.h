@@ -1758,6 +1758,10 @@ DOCUMENT(R"(Identifies a Graphics API.
 
   Vulkan.
 
+.. data:: Metal
+
+  Metal.
+
 )");
 enum class GraphicsAPI : uint32_t
 {
@@ -1765,6 +1769,7 @@ enum class GraphicsAPI : uint32_t
   D3D12,
   OpenGL,
   Vulkan,
+  Metal,
 };
 
 DECLARE_REFLECTION_ENUM(GraphicsAPI);
