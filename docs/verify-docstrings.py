@@ -85,6 +85,8 @@ def make_c_type(ret: str, pattern: bool, typelist: List[str]):
         ret = 'GLPipe::State'
     elif ret == 'VKState':
         ret = 'VKPipe::State'
+    elif ret == 'MetalState':
+        ret = 'MetalPipe::State'
 
     if ret in ['bool', 'void']:
         pass

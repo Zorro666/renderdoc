@@ -2336,6 +2336,26 @@ void DoSerialise(SerialiserType &ser, VKPipe::State &el)
 
 #pragma endregion Vulkan pipeline state
 
+#pragma region Metal pipeline state
+
+template <typename SerialiserType>
+void DoSerialise(SerialiserType &ser, MetalPipe::Shader &el)
+{
+  SERIALISE_MEMBER(resourceId);
+  SERIALISE_MEMBER(entryPoint);
+
+  SIZE_CHECK(32);
+}
+
+template <typename SerialiserType>
+void DoSerialise(SerialiserType &ser, MetalPipe::State &el)
+{
+  SERIALISE_MEMBER(postTessShader);
+  SIZE_CHECK(32);
+}
+
+#pragma endregion Metal pipeline state
+
 INSTANTIATE_SERIALISE_TYPE(PathEntry)
 INSTANTIATE_SERIALISE_TYPE(SectionProperties)
 INSTANTIATE_SERIALISE_TYPE(EnvironmentModification)
@@ -2444,3 +2464,4 @@ INSTANTIATE_SERIALISE_TYPE(VKPipe::ImageLayout)
 INSTANTIATE_SERIALISE_TYPE(VKPipe::ImageData)
 INSTANTIATE_SERIALISE_TYPE(VKPipe::ConditionalRendering)
 INSTANTIATE_SERIALISE_TYPE(VKPipe::State)
+INSTANTIATE_SERIALISE_TYPE(MetalPipe::State)
