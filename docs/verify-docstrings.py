@@ -268,7 +268,7 @@ for mod_name in ['renderdoc', 'qrenderdoc']:
                 namespace = re.search('namespace ' + pipe + '.* namespace ' + pipe, headers, re.MULTILINE | re.DOTALL)
                 namespace = namespace.group(0)
 
-            if source is None and objname[0:5] in ['D3D11', 'D3D12']:
+            if source is None and objname[0:5] in ['D3D11', 'D3D12', 'Metal']:
                 pipe = objname[0:5] + 'Pipe'
                 objname = objname[5:]
 

@@ -49,6 +49,7 @@
 %rename("%(regex:/^D3D12Pipe::(.*)/D3D12\\1/)s", regextarget=1, fullname=1, %$isclass) "D3D12Pipe::.*";
 %rename("%(regex:/^GLPipe::(.*)/GL\\1/)s", regextarget=1, fullname=1, %$isclass) "GLPipe::.*";
 %rename("%(regex:/^VKPipe::(.*)/VK\\1/)s", regextarget=1, fullname=1, %$isclass) "VKPipe::.*";
+%rename("%(regex:/^MetalPipe::(.*)/Metal\\1/)s", regextarget=1, fullname=1, %$isclass) "MetalPipe::.*";
 
 %rename("string") "SDObjectData::str";
 
@@ -257,6 +258,7 @@ TEMPLATE_FIXEDARRAY_DECLARE(rdcfixedarray);
 %include "replay_enums.h"
 %include "shader_types.h"
 %include "vk_pipestate.h"
+%include "metal_pipestate.h"
 %include "pipestate.h"
 
 %feature("docstring") "";
