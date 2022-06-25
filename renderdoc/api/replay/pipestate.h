@@ -175,6 +175,9 @@ public:
 
       if(IsCaptureVK())
         return m_Vulkan != NULL && m_Vulkan->tessEvalShader.resourceId != ResourceId();
+
+      if(IsCaptureMetal())
+        return m_Metal != NULL && m_Metal->postTessShader.resourceId != ResourceId();
     }
 
     return false;

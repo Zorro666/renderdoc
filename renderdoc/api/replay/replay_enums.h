@@ -1811,6 +1811,10 @@ DOCUMENT(R"(Identifies a shader encoding used to pass shader code to an API.
 .. data:: HLSL
 
   HLSL in string format, used by D3D11, D3D12, and Vulkan/GL via compilation to SPIR-V.
+
+.. data:: MSL
+
+  Metal shading language in string format, used by Metal.
 )");
 enum class ShaderEncoding : uint32_t
 {
@@ -1821,6 +1825,7 @@ enum class ShaderEncoding : uint32_t
   SPIRV,
   SPIRVAsm,
   HLSL,
+  MSL,
   Count,
 };
 
@@ -1836,7 +1841,7 @@ DOCUMENT(R"(Check whether or not this is a human readable text representation.
 constexpr inline bool IsTextRepresentation(ShaderEncoding encoding)
 {
   return encoding == ShaderEncoding::HLSL || encoding == ShaderEncoding::GLSL ||
-         encoding == ShaderEncoding::SPIRVAsm;
+         encoding == ShaderEncoding::SPIRVAsm || encoding == ShaderEncoding::MSL;
 }
 
 DOCUMENT(R"(A primitive topology used for processing vertex data.
@@ -2152,6 +2157,10 @@ DOCUMENT(R"(The stage in a pipeline where a shader runs
 
   The tessellation evaluation shader. See also :data:`Domain`.
 
+.. data:: Post_Tess
+
+  The post-tessellation shader on Metal.
+
 .. data:: Geometry
 
   The geometry shader.
@@ -2178,6 +2187,7 @@ enum class ShaderStage : uint32_t
 
   Domain,
   Tess_Eval = Domain,
+  Post_Tess = Domain,
 
   Geometry,
 
