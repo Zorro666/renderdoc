@@ -27,6 +27,7 @@
 #include "d3d11_pipestate.h"
 #include "d3d12_pipestate.h"
 #include "gl_pipestate.h"
+#include "metal_pipestate.h"
 #include "vk_pipestate.h"
 
 DOCUMENT(R"(An API-agnostic view of the common aspects of the pipeline state. This allows simple

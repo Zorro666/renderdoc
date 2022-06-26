@@ -231,7 +231,7 @@ ReplayProxy::ReplayProxy(ReadSerialiser &reader, WriteSerialiser &writer, IRemot
     m_VulkanPipelineState = new VKPipe::State;
 
   m_Remote->SetPipelineStates(m_D3D11PipelineState, m_D3D12PipelineState, m_GLPipelineState,
-                              m_VulkanPipelineState);
+                              m_VulkanPipelineState, NULL);
 }
 
 ReplayProxy::ReplayProxy(ReadSerialiser &reader, WriteSerialiser &writer, IReplayDriver *proxy)

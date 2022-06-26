@@ -452,7 +452,7 @@ public:
   bool Tick(int type);
 
   void SetPipelineStates(D3D11Pipe::State *d3d11, D3D12Pipe::State *d3d12, GLPipe::State *gl,
-                         VKPipe::State *vk)
+                         VKPipe::State *vk, MetalPipe::State *metal)
   {
     m_D3D11PipelineState = d3d11;
     m_D3D12PipelineState = d3d12;
