@@ -1145,3 +1145,16 @@ rdcstr DoStringise(const MetalResourceType &el)
   }
   END_ENUM_STRINGISE();
 }
+
+template <>
+rdcstr DoStringise(const MetalCmdBufferStatus &el)
+{
+  BEGIN_BITFIELD_STRINGISE(MetalCmdBufferStatus)
+  {
+    STRINGISE_BITFIELD_BIT(MetalCmdBuffer_Enqueued);
+    STRINGISE_BITFIELD_BIT(MetalCmdBuffer_Committed);
+    STRINGISE_BITFIELD_BIT(MetalCmdBuffer_Submitted);
+    STRINGISE_BITFIELD_BIT(MetalCmdBuffer_Present);
+  }
+  END_BITFIELD_STRINGISE()
+}
