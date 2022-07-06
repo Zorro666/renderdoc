@@ -49,6 +49,7 @@ set(VULKAN_SRC
         vk/vk_multi_thread_windows.cpp
         vk/vk_overlay_test.cpp
         vk/vk_parameter_zoo.cpp
+        vk/vk_pipeline_state.cpp
         vk/vk_pixel_history.cpp
         vk/vk_postponed.cpp
         vk/vk_query_pool.cpp
