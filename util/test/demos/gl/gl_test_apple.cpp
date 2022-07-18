@@ -82,22 +82,23 @@ void *OpenGLGraphicsTest::MakeContext(GraphicsWindow *win, void *share)
   }
 
   AppleWindow *window = (AppleWindow *)win;
-  return (void *)COCOA_NewGLContext(window->cocoa_window);
+  //  return (void *)COCOA_NewGLContext(window->cocoa_window);
+  return NULL;
 }
 
 void OpenGLGraphicsTest::DestroyContext(void *ctx)
 {
-  COCOA_DeleteGLContext((COCOAcontext *)ctx);
+  //  COCOA_DeleteGLContext((COCOAcontext *)ctx);
 }
 
-void OpenGLGraphicsTest::ActivateContext(GraphicsWindow *win, void *ctx)
+void OpenGLGraphicsTest::ActivateContext(GraphicsWindow *win, void *ctx, bool alt)
 {
   AppleWindow *window = (AppleWindow *)win;
-  COCOA_SetGLContext(window->cocoa_window, (COCOAcontext *)ctx);
+  //  COCOA_SetGLContext(window->cocoa_window, (COCOAcontext *)ctx);
 }
 
 void OpenGLGraphicsTest::Present(GraphicsWindow *win)
 {
   AppleWindow *window = (AppleWindow *)win;
-  COCOA_SwapBuffers(window->cocoa_window);
+  //  COCOA_SwapBuffers(window->cocoa_window);
 }
