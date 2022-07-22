@@ -22,14 +22,77 @@
  * THE SOFTWARE.
  ******************************************************************************/
 
+#include "metal_buffer.h"
 #include "metal_common.h"
 #include "metal_device.h"
+
+static rdcliteral NameOfType(MetalResourceType type)
+{
+  switch(type)
+  {
+    case eResBuffer: return "MTLBuffer"_lit;
+    default: break;
+  }
+  return "MTLResource"_lit;
+}
 
 bool WrappedMTLDevice::Prepare_InitialState(WrappedMTLObject *res)
 {
   ResourceId id = GetResourceManager()->GetID(res);
 
   MetalResourceType type = res->m_Record->m_Type;
+
+  if(type == eResBuffer)
+  {
+    WrappedMTLBuffer *buffer = (WrappedMTLBuffer *)res;
+    MTL::Buffer *mtlBuffer = Unwrap(buffer);
+    MTL::Buffer *mtlSharedBuffer = NULL;
+    MTL::StorageMode storageMode = mtlBuffer->storageMode();
+    size_t len = mtlBuffer->length();
+    byte *data = NULL;
+    if(storageMode == MTL::StorageModeShared)
+    {
+      // MTLStorageModeShared buffers are automatically synchronized
+      data = (byte *)mtlBuffer->contents();
+    }
+    else if(storageMode == MTL::StorageModeManaged)
+    {
+      // MTLStorageModeManaged buffers need to call MTLBlitCommandEncoder::synchronizeResource
+      MTL::CommandBuffer *mtlCommandBuffer = m_mtlCommandQueue->commandBuffer();
+      MTL::BlitCommandEncoder *mtlBlitEncoder = mtlCommandBuffer->blitCommandEncoder();
+      mtlBlitEncoder->synchronizeResource(mtlBuffer);
+      mtlBlitEncoder->endEncoding();
+      mtlCommandBuffer->commit();
+      mtlCommandBuffer->waitUntilCompleted();
+      data = (byte *)mtlBuffer->contents();
+    }
+    else if(storageMode == MTL::StorageModePrivate)
+    {
+      // MTLStorageModePrivate buffer need to copy into a temporary MTLStorageModeShared buffer
+      mtlSharedBuffer = Unwrap(this)->newBuffer(len, MTL::ResourceStorageModeShared);
+      MTL::CommandBuffer *mtlCommandBuffer = m_mtlCommandQueue->commandBuffer();
+      MTL::BlitCommandEncoder *mtlBlitEncoder = mtlCommandBuffer->blitCommandEncoder();
+      mtlBlitEncoder->copyFromBuffer(mtlBuffer, 0, mtlSharedBuffer, 0, len);
+      mtlBlitEncoder->endEncoding();
+      mtlCommandBuffer->commit();
+      mtlCommandBuffer->waitUntilCompleted();
+      data = (byte *)mtlSharedBuffer->contents();
+    }
+    else
+    {
+      RDCERR("Unhandled buffer storage mode 0x%X", storageMode);
+    }
+
+    bytebuf bufferContents(data, len);
+    MetalInitialContents initialContents(type, bufferContents);
+    GetResourceManager()->SetInitialContents(id, initialContents);
+    if(mtlSharedBuffer)
+    {
+      mtlSharedBuffer->release();
+    }
+    return true;
+  }
+  else
   {
     RDCERR("Unhandled resource type %d", type);
   }
@@ -39,8 +102,16 @@ bool WrappedMTLDevice::Prepare_InitialState(WrappedMTLObject *res)
 
 uint64_t WrappedMTLDevice::GetSize_InitialState(ResourceId id, const MetalInitialContents &initial)
 {
-  METAL_NOT_IMPLEMENTED();
-  return 128;
+  uint64_t ret = 12;
+
+  if(initial.type == eResBuffer)
+  {
+    ret += uint64_t(8 + initial.resourceContents.size() + WriteSerialiser::GetChunkAlignment());
+    return ret;
+  }
+
+  RDCERR("Unhandled resource type %s", ToStr(initial.type).c_str());
+  return 0;
 }
 
 template <typename SerialiserType>
@@ -48,7 +119,27 @@ bool WrappedMTLDevice::Serialise_InitialState(SerialiserType &ser, ResourceId id
                                               MetalResourceRecord *record,
                                               const MetalInitialContents *initial)
 {
-  METAL_NOT_IMPLEMENTED();
+  SERIALISE_ELEMENT_LOCAL(type, initial->type);
+  SERIALISE_ELEMENT(id).TypedAs(NameOfType(type)).Important();
+  if(type == eResBuffer)
+  {
+    SERIALISE_CHECK_READ_ERRORS();
+
+    bytebuf localContents;
+    bytebuf &contents(localContents);
+    if(ser.IsWriting())
+    {
+      contents = initial->resourceContents;
+    }
+    SERIALISE_ELEMENT(contents).Important();
+
+    if(IsReplayingAndReading())
+    {
+      // TODO: implement RD MTL replay
+    }
+    return true;
+  }
+  RDCERR("Unhandled resource type %d", type);
   return false;
 }
 
