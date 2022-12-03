@@ -171,7 +171,7 @@ void VulkanGraphicsTest::Prepare(int argc, char **argv)
       X11Window::Init();
 #elif defined(__APPLE__)
       enabledInstExts.push_back(VK_MVK_MACOS_SURFACE_EXTENSION_NAME);
-
+      enabledInstExts.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
       AppleWindow::Init();
 #else
 #error UNKNOWN PLATFORM
