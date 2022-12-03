@@ -203,7 +203,7 @@ struct InstanceCreateInfo : public VkInstanceCreateInfo
   {
     sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     pNext = NULL;
-    flags = 0;
+    flags = VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
     pApplicationInfo = &appInfo;
     enabledLayerCount = uint32_t(layers.size());
     ppEnabledLayerNames = layers.data();
