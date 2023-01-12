@@ -304,10 +304,22 @@ jobs:
     - uses: actions/checkout@v3
       with:
         fetch-depth: 5
-    - name: Install Homebrew dependencies
+    - name: Install Homebrew dependencies (update)
       run: |
         brew update || true
+    - name: Install Homebrew dependencies (lftp automake pcre)
+      run: |
         brew install lftp automake pcre
+    - name: Install Homebrew dependencies (link python)
+      run: |
+        brew link --overwrite --force python@3.10
+        brew link --overwrite --force python@3.11
+    - name: Install Homebrew dependencies (upgrade python)
+      run: |
+        brew upgrade --overwrite python@3.10
+        brew upgrade --overwrite python@3.11
+    - name: Install Homebrew dependencies (qt5)
+      run: |
         brew install --overwrite qt5
         brew link --overwrite --force qt5
     - name: Build
