@@ -41,7 +41,11 @@
       (const void *)(unsigned long)&function,                                    \
   };
 
-#define ForEachMetalSupported() METAL_FUNC(MTLCreateSystemDefaultDevice)
+#define ForEachMetalSupported()             \
+  METAL_FUNC(MTLCreateSystemDefaultDevice)  \
+  METAL_FUNC(MTLCopyAllDevices)             \
+  METAL_FUNC(MTLCopyAllDevicesWithObserver) \
+  METAL_FUNC(MTLRemoveDeviceObserver)
 
 id<MTLDevice> METAL_EXPORT_NAME(MTLCreateSystemDefaultDevice)(void)
 {
@@ -57,15 +61,46 @@ id<MTLDevice> METAL_EXPORT_NAME(MTLCreateSystemDefaultDevice)(void)
   return id<MTLDevice>(WrappedMTLDevice::MTLCreateSystemDefaultDevice((MTL::Device *)device));
 }
 
+NSArray<id<MTLDevice>> *METAL_EXPORT_NAME(MTLCopyAllDevices)(void)
+{
+  if(RenderDoc::Inst().IsReplayApp())
+  {
+    if(!METAL.MTLCreateSystemDefaultDevice)
+      METAL.PopulateForReplay();
+
+    return METAL.MTLCopyAllDevices();
+  }
+
+  NSArray<id<MTLDevice>> *devices = METAL.MTLCopyAllDevices();
+  NSUInteger devicesCount = [devices count];
+  NSMutableArray<id<MTLDevice>> *wrappedDevices = [NSMutableArray arrayWithCapacity:devicesCount];
+  for(size_t i = 0; i < devicesCount; ++i)
+  {
+    id<MTLDevice> realDevice = devices[i];
+    id<MTLDevice> wrappedDevice =
+        (id<MTLDevice>)WrappedMTLDevice::MTLCreateSystemDefaultDevice((MTL::Device *)realDevice);
+    [wrappedDevices addObject:wrappedDevice];
+  }
+  NSArray<id<MTLDevice>> *returnedDevices = [NSArray arrayWithArray:wrappedDevices];
+  [returnedDevices retain];
+  return returnedDevices;
+}
+
+NSArray<id<MTLDevice>> *METAL_EXPORT_NAME(MTLCopyAllDevicesWithObserver)(
+    id<NSObject> *observer, MTLDeviceNotificationHandler handler)
+{
+  RDCFATAL("Metal `MTLCopyAllDevicesWithObserver` is not supported");
+}
+
+void METAL_EXPORT_NAME(MTLRemoveDeviceObserver)(id<NSObject> observer)
+{
+  RDCFATAL("Metal `MTLRemoveDeviceObserver` is not supported");
+}
+
 /*
 
  APIs not currently hooked
 
-*** MTLDevice.h ***
-NSArray <id<MTLDevice>> *METAL_EXPORT_NAME(MTLCopyAllDevices)(void);
-NSArray <id<MTLDevice>> *METAL_EXPORT_NAME(MTLCopyAllDevicesWithObserver)(id<NSObject>* observer,
-MTLDeviceNotificationHandler handler);
-void METAL_EXPORT_NAME(MTLRemoveDeviceObserver)(id <NSObject> observer);
 
  *** CGDirectDisplayMetal.h ***
  CG_EXTERN id<MTLDevice> __nullable CGDirectDisplayCopyCurrentMetalDevice(CGDirectDisplayID display)
