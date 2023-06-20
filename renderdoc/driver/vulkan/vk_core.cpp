@@ -3507,7 +3507,7 @@ void WrappedVulkan::ApplyInitialContents()
         i++;
 
         // split the command buffer and flush if the number of queries is massive
-        if(i > 0 && (i % (128 * 1024)) == 0)
+        if(i > 0 && (i % (15 * 1024)) == 0)
         {
           vkr = ObjDisp(cmd)->EndCommandBuffer(Unwrap(cmd));
           CheckVkResult(vkr);
