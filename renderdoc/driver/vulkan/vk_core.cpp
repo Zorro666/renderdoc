@@ -1716,6 +1716,9 @@ static const VkExtensionProperties supportedExtensions[] = {
         VK_MVK_MACOS_SURFACE_SPEC_VERSION,
     },
 #endif
+        "VK_MVK_moltenvk", 
+        37,
+    },
     {
         VK_NV_COMPUTE_SHADER_DERIVATIVES_EXTENSION_NAME,
         VK_NV_COMPUTE_SHADER_DERIVATIVES_SPEC_VERSION,

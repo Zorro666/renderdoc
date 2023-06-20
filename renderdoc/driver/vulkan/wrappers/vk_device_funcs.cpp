@@ -209,6 +209,9 @@ static void StripUnwantedExtensions(rdcarray<rdcstr> &Extensions)
     if(ext == "VK_EXT_debug_utils" || ext == "VK_EXT_debug_marker")
       return true;
 
+    if(ext == "VK_MVK_moltenvk")
+      return true;
+
     return false;
   });
 }
