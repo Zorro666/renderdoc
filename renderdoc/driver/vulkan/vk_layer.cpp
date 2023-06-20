@@ -22,6 +22,7 @@
  * THE SOFTWARE.
  ******************************************************************************/
 
+#include <dlfcn.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -99,6 +100,14 @@ void KeepLayerAlive()
 }
 #endif
 
+PFN_vkVoidFunction NO_LOADER_VK_LAYER_RENDERDOC_CaptureGetInstanceProcAddr(VkInstance instance,
+                                                                           const char *pName);
+
+static PFN_vkGetInstanceProcAddr vk_gipa;
+static PFN_vkGetDeviceProcAddr vk_gdpa;
+
+void LIBMOLTENVK_HOOKED(void *handle);
+
 // we don't actually hook any modules here. This is just used so that it's called
 // at the right time in initialisation (after capture options are available) to
 // set environment variables
@@ -164,6 +173,12 @@ class VulkanHook : LibraryHook
 
     // check options to set further variables, and apply
     OptionsUpdated();
+
+    LibraryHooks::RegisterLibraryHook("libMoltenVK.dylib", &LIBMOLTENVK_HOOKED);
+    LibraryHooks::RegisterFunctionHook(
+        "libMoltenVK.dylib",
+        FunctionHook("vkGetInstanceProcAddr", NULL,
+                     (void *)&NO_LOADER_VK_LAYER_RENDERDOC_CaptureGetInstanceProcAddr));
   }
 
   void RemoveHooks()
@@ -644,4 +659,134 @@ VK_LAYER_RENDERDOC_CaptureNegotiateLoaderLayerInterfaceVersion(VkNegotiateLayerI
 
   return VK_SUCCESS;
 }
+}
+
+void LIBMOLTENVK_HOOKED(void *handle)
+{
+  vk_gipa = (PFN_vkGetInstanceProcAddr)dlsym(handle, "vkGetInstanceProcAddr");
+  vk_gdpa = (PFN_vkGetDeviceProcAddr)dlsym(handle, "vkGetDeviceProcAddr");
+  fprintf(stderr, "LIBMOLTENVK_HOOKED %p vk_gipa %p vk_gdpa %p\n", handle, vk_gipa, vk_gdpa);
+}
+
+VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL
+FAKE_LOADER_VK_LAYER_RENDERDOC_CaptureEnumerateInstanceExtensionProperties(
+    const VkEnumerateInstanceExtensionPropertiesChain *pChain, const char *pLayerName,
+    uint32_t *pPropertyCount, VkExtensionProperties *pProperties)
+{
+  PFN_vkEnumerateInstanceExtensionProperties real_vkEnumerateInstanceExtensionProperties =
+      (PFN_vkEnumerateInstanceExtensionProperties)vk_gipa(VK_NULL_HANDLE,
+                                                          "vkEnumerateInstanceExtensionProperties");
+  return real_vkEnumerateInstanceExtensionProperties(pLayerName, pPropertyCount, pProperties);
+}
+
+VkResult NO_LOADER_VK_LAYER_RENDERDOC_CaptureEnumerateInstanceExtensionProperties(
+    const char *pLayerName, uint32_t *pPropertyCount, VkExtensionProperties *pProperties)
+{
+  VkEnumerateInstanceExtensionPropertiesChain chain;
+  // VkChainHeader header;
+  // VkResult(VKAPI_PTR *pfnNextLayer)(const struct VkEnumerateInstanceLayerPropertiesChain *,
+  // uint32_t *, VkLayerProperties *);
+  // const struct VkEnumerateInstanceLayerPropertiesChain *pNextLink;
+  chain.header.type = VK_CHAIN_TYPE_ENUMERATE_INSTANCE_EXTENSION_PROPERTIES;
+  chain.pNextLink = NULL;
+  chain.pfnNextLayer = FAKE_LOADER_VK_LAYER_RENDERDOC_CaptureEnumerateInstanceExtensionProperties;
+  return VK_LAYER_RENDERDOC_CaptureEnumerateInstanceExtensionProperties(
+      &chain, pLayerName, pPropertyCount, pProperties);
+}
+
+VkResult NO_LOADER_hooked_vkCreateInstance(const VkInstanceCreateInfo *pCreateInfo,
+                                           const VkAllocationCallbacks *pAllocator,
+                                           VkInstance *pInstance)
+{
+  // For vkCreateInstance need to add pNext to pCreateInfo with
+  VkLayerInstanceCreateInfo loader_LayerCreateInfo;
+  VkLayerInstanceLink loader_LayerInstanceLink;
+  loader_LayerCreateInfo.sType = VK_STRUCTURE_TYPE_LOADER_INSTANCE_CREATE_INFO;
+  loader_LayerCreateInfo.function = VK_LAYER_LINK_INFO;
+  loader_LayerCreateInfo.u.pLayerInfo = &loader_LayerInstanceLink;
+
+  loader_LayerCreateInfo.u.pLayerInfo->pfnNextGetInstanceProcAddr = vk_gipa;
+  loader_LayerCreateInfo.u.pLayerInfo->pNext = NULL;
+  loader_LayerCreateInfo.pNext = NULL;
+
+  VkInstanceCreateInfo loader_CreateInfo;
+  loader_CreateInfo = *pCreateInfo;
+  // TODO: walk along pNext to find the final element
+  loader_CreateInfo.pNext = &loader_LayerCreateInfo;
+
+  return hooked_vkCreateInstance(&loader_CreateInfo, pAllocator, pInstance);
+}
+
+VkResult NO_LOADER_hooked_vkCreateDevice(VkPhysicalDevice physicalDevice,
+                                         const VkDeviceCreateInfo *pCreateInfo,
+                                         const VkAllocationCallbacks *pAllocator, VkDevice *pDevice)
+{
+  // For vkCreateDevice need to add pNext to pCreateInfo with
+  VkLayerDeviceCreateInfo loader_LayerCreateInfo;
+  VkLayerDeviceLink loader_LayerDeviceLink;
+  loader_LayerCreateInfo.sType = VK_STRUCTURE_TYPE_LOADER_DEVICE_CREATE_INFO;
+  loader_LayerCreateInfo.function = VK_LAYER_LINK_INFO;
+  loader_LayerCreateInfo.u.pLayerInfo = &loader_LayerDeviceLink;
+
+  loader_LayerCreateInfo.u.pLayerInfo->pfnNextGetDeviceProcAddr = vk_gdpa;
+  loader_LayerCreateInfo.u.pLayerInfo->pfnNextGetInstanceProcAddr = vk_gipa;
+  loader_LayerCreateInfo.u.pLayerInfo->pNext = NULL;
+
+  loader_LayerCreateInfo.pNext = NULL;
+
+  VkDeviceCreateInfo loader_CreateInfo;
+  loader_CreateInfo = *pCreateInfo;
+  // TODO: walk along pNext to find the final element
+  loader_CreateInfo.pNext = &loader_LayerCreateInfo;
+
+  return hooked_vkCreateDevice(physicalDevice, &loader_CreateInfo, pAllocator, pDevice);
+}
+
+PFN_vkVoidFunction NO_LOADER_VK_LAYER_RENDERDOC_Capture_layerGetPhysicalDeviceProcAddr(
+    VkInstance instance, const char *pName)
+{
+  if(!strcmp("vkCreateDevice", pName))
+    return (PFN_vkVoidFunction)&NO_LOADER_hooked_vkCreateDevice;
+  if(!strcmp("vk_layerGetPhysicalDeviceProcAddr", pName))
+    return (PFN_vkVoidFunction)&NO_LOADER_VK_LAYER_RENDERDOC_Capture_layerGetPhysicalDeviceProcAddr;
+
+  return VK_LAYER_RENDERDOC_Capture_layerGetPhysicalDeviceProcAddr(instance, pName);
+}
+
+PFN_vkVoidFunction NO_LOADER_VK_LAYER_RENDERDOC_CaptureGetDeviceProcAddr(VkDevice device,
+                                                                         const char *pName)
+{
+  if(!strcmp("vkGetDeviceProcAddr", pName))
+    return (PFN_vkVoidFunction)&NO_LOADER_VK_LAYER_RENDERDOC_CaptureGetDeviceProcAddr;
+  if(!strcmp("vkCreateDevice", pName))
+    return (PFN_vkVoidFunction)&NO_LOADER_hooked_vkCreateDevice;
+
+  return VK_LAYER_RENDERDOC_CaptureGetDeviceProcAddr(device, pName);
+}
+
+PFN_vkVoidFunction NO_LOADER_VK_LAYER_RENDERDOC_CaptureGetInstanceProcAddr(VkInstance instance,
+                                                                           const char *pName)
+{
+  if(!strcmp("vkGetInstanceProcAddr", pName))
+    return (PFN_vkVoidFunction)&NO_LOADER_VK_LAYER_RENDERDOC_CaptureGetInstanceProcAddr;
+  if(!strcmp("vk_layerGetPhysicalDeviceProcAddr", pName))
+    return (PFN_vkVoidFunction)&NO_LOADER_VK_LAYER_RENDERDOC_Capture_layerGetPhysicalDeviceProcAddr;
+
+  // Pre-instance functions
+  if(!strcmp("vkEnumerateInstanceExtensionProperties", pName))
+    return (
+        PFN_vkVoidFunction)&NO_LOADER_VK_LAYER_RENDERDOC_CaptureEnumerateInstanceExtensionProperties;
+  if(!strcmp("vkEnumerateInstanceLayerProperties", pName))
+    return (PFN_vkVoidFunction)vk_gipa(VK_NULL_HANDLE, pName);
+  if(!strcmp("vkEnumerateInstanceVersion", pName))
+    return (PFN_vkVoidFunction)vk_gipa(VK_NULL_HANDLE, pName);
+
+  if(!strcmp(pName, "vkCreateInstance"))
+    return (PFN_vkVoidFunction)&NO_LOADER_hooked_vkCreateInstance;
+  if(!strcmp("vkCreateDevice", pName))
+    return (PFN_vkVoidFunction)&NO_LOADER_hooked_vkCreateDevice;
+  if(!strcmp("vkGetDeviceProcAddr", pName))
+    return (PFN_vkVoidFunction)&NO_LOADER_VK_LAYER_RENDERDOC_CaptureGetDeviceProcAddr;
+
+  return VK_LAYER_RENDERDOC_CaptureGetInstanceProcAddr(instance, pName);
 }
