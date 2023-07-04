@@ -2639,4 +2639,10 @@ public:
   // VK_EXT_attachment_feedback_loop_dynamic_state
   IMPLEMENT_FUNCTION_SERIALISED(void, vkCmdSetAttachmentFeedbackLoopEnableEXT,
                                 VkCommandBuffer commandBuffer, VkImageAspectFlags aspectMask);
+
+  // VK_KHR_Map_Memory2
+  IMPLEMENT_FUNCTION_SERIALISED(VkResult, vkMapMemory2KHR, VkDevice device,
+                                const VkMemoryMapInfoKHR *pMemoryMapInfo, void **ppData);
+  IMPLEMENT_FUNCTION_SERIALISED(VkResult, vkUnmapMemory2KHR, VkDevice device,
+                                const VkMemoryUnmapInfoKHR *pMemoryUnmapInfo);
 };

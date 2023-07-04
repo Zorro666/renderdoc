@@ -191,10 +191,12 @@ static void AppendModifiedChainedStruct(byte *&tempMem, VkStruct *outputStruct,
   COPY_STRUCT(VK_STRUCTURE_TYPE_MEMORY_BARRIER, VkMemoryBarrier);                                    \
   COPY_STRUCT(VK_STRUCTURE_TYPE_MEMORY_BARRIER_2, VkMemoryBarrier2);                                 \
   COPY_STRUCT(VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS, VkMemoryDedicatedRequirements);       \
+  COPY_STRUCT(VK_STRUCTURE_TYPE_MEMORY_MAP_INFO_KHR, VkMemoryMapInfoKHR);                            \
   COPY_STRUCT(VK_STRUCTURE_TYPE_MEMORY_OPAQUE_CAPTURE_ADDRESS_ALLOCATE_INFO,                         \
               VkMemoryOpaqueCaptureAddressAllocateInfo);                                             \
   COPY_STRUCT(VK_STRUCTURE_TYPE_MEMORY_PRIORITY_ALLOCATE_INFO_EXT, VkMemoryPriorityAllocateInfoEXT); \
   COPY_STRUCT(VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2, VkMemoryRequirements2);                       \
+  COPY_STRUCT(VK_STRUCTURE_TYPE_MEMORY_UNMAP_INFO_KHR, VkMemoryUnmapInfoKHR);                        \
   COPY_STRUCT(VK_STRUCTURE_TYPE_MULTISAMPLE_PROPERTIES_EXT, VkMultisamplePropertiesEXT);             \
   COPY_STRUCT(VK_STRUCTURE_TYPE_MULTISAMPLED_RENDER_TO_SINGLE_SAMPLED_INFO_EXT,                      \
               VkMultisampledRenderToSingleSampledInfoEXT);                                           \
@@ -866,8 +868,6 @@ static void AppendModifiedChainedStruct(byte *&tempMem, VkStruct *outputStruct,
   case VK_STRUCTURE_TYPE_MEMORY_GET_REMOTE_ADDRESS_INFO_NV:                                 \
   case VK_STRUCTURE_TYPE_MEMORY_GET_ZIRCON_HANDLE_INFO_FUCHSIA:                             \
   case VK_STRUCTURE_TYPE_MEMORY_HOST_POINTER_PROPERTIES_EXT:                                \
-  case VK_STRUCTURE_TYPE_MEMORY_MAP_INFO_KHR:                                               \
-  case VK_STRUCTURE_TYPE_MEMORY_UNMAP_INFO_KHR:                                             \
   case VK_STRUCTURE_TYPE_MEMORY_ZIRCON_HANDLE_PROPERTIES_FUCHSIA:                           \
   case VK_STRUCTURE_TYPE_MICROMAP_BUILD_INFO_EXT:                                           \
   case VK_STRUCTURE_TYPE_MICROMAP_BUILD_SIZES_INFO_EXT:                                     \

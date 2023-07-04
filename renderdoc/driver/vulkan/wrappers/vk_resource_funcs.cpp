@@ -1094,6 +1094,20 @@ void WrappedVulkan::vkUnmapMemory(VkDevice device, VkDeviceMemory mem)
   ObjDisp(device)->UnmapMemory(Unwrap(device), Unwrap(mem));
 }
 
+VkResult WrappedVulkan::vkMapMemory2KHR(VkDevice device, const VkMemoryMapInfoKHR *pMemoryMapInfo,
+                                        void **ppData)
+{
+  return vkMapMemory(device, pMemoryMapInfo->memory, pMemoryMapInfo->offset, pMemoryMapInfo->size,
+                     pMemoryMapInfo->flags, ppData);
+}
+
+VkResult WrappedVulkan::vkUnmapMemory2KHR(VkDevice device,
+                                          const VkMemoryUnmapInfoKHR *pMemoryUnmapInfo)
+{
+  vkUnmapMemory(device, pMemoryUnmapInfo->memory);
+  return VK_SUCCESS;
+}
+
 template <typename SerialiserType>
 bool WrappedVulkan::Serialise_vkFlushMappedMemoryRanges(SerialiserType &ser, VkDevice device,
                                                         uint32_t memRangeCount,
