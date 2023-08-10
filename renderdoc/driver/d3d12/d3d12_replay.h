@@ -439,6 +439,10 @@ private:
     ID3DBlob *QuadOverdrawWriteDXILPS = NULL;
     ID3D12RootSignature *QuadResolveRootSig = NULL;
     ID3D12PipelineState *QuadResolvePipe[8] = {NULL};
+    ID3D12RootSignature *DepthResolveRootSig = NULL;
+    std::unordered_map<DXGI_FORMAT, ID3D12PipelineState *[8]> DepthResolvePipe;
+    ID3D12RootSignature *DepthCopyRootSig = NULL;
+    std::unordered_map<DXGI_FORMAT, ID3D12PipelineState *[8]> DepthCopyPipe;
 
     ID3D12Resource *Texture = NULL;
     ResourceId resourceId;

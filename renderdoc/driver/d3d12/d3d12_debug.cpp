@@ -2456,6 +2456,186 @@ void D3D12Replay::OverlayRendering::Init(WrappedID3D12Device *device, D3D12Debug
     SAFE_RELEASE(QOResolvePS);
   }
 
+  {
+    D3D12RootSignature rootSig = {};
+    ID3DBlob *root = shaderCache->MakeRootSig(rootSig);
+    if(root == NULL)
+      RDCERR("Failed to make root signature blob for overlay depth stencil resolve pass");
+
+    hr = device->CreateRootSignature(0, root->GetBufferPointer(), root->GetBufferSize(),
+                                     __uuidof(ID3D12RootSignature), (void **)&DepthResolveRootSig);
+    if(FAILED(hr))
+      RDCERR("Failed to create root signature for overlay depth stencil resolve pass HRESULT: %s",
+             ToStr(hr).c_str());
+
+    SAFE_RELEASE(root);
+  }
+
+  {
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC pipeDesc = {};
+    pipeDesc.pRootSignature = DepthResolveRootSig;
+
+    ID3DBlob *FullscreenVS = NULL;
+    rdcstr hlsl = GetEmbeddedResource(misc_hlsl);
+    shaderCache->GetShaderBlob(hlsl.c_str(), "RENDERDOC_FullscreenVS",
+                               D3DCOMPILE_WARNINGS_ARE_ERRORS, {}, "vs_5_0", &FullscreenVS);
+    pipeDesc.VS.BytecodeLength = FullscreenVS->GetBufferSize();
+    pipeDesc.VS.pShaderBytecode = FullscreenVS->GetBufferPointer();
+
+    ID3DBlob *FixedColPS = shaderCache->MakeFixedColShader(D3D12ShaderCache::GREEN);
+    pipeDesc.PS.BytecodeLength = FixedColPS->GetBufferSize();
+    pipeDesc.PS.pShaderBytecode = FixedColPS->GetBufferPointer();
+
+    pipeDesc.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
+    pipeDesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+    pipeDesc.SampleMask = 0xFFFFFFFF;
+    pipeDesc.SampleDesc.Count = 1;
+    pipeDesc.IBStripCutValue = D3D12_INDEX_BUFFER_STRIP_CUT_VALUE_DISABLED;
+    pipeDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+    pipeDesc.NumRenderTargets = 1;
+    pipeDesc.RTVFormats[0] = DXGI_FORMAT_R16G16B16A16_FLOAT;
+
+    pipeDesc.BlendState.RenderTarget[0].BlendEnable = FALSE;
+    pipeDesc.BlendState.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+
+    pipeDesc.DepthStencilState.DepthEnable = FALSE;
+    pipeDesc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+    pipeDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+    pipeDesc.DepthStencilState.StencilEnable = TRUE;
+    pipeDesc.DepthStencilState.StencilReadMask = 0xff;
+    pipeDesc.DepthStencilState.StencilWriteMask = 0x0;
+    pipeDesc.DepthStencilState.FrontFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
+    pipeDesc.DepthStencilState.FrontFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
+    pipeDesc.DepthStencilState.FrontFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
+    pipeDesc.DepthStencilState.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_EQUAL;
+    pipeDesc.DepthStencilState.BackFace = pipeDesc.DepthStencilState.FrontFace;
+    for(DXGI_FORMAT fmt : {DXGI_FORMAT_D24_UNORM_S8_UINT, DXGI_FORMAT_D32_FLOAT_S8X24_UINT})
+    {
+      ID3D12PipelineState **psos = DepthResolvePipe[fmt];
+      for(size_t i = 0; i < 8; i++)
+      {
+        pipeDesc.SampleDesc.Count = UINT(1 << i);
+
+        D3D12_FEATURE_DATA_MULTISAMPLE_QUALITY_LEVELS check = {};
+        check.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+        check.SampleCount = pipeDesc.SampleDesc.Count;
+        device->CheckFeatureSupport(D3D12_FEATURE_MULTISAMPLE_QUALITY_LEVELS, &check, sizeof(check));
+
+        if(check.NumQualityLevels == 0)
+          continue;
+
+        check.Format = fmt;
+        check.SampleCount = pipeDesc.SampleDesc.Count;
+        device->CheckFeatureSupport(D3D12_FEATURE_MULTISAMPLE_QUALITY_LEVELS, &check, sizeof(check));
+
+        if(check.NumQualityLevels == 0)
+          continue;
+
+        pipeDesc.DSVFormat = fmt;
+        hr = device->CreateGraphicsPipelineState(&pipeDesc, __uuidof(ID3D12PipelineState),
+                                                 (void **)&psos[i]);
+        if(FAILED(hr))
+          RDCERR("Failed to create depth resolve pass overlay pso HRESULT: %s", ToStr(hr).c_str());
+      }
+    }
+
+    SAFE_RELEASE(FullscreenVS);
+    SAFE_RELEASE(FixedColPS);
+  }
+
+  {
+    ID3DBlob *root = shaderCache->MakeRootSig({
+        // depth copy SRV
+        tableParam(D3D12_SHADER_VISIBILITY_PIXEL, D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 0, 0, 1),
+    });
+
+    RDCASSERT(root);
+    hr = device->CreateRootSignature(0, root->GetBufferPointer(), root->GetBufferSize(),
+                                     __uuidof(ID3D12RootSignature), (void **)&DepthCopyRootSig);
+    SAFE_RELEASE(root);
+  }
+  {
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC pipeDesc = {};
+    pipeDesc.pRootSignature = DepthCopyRootSig;
+
+    ID3DBlob *FullscreenVS = NULL;
+    {
+      rdcstr hlsl = GetEmbeddedResource(misc_hlsl);
+      shaderCache->GetShaderBlob(hlsl.c_str(), "RENDERDOC_FullscreenVS",
+                                 D3DCOMPILE_WARNINGS_ARE_ERRORS, {}, "vs_5_0", &FullscreenVS);
+    }
+    pipeDesc.VS.BytecodeLength = FullscreenVS->GetBufferSize();
+    pipeDesc.VS.pShaderBytecode = FullscreenVS->GetBufferPointer();
+
+    ID3DBlob *DepthCopyPS = NULL;
+    ID3DBlob *DepthCopyMSPS = NULL;
+    {
+      rdcstr hlsl = GetEmbeddedResource(depth_copy_hlsl);
+      shaderCache->GetShaderBlob(hlsl.c_str(), "RENDERDOC_DepthCopyPS",
+                                 D3DCOMPILE_WARNINGS_ARE_ERRORS, {}, "ps_5_0", &DepthCopyPS);
+      shaderCache->GetShaderBlob(hlsl.c_str(), "RENDERDOC_DepthCopyMSPS",
+                                 D3DCOMPILE_WARNINGS_ARE_ERRORS, {}, "ps_5_0", &DepthCopyMSPS);
+    }
+
+    pipeDesc.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
+    pipeDesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+    pipeDesc.SampleMask = 0xFFFFFFFF;
+    pipeDesc.IBStripCutValue = D3D12_INDEX_BUFFER_STRIP_CUT_VALUE_DISABLED;
+    pipeDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+    pipeDesc.NumRenderTargets = 0;
+
+    // Clear stencil to 0 during the copy
+    pipeDesc.DepthStencilState.DepthEnable = TRUE;
+    pipeDesc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+    pipeDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+    pipeDesc.DepthStencilState.StencilEnable = TRUE;
+    pipeDesc.DepthStencilState.StencilReadMask = 0x0;
+    pipeDesc.DepthStencilState.StencilWriteMask = 0xff;
+    pipeDesc.DepthStencilState.FrontFace.StencilDepthFailOp = D3D12_STENCIL_OP_ZERO;
+    pipeDesc.DepthStencilState.FrontFace.StencilFailOp = D3D12_STENCIL_OP_ZERO;
+    pipeDesc.DepthStencilState.FrontFace.StencilPassOp = D3D12_STENCIL_OP_ZERO;
+    pipeDesc.DepthStencilState.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+    pipeDesc.DepthStencilState.BackFace = pipeDesc.DepthStencilState.FrontFace;
+    pipeDesc.Flags = D3D12_PIPELINE_STATE_FLAG_NONE;
+
+    for(DXGI_FORMAT fmt : {DXGI_FORMAT_D24_UNORM_S8_UINT, DXGI_FORMAT_D32_FLOAT_S8X24_UINT})
+    {
+      ID3D12PipelineState **psos = DepthCopyPipe[fmt];
+      for(size_t i = 0; i < 8; i++)
+      {
+        pipeDesc.SampleDesc.Count = UINT(1 << i);
+
+        D3D12_FEATURE_DATA_MULTISAMPLE_QUALITY_LEVELS check = {};
+        check.Format = fmt;
+        check.SampleCount = pipeDesc.SampleDesc.Count;
+        device->CheckFeatureSupport(D3D12_FEATURE_MULTISAMPLE_QUALITY_LEVELS, &check, sizeof(check));
+
+        if(check.NumQualityLevels == 0)
+          continue;
+
+        pipeDesc.DSVFormat = fmt;
+        if(i == 0)
+        {
+          pipeDesc.PS.BytecodeLength = DepthCopyPS->GetBufferSize();
+          pipeDesc.PS.pShaderBytecode = DepthCopyPS->GetBufferPointer();
+        }
+        else
+        {
+          pipeDesc.PS.BytecodeLength = DepthCopyMSPS->GetBufferSize();
+          pipeDesc.PS.pShaderBytecode = DepthCopyMSPS->GetBufferPointer();
+        }
+
+        hr = device->CreateGraphicsPipelineState(&pipeDesc, __uuidof(ID3D12PipelineState),
+                                                 (void **)&psos[i]);
+        if(FAILED(hr))
+          RDCERR("Failed to create depth resolve pass overlay pso HRESULT: %s", ToStr(hr).c_str());
+      }
+    }
+    SAFE_RELEASE(DepthCopyMSPS);
+    SAFE_RELEASE(DepthCopyPS);
+    SAFE_RELEASE(FullscreenVS);
+  }
+
   shaderCache->SetCaching(false);
 }
 
@@ -2469,6 +2649,19 @@ void D3D12Replay::OverlayRendering::Release()
   SAFE_RELEASE(QuadResolveRootSig);
   for(size_t i = 0; i < ARRAY_COUNT(QuadResolvePipe); i++)
     SAFE_RELEASE(QuadResolvePipe[i]);
+
+  SAFE_RELEASE(DepthResolveRootSig);
+  for(auto it = DepthResolvePipe.begin(); it != DepthResolvePipe.end(); it++)
+  {
+    for(size_t i = 0; i < 8; i++)
+      SAFE_RELEASE(it->second[i]);
+  }
+  SAFE_RELEASE(DepthCopyRootSig);
+  for(auto it = DepthCopyPipe.begin(); it != DepthCopyPipe.end(); it++)
+  {
+    for(size_t i = 0; i < 8; i++)
+      SAFE_RELEASE(it->second[i]);
+  }
 
   SAFE_RELEASE(Texture);
 }
