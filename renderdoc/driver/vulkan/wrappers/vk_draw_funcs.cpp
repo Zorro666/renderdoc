@@ -343,9 +343,9 @@ bool WrappedVulkan::Serialise_vkCmdDrawIndirect(SerialiserType &ser, VkCommandBu
 {
   SERIALISE_ELEMENT(commandBuffer);
   SERIALISE_ELEMENT(buffer).Important();
-  SERIALISE_ELEMENT(offset);
+  SERIALISE_ELEMENT(offset).OffsetOrSize();
   SERIALISE_ELEMENT(count).Important();
-  SERIALISE_ELEMENT(stride);
+  SERIALISE_ELEMENT(stride).OffsetOrSize();
 
   Serialise_DebugMessages(ser);
 
@@ -751,9 +751,9 @@ bool WrappedVulkan::Serialise_vkCmdDrawIndexedIndirect(SerialiserType &ser,
 {
   SERIALISE_ELEMENT(commandBuffer);
   SERIALISE_ELEMENT(buffer).Important();
-  SERIALISE_ELEMENT(offset);
+  SERIALISE_ELEMENT(offset).OffsetOrSize();
   SERIALISE_ELEMENT(count).Important();
-  SERIALISE_ELEMENT(stride);
+  SERIALISE_ELEMENT(stride).OffsetOrSize();
 
   Serialise_DebugMessages(ser);
 
@@ -1206,7 +1206,7 @@ bool WrappedVulkan::Serialise_vkCmdDispatchIndirect(SerialiserType &ser,
 {
   SERIALISE_ELEMENT(commandBuffer);
   SERIALISE_ELEMENT(buffer).Important();
-  SERIALISE_ELEMENT(offset);
+  SERIALISE_ELEMENT(offset).OffsetOrSize();
 
   Serialise_DebugMessages(ser);
 
@@ -2053,8 +2053,8 @@ bool WrappedVulkan::Serialise_vkCmdUpdateBuffer(SerialiserType &ser, VkCommandBu
 {
   SERIALISE_ELEMENT(commandBuffer);
   SERIALISE_ELEMENT(destBuffer).Important();
-  SERIALISE_ELEMENT(destOffset);
-  SERIALISE_ELEMENT(dataSize);
+  SERIALISE_ELEMENT(destOffset).OffsetOrSize();
+  SERIALISE_ELEMENT(dataSize).OffsetOrSize();
 
   // serialise as void* so it goes through as a buffer, not an actual array of integers.
   const void *Data = (const void *)pData;
@@ -2151,8 +2151,8 @@ bool WrappedVulkan::Serialise_vkCmdFillBuffer(SerialiserType &ser, VkCommandBuff
 {
   SERIALISE_ELEMENT(commandBuffer);
   SERIALISE_ELEMENT(destBuffer).Important();
-  SERIALISE_ELEMENT(destOffset);
-  SERIALISE_ELEMENT(fillSize);
+  SERIALISE_ELEMENT(destOffset).OffsetOrSize();
+  SERIALISE_ELEMENT(fillSize).OffsetOrSize();
   SERIALISE_ELEMENT(data).Important();
 
   Serialise_DebugMessages(ser);
@@ -2738,11 +2738,11 @@ bool WrappedVulkan::Serialise_vkCmdDrawIndirectCount(SerialiserType &ser,
 {
   SERIALISE_ELEMENT(commandBuffer);
   SERIALISE_ELEMENT(buffer).Important();
-  SERIALISE_ELEMENT(offset);
+  SERIALISE_ELEMENT(offset).OffsetOrSize();
   SERIALISE_ELEMENT(countBuffer).Important();
-  SERIALISE_ELEMENT(countBufferOffset);
+  SERIALISE_ELEMENT(countBufferOffset).OffsetOrSize();
   SERIALISE_ELEMENT(maxDrawCount).Important();
-  SERIALISE_ELEMENT(stride);
+  SERIALISE_ELEMENT(stride).OffsetOrSize();
 
   Serialise_DebugMessages(ser);
 
@@ -3085,11 +3085,11 @@ bool WrappedVulkan::Serialise_vkCmdDrawIndexedIndirectCount(
 {
   SERIALISE_ELEMENT(commandBuffer);
   SERIALISE_ELEMENT(buffer).Important();
-  SERIALISE_ELEMENT(offset);
+  SERIALISE_ELEMENT(offset).OffsetOrSize();
   SERIALISE_ELEMENT(countBuffer).Important();
-  SERIALISE_ELEMENT(countBufferOffset);
+  SERIALISE_ELEMENT(countBufferOffset).OffsetOrSize();
   SERIALISE_ELEMENT(maxDrawCount).Important();
-  SERIALISE_ELEMENT(stride);
+  SERIALISE_ELEMENT(stride).OffsetOrSize();
 
   Serialise_DebugMessages(ser);
 
@@ -3437,9 +3437,9 @@ bool WrappedVulkan::Serialise_vkCmdDrawIndirectByteCountEXT(
   SERIALISE_ELEMENT(instanceCount).Important();
   SERIALISE_ELEMENT(firstInstance);
   SERIALISE_ELEMENT(counterBuffer).Important();
-  SERIALISE_ELEMENT(counterBufferOffset);
-  SERIALISE_ELEMENT(counterOffset);
-  SERIALISE_ELEMENT(vertexStride);
+  SERIALISE_ELEMENT(counterBufferOffset).OffsetOrSize();
+  SERIALISE_ELEMENT(counterOffset).OffsetOrSize();
+  SERIALISE_ELEMENT(vertexStride).OffsetOrSize();
 
   Serialise_DebugMessages(ser);
 

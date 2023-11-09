@@ -2460,8 +2460,8 @@ void DoSerialise(SerialiserType &ser, VkBufferViewCreateInfo &el)
   SERIALISE_MEMBER_VKFLAGS(VkBufferViewCreateFlags, flags);
   SERIALISE_MEMBER(buffer).Important();
   SERIALISE_MEMBER(format).Important();
-  SERIALISE_MEMBER(offset);
-  SERIALISE_MEMBER(range);
+  SERIALISE_MEMBER(offset).OffsetOrSize();
+  SERIALISE_MEMBER(range).OffsetOrSize();
 }
 
 template <>
@@ -2541,10 +2541,10 @@ void Deserialise(const VkImageViewCreateInfo &el)
 template <typename SerialiserType>
 void DoSerialise(SerialiserType &ser, VkSparseMemoryBind &el)
 {
-  SERIALISE_MEMBER(resourceOffset);
-  SERIALISE_MEMBER(size);
+  SERIALISE_MEMBER(resourceOffset).OffsetOrSize();
+  SERIALISE_MEMBER(size).OffsetOrSize();
   SERIALISE_MEMBER(memory);
-  SERIALISE_MEMBER(memoryOffset);
+  SERIALISE_MEMBER(memoryOffset).OffsetOrSize();
   SERIALISE_MEMBER_VKFLAGS(VkSparseMemoryBindFlags, flags);
 }
 
@@ -2580,10 +2580,10 @@ template <typename SerialiserType>
 void DoSerialise(SerialiserType &ser, VkSparseImageMemoryBind &el)
 {
   SERIALISE_MEMBER(subresource);
-  SERIALISE_MEMBER(offset);
+  SERIALISE_MEMBER(offset).OffsetOrSize();
   SERIALISE_MEMBER(extent);
   SERIALISE_MEMBER(memory);
-  SERIALISE_MEMBER(memoryOffset);
+  SERIALISE_MEMBER(memoryOffset).OffsetOrSize();
   SERIALISE_MEMBER_VKFLAGS(VkSparseMemoryBindFlags, flags);
 }
 
@@ -2828,7 +2828,7 @@ void DoSerialise(SerialiserType &ser, VkVertexInputAttributeDescription &el)
   SERIALISE_MEMBER(location);
   SERIALISE_MEMBER(binding);
   SERIALISE_MEMBER(format);
-  SERIALISE_MEMBER(offset);
+  SERIALISE_MEMBER(offset).OffsetOrSize();
 }
 
 template <typename SerialiserType>
@@ -3239,14 +3239,14 @@ template <typename SerialiserType>
 void DoSerialise(SerialiserType &ser, VkSpecializationMapEntry &el)
 {
   SERIALISE_MEMBER(constantID);
-  SERIALISE_MEMBER(offset);
+  SERIALISE_MEMBER(offset).OffsetOrSize();
   // this was accidentally duplicated - hide it from the UI
   SERIALISE_MEMBER(constantID).Hidden();
 
   // don't serialise size_t, otherwise capture/replay between different bit-ness won't work
   {
     uint64_t size = el.size;
-    ser.Serialise("size"_lit, size);
+    ser.Serialise("size"_lit, size).OffsetOrSize();
     if(ser.IsReading())
       el.size = (size_t)size;
   }
@@ -3388,7 +3388,7 @@ void DoSerialise(SerialiserType &ser, VkMemoryAllocateInfo &el)
   RDCASSERT(ser.IsReading() || el.sType == VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO);
   SerialiseNext(ser, el.sType, el.pNext);
 
-  SERIALISE_MEMBER(allocationSize).Important();
+  SERIALISE_MEMBER(allocationSize).Important().OffsetOrSize();
   SERIALISE_MEMBER(memoryTypeIndex).Important();
 }
 
@@ -3431,8 +3431,8 @@ void DoSerialise(SerialiserType &ser, VkBufferMemoryBarrier &el)
   SERIALISE_MEMBER_TYPED(int32_t, srcQueueFamilyIndex);
   SERIALISE_MEMBER_TYPED(int32_t, dstQueueFamilyIndex);
   SERIALISE_MEMBER(buffer).Important();
-  SERIALISE_MEMBER(offset);
-  SERIALISE_MEMBER(size);
+  SERIALISE_MEMBER(offset).OffsetOrSize();
+  SERIALISE_MEMBER(size).OffsetOrSize();
 }
 
 template <>
@@ -3802,8 +3802,8 @@ void DoSerialise(SerialiserType &ser, VkDescriptorBufferInfo &el)
   OPTIONAL_RESOURCES();
 
   SERIALISE_MEMBER(buffer);
-  SERIALISE_MEMBER(offset);
-  SERIALISE_MEMBER(range);
+  SERIALISE_MEMBER(offset).OffsetOrSize();
+  SERIALISE_MEMBER(range).OffsetOrSize();
 }
 
 template <typename SerialiserType>
@@ -3928,8 +3928,8 @@ template <typename SerialiserType>
 void DoSerialise(SerialiserType &ser, VkPushConstantRange &el)
 {
   SERIALISE_MEMBER_VKFLAGS(VkShaderStageFlags, stageFlags);
-  SERIALISE_MEMBER(offset);
-  SERIALISE_MEMBER(size);
+  SERIALISE_MEMBER(offset).OffsetOrSize();
+  SERIALISE_MEMBER(size).OffsetOrSize();
 }
 
 template <typename SerialiserType>
@@ -3994,8 +3994,8 @@ void DoSerialise(SerialiserType &ser, VkMappedMemoryRange &el)
   SerialiseNext(ser, el.sType, el.pNext);
 
   SERIALISE_MEMBER(memory).Important();
-  SERIALISE_MEMBER(offset);
-  SERIALISE_MEMBER(size);
+  SERIALISE_MEMBER(offset).OffsetOrSize();
+  SERIALISE_MEMBER(size).OffsetOrSize();
 }
 
 template <>
@@ -4007,7 +4007,7 @@ void Deserialise(const VkMappedMemoryRange &el)
 template <typename SerialiserType>
 void DoSerialise(SerialiserType &ser, VkBufferImageCopy &el)
 {
-  SERIALISE_MEMBER(bufferOffset);
+  SERIALISE_MEMBER(bufferOffset).OffsetOrSize();
   SERIALISE_MEMBER(bufferRowLength);
   SERIALISE_MEMBER(bufferImageHeight);
   SERIALISE_MEMBER(imageSubresource);
@@ -4018,9 +4018,9 @@ void DoSerialise(SerialiserType &ser, VkBufferImageCopy &el)
 template <typename SerialiserType>
 void DoSerialise(SerialiserType &ser, VkBufferCopy &el)
 {
-  SERIALISE_MEMBER(srcOffset);
-  SERIALISE_MEMBER(dstOffset);
-  SERIALISE_MEMBER(size);
+  SERIALISE_MEMBER(srcOffset).OffsetOrSize();
+  SERIALISE_MEMBER(dstOffset).OffsetOrSize();
+  SERIALISE_MEMBER(size).OffsetOrSize();
 }
 
 template <typename SerialiserType>
@@ -5126,8 +5126,8 @@ void DoSerialise(SerialiserType &ser, DescriptorSetSlot &el)
     {
       VkDeviceSize offset = el.offset;
       VkDeviceSize range = el.GetRange();
-      SERIALISE_ELEMENT(offset);
-      SERIALISE_ELEMENT(range);
+      SERIALISE_ELEMENT(offset).OffsetOrSize();
+      SERIALISE_ELEMENT(range).OffsetOrSize();
       el.offset = offset;
       el.range = range;
     }
@@ -5313,8 +5313,8 @@ void DoSerialise(SerialiserType &ser, VkDescriptorUpdateTemplateEntry &el)
       offset = el.offset;
       stride = el.stride;
     }
-    ser.Serialise("offset"_lit, offset);
-    ser.Serialise("stride"_lit, stride);
+    ser.Serialise("offset"_lit, offset).OffsetOrSize();
+    ser.Serialise("stride"_lit, stride).OffsetOrSize();
     if(ser.IsReading())
     {
       el.offset = (size_t)offset;
@@ -5324,8 +5324,8 @@ void DoSerialise(SerialiserType &ser, VkDescriptorUpdateTemplateEntry &el)
 #if DISABLED(RDOC_APPLE)
   else
   {
-    SERIALISE_MEMBER(offset);
-    SERIALISE_MEMBER(stride);
+    SERIALISE_MEMBER(offset).OffsetOrSize();
+    SERIALISE_MEMBER(stride).OffsetOrSize();
   }
 #endif
 }
@@ -5379,7 +5379,7 @@ void DoSerialise(SerialiserType &ser, VkBindBufferMemoryInfo &el)
 
   SERIALISE_MEMBER(buffer).Important();
   SERIALISE_MEMBER(memory).Important();
-  SERIALISE_MEMBER(memoryOffset);
+  SERIALISE_MEMBER(memoryOffset).OffsetOrSize();
 }
 
 template <>
@@ -5396,7 +5396,7 @@ void DoSerialise(SerialiserType &ser, VkBindImageMemoryInfo &el)
 
   SERIALISE_MEMBER(image).Important();
   SERIALISE_MEMBER(memory).Important();
-  SERIALISE_MEMBER(memoryOffset);
+  SERIALISE_MEMBER(memoryOffset).OffsetOrSize();
 }
 
 template <>
@@ -7861,9 +7861,9 @@ void DoSerialise(SerialiserType &ser, VkBufferCopy2 &el)
   RDCASSERT(ser.IsReading() || el.sType == VK_STRUCTURE_TYPE_BUFFER_COPY_2);
   SerialiseNext(ser, el.sType, el.pNext);
 
-  SERIALISE_MEMBER(srcOffset);
-  SERIALISE_MEMBER(dstOffset);
-  SERIALISE_MEMBER(size);
+  SERIALISE_MEMBER(srcOffset).OffsetOrSize();
+  SERIALISE_MEMBER(dstOffset).OffsetOrSize();
+  SERIALISE_MEMBER(size).OffsetOrSize();
 }
 
 template <>
@@ -7937,7 +7937,7 @@ void DoSerialise(SerialiserType &ser, VkBufferImageCopy2 &el)
   RDCASSERT(ser.IsReading() || el.sType == VK_STRUCTURE_TYPE_BUFFER_IMAGE_COPY_2);
   SerialiseNext(ser, el.sType, el.pNext);
 
-  SERIALISE_MEMBER(bufferOffset);
+  SERIALISE_MEMBER(bufferOffset).OffsetOrSize();
   SERIALISE_MEMBER(bufferRowLength);
   SERIALISE_MEMBER(bufferImageHeight);
   SERIALISE_MEMBER(imageSubresource);
@@ -10492,8 +10492,8 @@ void DoSerialise(SerialiserType &ser, VkBufferMemoryBarrier2 &el)
   SERIALISE_MEMBER_TYPED(int32_t, srcQueueFamilyIndex);
   SERIALISE_MEMBER_TYPED(int32_t, dstQueueFamilyIndex);
   SERIALISE_MEMBER(buffer).Important();
-  SERIALISE_MEMBER(offset);
-  SERIALISE_MEMBER(size);
+  SERIALISE_MEMBER(offset).OffsetOrSize();
+  SERIALISE_MEMBER(size).OffsetOrSize();
 }
 
 template <>
@@ -11157,7 +11157,7 @@ void DoSerialise(SerialiserType &ser, VkConditionalRenderingBeginInfoEXT &el)
   SerialiseNext(ser, el.sType, el.pNext);
 
   SERIALISE_MEMBER(buffer).Important();
-  SERIALISE_MEMBER(offset);
+  SERIALISE_MEMBER(offset).OffsetOrSize();
   SERIALISE_MEMBER_VKFLAGS(VkConditionalRenderingFlagsEXT, flags);
 }
 
