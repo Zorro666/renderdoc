@@ -1764,6 +1764,11 @@ QVariant SDObject2Variant(const SDObject *obj, bool inlineImportant)
   }
   else
   {
+    Formatter::FormatterFlags flags = Formatter::NoFlags;
+    if((obj->type.flags & SDTypeFlags::OffsetOrSize) ||
+       ((obj->GetParent() && obj->GetParent()->type.flags & SDTypeFlags::OffsetOrSize)))
+      flags = Formatter::OffsetSize;
+
     switch(obj->type.basetype)
     {
       case SDBasic::Chunk:
@@ -1875,7 +1880,9 @@ QVariant SDObject2Variant(const SDObject *obj, bool inlineImportant)
       }
       case SDBasic::Resource:
       case SDBasic::Enum:
-      case SDBasic::UnsignedInteger: param = Formatter::HumanFormat(obj->data.basic.u); break;
+      case SDBasic::UnsignedInteger:
+        param = Formatter::HumanFormat(obj->data.basic.u, flags);
+        break;
       case SDBasic::SignedInteger: param = Formatter::Format(obj->data.basic.i); break;
       case SDBasic::Float: param = Formatter::Format(obj->data.basic.d); break;
       case SDBasic::Boolean: param = (obj->data.basic.b ? lit("True") : lit("False")); break;
@@ -2459,6 +2466,7 @@ QString Formatter::m_DefaultFontFamily;
 QString Formatter::m_DefaultMonoFontFamily;
 float Formatter::m_FixedFontBaseSize = 10.0f;
 QColor Formatter::m_DarkChecker, Formatter::m_LightChecker;
+OffsetSizeDisplayMode Formatter::m_OffsetSizeDisplayMode = OffsetSizeDisplayMode::Auto;
 
 void Formatter::setParams(const PersistantConfig &config)
 {
@@ -2469,6 +2477,8 @@ void Formatter::setParams(const PersistantConfig &config)
 
   m_expNegValue = qPow(10.0, -config.Formatter_NegExp);
   m_expPosValue = qPow(10.0, config.Formatter_PosExp);
+
+  m_OffsetSizeDisplayMode = config.Formatter_OffsetSizeDisplayMode;
 
   if(!m_Font)
   {
@@ -2553,7 +2563,7 @@ QString Formatter::Format(double f, bool)
   return ret;
 }
 
-QString Formatter::HumanFormat(uint64_t u)
+QString Formatter::HumanFormat(uint64_t u, FormatterFlags flags)
 {
   if(u == UINT16_MAX)
     return lit("UINT16_MAX");
@@ -2563,8 +2573,26 @@ QString Formatter::HumanFormat(uint64_t u)
     return lit("UINT64_MAX");
 
   // format as hex when over a certain threshold
-  if(u > 0xffffff)
+  bool displayHex = (u > 0xffffff);
+
+  if(flags & OffsetSize)
+  {
+    switch(m_OffsetSizeDisplayMode)
+    {
+      case OffsetSizeDisplayMode::Hexadecimal: displayHex = true; break;
+      case OffsetSizeDisplayMode::Decimal: displayHex = false; break;
+      default: break;
+    }
+  }
+  if(displayHex)
+  {
+    if(u < UINT32_MAX)
+    {
+      uint32_t u32 = u;
+      return lit("0x") + Format(u32, true);
+    }
     return lit("0x") + Format(u, true);
+  }
 
   return Format(u);
 }
@@ -2989,7 +3017,7 @@ void ShowProgressDialog(QWidget *window, const QString &labelText, ProgressFinis
   // show the dialog
   RDDialog::show(&dialog);
 
-  // signal the thread to exit if somehow we got here without it finishing, then wait for it thread
+  // signal the thread to exit if somehow we got here without it finishing, then wait for the thread
   // to clean itself up
   tickerSemaphore.tryAcquire();
   progressTickerThread.wait();

@@ -116,6 +116,7 @@ private slots:
 
   // manual slots
   void formatter_valueChanged(int value);
+  void on_Formatter_OffsetSizeDisplayMode_currentIndexChanged(int index);
 
   void on_analyticsDescribeLabel_linkActivated(const QString &link);
 

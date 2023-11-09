@@ -146,6 +146,11 @@ SettingsDialog::SettingsDialog(ICaptureContext &ctx, QWidget *parent)
     ui->EventBrowser_TimeUnit->addItem(UnitSuffix((TimeUnit)i));
   }
 
+  for(int i = 0; i < (int)OffsetSizeDisplayMode::Count; i++)
+  {
+    ui->Formatter_OffsetSizeDisplayMode->addItem((ToStr((OffsetSizeDisplayMode)i)));
+  }
+
   ui->pages->clearSelection();
   ui->pages->item(0)->setSelected(true);
   ui->tabWidget->setCurrentIndex(0);
@@ -294,6 +299,8 @@ SettingsDialog::SettingsDialog(ICaptureContext &ctx, QWidget *parent)
   ui->Formatter_MaxFigures->setValue(m_Ctx.Config().Formatter_MaxFigures);
   ui->Formatter_NegExp->setValue(m_Ctx.Config().Formatter_NegExp);
   ui->Formatter_PosExp->setValue(m_Ctx.Config().Formatter_PosExp);
+  ui->Formatter_OffsetSizeDisplayMode->setCurrentIndex(
+      (int)m_Ctx.Config().Formatter_OffsetSizeDisplayMode);
 
   if(!RENDERDOC_CanGlobalHook())
   {
@@ -436,6 +443,21 @@ void SettingsDialog::formatter_valueChanged(int val)
 
   m_Ctx.Config().SetupFormatting();
 
+  m_Ctx.Config().Save();
+}
+
+void SettingsDialog::on_Formatter_OffsetSizeDisplayMode_currentIndexChanged(int index)
+{
+  if(m_Init)
+    return;
+
+  if(index < 0 || index >= (int)OffsetSizeDisplayMode::Count)
+    return;
+
+  m_Ctx.Config().Formatter_OffsetSizeDisplayMode =
+      (OffsetSizeDisplayMode)(ui->Formatter_OffsetSizeDisplayMode->currentIndex());
+
+  m_Ctx.Config().SetupFormatting();
   m_Ctx.Config().Save();
 }
 
