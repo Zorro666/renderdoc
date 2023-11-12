@@ -86,7 +86,9 @@ BufferFormatSpecifier::BufferFormatSpecifier(QWidget *parent)
 
   QColor base = formatText->palette().color(QPalette::Base);
 
-  QColor col = QColor::fromHslF(0.0f, 1.0f, qBound(0.1, base.lightnessF(), 0.9));
+  QColor col = IsDarkTheme()
+                   ? QColor::fromHslF(0.0f, 1.0f, qBound(0.1, 1.0f - base.lightnessF(), 0.9))
+                   : QColor::fromHslF(0.0f, 1.0f, qBound(0.1, base.lightnessF(), 0.9));
 
   formatText->styleSetBack(ERROR_STYLE, SCINTILLA_COLOUR(col.red(), col.green(), col.blue()));
 
