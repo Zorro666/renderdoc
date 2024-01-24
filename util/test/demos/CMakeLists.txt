@@ -209,6 +209,11 @@ set(OPENGL_SRC
         gl/gl_vao_0.cpp
         gl/gl_vertex_attr_zoo.cpp)
 
+set(METAL_SRC
+        metal/metal_test.cpp
+        metal/metal_test.h
+        metal/metal_simple_triangle.cpp)
+
 set(SRC main.cpp
         3rdparty/fmt/format.cc
         renderdoc_app.h
@@ -235,7 +240,7 @@ if(APPLE)
         apple/apple_platform.h
         apple/apple_window.cpp
         apple/apple_window.h)
-    add_executable(demos ${SRC} ${VULKAN_SRC})
+    add_executable(demos ${SRC} ${VULKAN_SRC} ${METAL_SRC})
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -Wno-deprecated-declarations")
 elseif(BUILD_ANDROID)
     string(REPLACE "\\" "/" GLUE_SOURCE "${ANDROID_NDK_ROOT_PATH}/sources/android/native_app_glue/android_native_app_glue.c")
