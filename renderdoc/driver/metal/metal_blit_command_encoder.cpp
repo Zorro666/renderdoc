@@ -82,6 +82,25 @@ bool WrappedMTLBlitCommandEncoder::Serialise_endEncoding(SerialiserType &ser)
   // TODO: implement RD MTL replay
   if(IsReplayingAndReading())
   {
+    m_Device->SetCurrentCommandBuffer(BlitCommandEncoder->m_CommandBuffer);
+    if(IsLoading(m_State))
+    {
+      AddEvent();
+
+      ActionDescription action;
+      action.flags |= ActionFlags::PassBoundary;
+      action.flags |= ActionFlags::EndPass;
+
+      AddAction(action);
+    }
+    if(IsActiveReplaying(m_State))
+    {
+      if(!m_Device->IsCurrentCommandBufferEventInReplayRange())
+        return true;
+    }
+    WrappedMTLBlitCommandEncoder *blitEncoder = m_Device->GetCurrentReplayBlitEncoder();
+    Unwrap(blitEncoder)->endEncoding();
+    m_Device->ClearActiveBlitCommandEncoder();
   }
   return true;
 }
@@ -231,6 +250,14 @@ bool WrappedMTLBlitCommandEncoder::Serialise_synchronizeResource(SerialiserType 
   // TODO: implement RD MTL replay
   if(IsReplayingAndReading())
   {
+    m_Device->SetCurrentCommandBuffer(BlitCommandEncoder->m_CommandBuffer);
+    if(IsActiveReplaying(m_State))
+    {
+      if(!m_Device->IsCurrentCommandBufferEventInReplayRange())
+        return true;
+    }
+    WrappedMTLBlitCommandEncoder *blitEncoder = m_Device->GetCurrentReplayBlitEncoder();
+    Unwrap(blitEncoder)->synchronizeResource(Unwrap(resource));
   }
   return true;
 }

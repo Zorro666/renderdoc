@@ -41,7 +41,7 @@ template <typename SerialiserType>
 bool WrappedMTLCommandBuffer::Serialise_blitCommandEncoder(SerialiserType &ser,
                                                            WrappedMTLBlitCommandEncoder *encoder)
 {
-  SERIALISE_ELEMENT_LOCAL(CommandBuffer, this);
+  SERIALISE_ELEMENT_LOCAL(CommandBuffer, this).Unimportant();
   SERIALISE_ELEMENT_LOCAL(BlitCommandEncoder, GetResID(encoder))
       .TypedAs("MTLBlitCommandEncoder"_lit);
 
@@ -49,7 +49,30 @@ bool WrappedMTLCommandBuffer::Serialise_blitCommandEncoder(SerialiserType &ser,
 
   if(IsReplayingAndReading())
   {
-    // TODO: implement RD MTL replay
+    m_Device->SetCurrentCommandBuffer(CommandBuffer);
+    if(IsActiveReplaying(m_State))
+    {
+      if(!m_Device->IsCurrentCommandBufferEventInReplayRange())
+        return true;
+    }
+    if(IsLoading(m_State))
+    {
+      AddEvent();
+
+      ActionDescription action;
+      action.flags |= ActionFlags::PassBoundary;
+      action.flags |= ActionFlags::BeginPass;
+
+      AddAction(action);
+    }
+    WrappedMTLCommandBuffer *cmdBuffer = m_Device->GetCurrentReplayCommandBuffer();
+    MTL::BlitCommandEncoder *mtlBlitCommandEncoder = Unwrap(cmdBuffer)->blitCommandEncoder();
+    WrappedMTLBlitCommandEncoder *wrappedMTLBlitCommandEncoder;
+    ResourceId liveID =
+        GetResourceManager()->WrapResource(mtlBlitCommandEncoder, wrappedMTLBlitCommandEncoder);
+    wrappedMTLBlitCommandEncoder->SetCommandBuffer(cmdBuffer);
+    m_Device->SetActiveBlitCommandEncoder(wrappedMTLBlitCommandEncoder);
+    // TODO: initialise the replay tracked render state
   }
   return true;
 }
@@ -99,7 +122,33 @@ bool WrappedMTLCommandBuffer::Serialise_renderCommandEncoderWithDescriptor(
 
   if(IsReplayingAndReading())
   {
-    // TODO: implement RD MTL replay
+    m_Device->SetCurrentCommandBuffer(CommandBuffer);
+    if(IsActiveReplaying(m_State))
+    {
+      if(!m_Device->IsCurrentCommandBufferEventInReplayRange())
+        return true;
+    }
+    if(IsLoading(m_State))
+    {
+      AddEvent();
+
+      ActionDescription action;
+      action.flags |= ActionFlags::PassBoundary;
+      action.flags |= ActionFlags::BeginPass;
+
+      AddAction(action);
+    }
+    WrappedMTLCommandBuffer *cmdBuffer = m_Device->GetCurrentReplayCommandBuffer();
+    MTL::RenderPassDescriptor *mtlDescriptor(descriptor);
+    MTL::RenderCommandEncoder *mtlRenderCommandEncoder =
+        Unwrap(cmdBuffer)->renderCommandEncoder(mtlDescriptor);
+    mtlDescriptor->release();
+    WrappedMTLRenderCommandEncoder *wrappedMTLRenderCommandEncoder;
+    ResourceId liveID =
+        GetResourceManager()->WrapResource(mtlRenderCommandEncoder, wrappedMTLRenderCommandEncoder);
+    wrappedMTLRenderCommandEncoder->SetCommandBuffer(cmdBuffer);
+    m_Device->SetActiveRenderCommandEncoder(wrappedMTLRenderCommandEncoder);
+    // TODO: initialise the replay tracked render state
   }
   return true;
 }
@@ -160,6 +209,7 @@ bool WrappedMTLCommandBuffer::Serialise_presentDrawable(SerialiserType &ser,
   // TODO: implement RD MTL replay
   if(IsReplayingAndReading())
   {
+    m_Device->SetCurrentCommandBuffer(CommandBuffer);
     if(IsLoading(m_State))
     {
       AddEvent();
@@ -171,6 +221,11 @@ bool WrappedMTLCommandBuffer::Serialise_presentDrawable(SerialiserType &ser,
       action.copyDestination = presentedImageId;
       m_Device->SetLastPresentedIamge(presentedImageId);
       AddAction(action);
+    }
+    if(IsActiveReplaying(m_State))
+    {
+      if(!m_Device->IsCurrentCommandBufferEventInReplayRange())
+        return true;
     }
   }
   return true;
@@ -219,7 +274,9 @@ bool WrappedMTLCommandBuffer::Serialise_commit(SerialiserType &ser)
   // TODO: implement RD MTL replay
   if(IsReplayingAndReading())
   {
-    CommandBuffer->commit();
+    m_Device->SetCurrentCommandBuffer(CommandBuffer);
+    WrappedMTLCommandBuffer *cmdBuffer = m_Device->GetCurrentReplayCommandBuffer();
+    m_Device->ReplayCommandBufferCommit(cmdBuffer);
   }
   return true;
 }
@@ -254,6 +311,9 @@ bool WrappedMTLCommandBuffer::Serialise_enqueue(SerialiserType &ser)
   // TODO: implement RD MTL replay
   if(IsReplayingAndReading())
   {
+    m_Device->SetCurrentCommandBuffer(CommandBuffer);
+    WrappedMTLCommandBuffer *cmdBuffer = m_Device->GetCurrentReplayCommandBuffer();
+    m_Device->ReplayCommandBufferEnqueue(cmdBuffer);
   }
   return true;
 }
@@ -290,6 +350,11 @@ bool WrappedMTLCommandBuffer::Serialise_waitUntilCompleted(SerialiserType &ser)
   // TODO: implement RD MTL replay
   if(IsReplayingAndReading())
   {
+    m_Device->SetCurrentCommandBuffer(NULL);
+    if(IsActiveReplaying(m_State))
+    {
+      Unwrap(CommandBuffer)->waitUntilCompleted();
+    }
   }
   return true;
 }

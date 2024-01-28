@@ -45,7 +45,20 @@ bool WrappedMTLCommandQueue::Serialise_commandBuffer(SerialiserType &ser,
 
   if(IsReplayingAndReading())
   {
-    // TODO: implement RD MTL replay
+    WrappedMTLCommandBuffer *wrappedMTLCommandBuffer = m_Device->GetNextCommandBuffer();
+    GetResourceManager()->ReplaceResource(CommandBuffer, GetResID(wrappedMTLCommandBuffer));
+
+    m_Device->AddResource(CommandBuffer, ResourceType::CommandBuffer, "Command Buffer");
+    m_Device->DerivedResource(CommandQueue, CommandBuffer);
+    m_Device->SetCurrentCommandBuffer(wrappedMTLCommandBuffer);
+    if(IsLoading(m_State))
+    {
+      m_Device->NewReplayCommandBuffer(wrappedMTLCommandBuffer);
+    }
+    else
+    {
+      m_Device->ResetReplayCommandBuffer(wrappedMTLCommandBuffer);
+    }
   }
   return true;
 }
