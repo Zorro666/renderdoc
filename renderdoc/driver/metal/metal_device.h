@@ -143,6 +143,14 @@ public:
   void RegisterDrawableInfo(CA::MetalDrawable *caMtlDrawable);
   MetalDrawableInfo UnregisterDrawableInfo(MTL::Drawable *mtlDrawable);
 
+  bool IsCurrentCommandBufferEventInReplayRange();
+  WrappedMTLCommandBuffer *GetCurrentReplayCommandBuffer();
+  void NewReplayCommandBuffer(WrappedMTLCommandBuffer *cmdBuffer);
+  void ReplayCommandBufferCommit(WrappedMTLCommandBuffer *cmdBuffer);
+  void ReplayCommandBufferEnqueue(WrappedMTLCommandBuffer *cmdBuffer);
+  void ResetReplayCommandBuffer(WrappedMTLCommandBuffer *cmdBuffer);
+  void SetCurrentCommandBuffer(WrappedMTLCommandBuffer *cmdBuffer);
+
   void AddEvent();
   void AddAction(const ActionDescription &a);
 
@@ -160,6 +168,14 @@ public:
     m_LastPresentedImage = lastPresentedImage;
   }
 
+  void ClearActiveRenderCommandEncoder();
+  void SetActiveRenderCommandEncoder(WrappedMTLRenderCommandEncoder *renderCommandEncoder);
+  WrappedMTLRenderCommandEncoder *GetCurrentReplayRenderEncoder();
+
+  void ClearActiveBlitCommandEncoder();
+  void SetActiveBlitCommandEncoder(WrappedMTLBlitCommandEncoder *blitCommandEncoder);
+  WrappedMTLBlitCommandEncoder *GetCurrentReplayBlitEncoder();
+  WrappedMTLCommandBuffer *GetNextCommandBuffer();
   enum
   {
     TypeEnum = eResDevice
@@ -195,6 +211,18 @@ private:
 
   MetalResourceManager *m_ResourceManager = NULL;
   ResourceId m_LastPresentedImage;
+
+  struct ReplayCmdBufferInfo
+  {
+    ReplayCmdBufferInfo() {}
+  };
+
+  // on replay, the current command buffer for the last chunk we handled.
+  ResourceId m_ReplayCurrentCmdBufferID;
+  // data for a command buffer - its actions and events
+  std::map<ResourceId, ReplayCmdBufferInfo> m_ReplayCmdBufferInfos;
+  // on replay, the command buffer which was only partially committed
+  ResourceId m_ReplayPartialCmdBufferID;
 
   // Dummy objects used for serialisation replay
   WrappedMTLBuffer *m_DummyBuffer = NULL;

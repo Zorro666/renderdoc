@@ -306,8 +306,7 @@
 
 - (void)setCullMode:(MTLCullMode)cullMode
 {
-  METAL_NOT_HOOKED();
-  return [self.real setCullMode:cullMode];
+  GetWrapped(self)->setCullMode((MTL::CullMode &)cullMode);
 }
 
 - (void)setDepthClipMode:(MTLDepthClipMode)depthClipMode API_AVAILABLE(macos(10.11), ios(11.0))
@@ -816,13 +815,9 @@
             indexBufferOffset:(NSUInteger)indexBufferOffset
                 instanceCount:(NSUInteger)instanceCount
 {
-  METAL_NOT_HOOKED();
-  return [self.real drawIndexedPrimitives:primitiveType
-                               indexCount:indexCount
-                                indexType:indexType
-                              indexBuffer:indexBuffer
-                        indexBufferOffset:indexBufferOffset
-                            instanceCount:instanceCount];
+  GetWrapped(self)->drawIndexedPrimitives((MTL::PrimitiveType)primitiveType, indexCount,
+                                          (MTL::IndexType)indexType, GetWrapped(indexBuffer),
+                                          indexBufferOffset, instanceCount);
 }
 
 - (void)drawIndexedPrimitives:(MTLPrimitiveType)primitiveType
@@ -831,12 +826,9 @@
                   indexBuffer:(id<MTLBuffer>)indexBuffer
             indexBufferOffset:(NSUInteger)indexBufferOffset
 {
-  METAL_NOT_HOOKED();
-  return [self.real drawIndexedPrimitives:primitiveType
-                               indexCount:indexCount
-                                indexType:indexType
-                              indexBuffer:indexBuffer
-                        indexBufferOffset:indexBufferOffset];
+  GetWrapped(self)->drawIndexedPrimitives((MTL::PrimitiveType)primitiveType, indexCount,
+                                          (MTL::IndexType)indexType, GetWrapped(indexBuffer),
+                                          indexBufferOffset);
 }
 
 - (void)drawPrimitives:(MTLPrimitiveType)primitiveType
@@ -858,15 +850,9 @@
                    baseVertex:(NSInteger)baseVertex
                  baseInstance:(NSUInteger)baseInstance API_AVAILABLE(macos(10.11), ios(9.0))
 {
-  METAL_NOT_HOOKED();
-  return [self.real drawIndexedPrimitives:primitiveType
-                               indexCount:indexCount
-                                indexType:indexType
-                              indexBuffer:indexBuffer
-                        indexBufferOffset:indexBufferOffset
-                            instanceCount:instanceCount
-                               baseVertex:baseVertex
-                             baseInstance:baseInstance];
+  GetWrapped(self)->drawIndexedPrimitives(
+      (MTL::PrimitiveType)primitiveType, indexCount, (MTL::IndexType)indexType,
+      GetWrapped(indexBuffer), indexBufferOffset, instanceCount, baseVertex, baseInstance);
 }
 
 - (void)drawPrimitives:(MTLPrimitiveType)primitiveType
