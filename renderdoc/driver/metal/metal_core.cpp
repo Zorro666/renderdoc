@@ -2260,7 +2260,6 @@ void WrappedMTLDevice::ReplayCommandBufferCommit(WrappedMTLCommandBuffer *cmdBuf
   else
   {
     int32_t nextIndex = Atomic::Inc32(&m_ReplayNextCmdBufferQueueIndex);
-    //    RDCASSERTEQUAL(nextIndex, cmdBufInfo.queueIndex);
     uint32_t startEID = cmdBufInfo.baseRootEventID;
     uint32_t cmdBufCurEID = cmdBufInfo.curEventID;
 
@@ -2343,6 +2342,63 @@ void WrappedMTLDevice::InsertCommandBufferActionsAndRefreshIDs(ReplayCmdBufferIn
 
     GetActionStack().back()->children.push_back(n);
   }
+}
+
+void WrappedMTLDevice::SetCurrentCommandBufferRenderPassDescriptor(
+    const RDMTL::RenderPassDescriptor &rpDesc)
+{
+  RDCASSERTNOTEQUAL(m_ReplayCurrentCmdBufferID, ResourceId());
+  ReplayCmdBufferInfo &cmdBufInfo = m_ReplayCmdBufferInfos[m_ReplayCurrentCmdBufferID];
+  cmdBufInfo.rpDesc = rpDesc;
+}
+
+rdcstr WrappedMTLDevice::MakeRenderPassOpString(bool startPass)
+{
+  RDCASSERTNOTEQUAL(m_ReplayCurrentCmdBufferID, ResourceId());
+  ReplayCmdBufferInfo &cmdBufInfo = m_ReplayCmdBufferInfos[m_ReplayCurrentCmdBufferID];
+  const RDMTL::RenderPassDescriptor &rpDesc = cmdBufInfo.rpDesc;
+  rdcstr message = "";
+  if(rpDesc.colorAttachments.count())
+  {
+    message += "C=";
+    if(startPass)
+    {
+      if(rpDesc.colorAttachments[0].loadAction == MTL::LoadActionLoad)
+        message += "L";
+      else if(rpDesc.colorAttachments[0].loadAction == MTL::LoadActionClear)
+        message += "C";
+      else if(rpDesc.colorAttachments[0].loadAction == MTL::LoadActionDontCare)
+        message += "DC";
+    }
+    else
+    {
+      if(rpDesc.colorAttachments[0].storeAction == MTL::StoreActionStore)
+        message += "S";
+      else if(rpDesc.colorAttachments[0].storeAction == MTL::StoreActionDontCare)
+        message += "DC";
+    }
+  }
+  if(rpDesc.depthAttachment.texture != NULL)
+  {
+    message += " D=";
+    if(startPass)
+    {
+      if(rpDesc.depthAttachment.loadAction == MTL::LoadActionLoad)
+        message += "L";
+      else if(rpDesc.depthAttachment.loadAction == MTL::LoadActionClear)
+        message += "C";
+      else if(rpDesc.depthAttachment.loadAction == MTL::LoadActionDontCare)
+        message += "DC";
+    }
+    else
+    {
+      if(rpDesc.depthAttachment.storeAction == MTL::StoreActionStore)
+        message += "S";
+      else if(rpDesc.depthAttachment.storeAction == MTL::StoreActionDontCare)
+        message += "DC";
+    }
+  }
+  return message;
 }
 
 MetalInitParams::MetalInitParams()

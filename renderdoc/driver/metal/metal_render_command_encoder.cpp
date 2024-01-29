@@ -545,6 +545,8 @@ bool WrappedMTLRenderCommandEncoder::Serialise_endEncoding(SerialiserType &ser)
       AddEvent();
 
       ActionDescription action;
+      action.customName =
+          StringFormat::Fmt("EndRenderEncoder(%s)", m_Device->MakeRenderPassOpString(false).c_str());
       action.flags |= ActionFlags::PassBoundary;
       action.flags |= ActionFlags::EndPass;
 

@@ -170,6 +170,8 @@ public:
   void ReplayCommandBufferEnqueue(WrappedMTLCommandBuffer *cmdBuffer);
   void ResetReplayCommandBuffer(WrappedMTLCommandBuffer *cmdBuffer);
   void SetCurrentCommandBuffer(WrappedMTLCommandBuffer *cmdBuffer);
+  void SetCurrentCommandBufferRenderPassDescriptor(const RDMTL::RenderPassDescriptor &rpDesc);
+  rdcstr MakeRenderPassOpString(bool startPass);
 
   void AddEvent();
   void AddAction(const ActionDescription &a);
@@ -336,6 +338,7 @@ private:
     uint32_t endChunk = 0;
 
     MetalRenderState renderState;
+    RDMTL::RenderPassDescriptor rpDesc;
 
     // whether the renderdoc commandbuffer execution has an encoder
     // open and replaying and need to end the encoder before commit

@@ -154,14 +154,16 @@ bool WrappedMTLCommandBuffer::Serialise_renderCommandEncoderWithDescriptor(
       if(!m_Device->IsCurrentCommandBufferEventInReplayRange())
         return true;
     }
+    m_Device->SetCurrentCommandBufferRenderPassDescriptor(descriptor);
     if(IsLoading(m_State))
     {
       AddEvent();
 
       ActionDescription action;
+      action.customName = StringFormat::Fmt("StartRenderEncoder(%s)",
+                                            m_Device->MakeRenderPassOpString(true).c_str());
       action.flags |= ActionFlags::PassBoundary;
       action.flags |= ActionFlags::BeginPass;
-
       AddAction(action);
     }
     WrappedMTLCommandBuffer *cmdBuffer = m_Device->GetCurrentReplayCommandBuffer();
