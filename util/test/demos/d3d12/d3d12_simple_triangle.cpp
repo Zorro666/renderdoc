@@ -36,8 +36,8 @@ RD_TEST(D3D12_Simple_Triangle, D3D12GraphicsTest)
     if(!Init())
       return 3;
 
-    ID3DBlobPtr vsblob = Compile(D3DDefaultVertex, "main", "vs_4_0");
-    ID3DBlobPtr psblob = Compile(D3DDefaultPixel, "main", "ps_4_0");
+    ID3DBlobPtr vsblob = Compile(D3DDefaultVertex, "main", "vs_6_0", false);
+    ID3DBlobPtr psblob = Compile(D3DDefaultPixel, "main", "ps_6_0", false);
 
     ID3D12ResourcePtr vb = MakeBuffer().Data(DefaultTri);
 

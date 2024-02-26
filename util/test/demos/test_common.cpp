@@ -376,6 +376,7 @@ std::vector<uint32_t> CompileShaderToSpv(const std::string &source_text, SPIRVTa
   if(externalCompiler == "glslc")
   {
     command_line = "glslc" EXECUTABLE_SUFFIX " -g -O0";
+    command_line = "glslc" EXECUTABLE_SUFFIX;
     command_line += " -fentry-point=";
     command_line += entry_point;
 
