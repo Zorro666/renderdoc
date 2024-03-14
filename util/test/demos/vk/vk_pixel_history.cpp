@@ -39,6 +39,13 @@ struct v2f
 	vec4 uv;
 };
 
+struct uintv2f
+{
+	vec4 pos;
+	vec4 col;
+	vec4 uv;
+};
+
 )EOSHADER";
 
   const std::string vertex = R"EOSHADER(
@@ -74,6 +81,36 @@ void main()
 
 )EOSHADER";
 
+  const std::string uintvertex = R"EOSHADER(
+
+layout(location = 0) in vec3 Position;
+layout(location = 1) in uvec4 Color;
+layout(location = 2) in vec2 UV;
+
+layout(location = 0) out v2f vertOut;
+
+void main()
+{
+	vertOut.pos = vec4(Position.xyz, 1);
+	gl_Position = vertOut.pos;
+	vertOut.col = vec4(Color.x, Color.y, Color.z, Color.w) + vec4(100.0, 200.0, 300.0, 0.0) * gl_InstanceIndex;
+	vertOut.uv = vec4(UV.xy, 0, 1);
+}
+
+)EOSHADER";
+
+  const std::string uintpixel = R"EOSHADER(
+
+layout(location = 0) in v2f vertIn;
+
+layout(location = 0, index = 0) out uvec4 Color;
+
+void main()
+{
+	Color = uvec4(vertIn.col.x, vertIn.col.y, vertIn.col.z, vertIn.col.w) + uvec4(30, 100, 200, 0);
+}
+
+)EOSHADER";
   std::string mspixel = R"EOSHADER(
 #version 420 core
 
@@ -125,9 +162,9 @@ void main()
     // all other APIs
     DefaultA2V VBData[] = {
         // this triangle occludes in depth
-        {Vec3f(-0.5f, 0.5f, 0.0f), Vec4f(0.0f, 0.0f, 1.0f, 1.0f), Vec2f(0.0f, 0.0f)},
-        {Vec3f(-0.5f, 0.0f, 0.0f), Vec4f(0.0f, 0.0f, 1.0f, 1.0f), Vec2f(0.0f, 1.0f)},
-        {Vec3f(0.0f, 0.0f, 0.0f), Vec4f(0.0f, 0.0f, 1.0f, 1.0f), Vec2f(1.0f, 0.0f)},
+        {Vec3f(-0.5f, 0.5f, 0.0f), Vec4f(0.0f, 0.0f, 2.0f, 2.0f), Vec2f(0.0f, 0.0f)},
+        {Vec3f(-0.5f, 0.0f, 0.0f), Vec4f(0.0f, 0.0f, 2.0f, 2.0f), Vec2f(0.0f, 1.0f)},
+        {Vec3f(0.0f, 0.0f, 0.0f), Vec4f(0.0f, 0.0f, 2.0f, 2.0f), Vec2f(1.0f, 0.0f)},
 
         // this triangle occludes in stencil
         {Vec3f(-0.5f, 0.0f, 0.9f), Vec4f(1.0f, 0.0f, 0.0f, 1.0f), Vec2f(0.0f, 1.0f)},
@@ -235,10 +272,30 @@ void main()
         {Vec3f(0.8f, -0.3f, 0.7f), Vec4f(0.0f, 1.0f, 0.0f, 1.0f), Vec2f(1.0f, 0.0f)},
     };
 
+    struct UintDefaultA2V
+    {
+      Vec3f pos;
+      Vec4u col;
+      Vec2f uv;
+    };
+
+    UintDefaultA2V uintVBData[] = {
+        // 1000 instances of 1 triangle
+        {Vec3f(-0.8f, 0.8f, 0.33f), Vec4u(0x40000000, 20, 30, 1), Vec2f(1.0f, 0.0f)},
+        {Vec3f(-0.7f, 0.6f, 0.33f), Vec4u(0x40000000, 20, 30, 1), Vec2f(0.0f, 1.0f)},
+        {Vec3f(-0.6f, 0.8f, 0.33f), Vec4u(0x40000000, 20, 30, 1), Vec2f(0.0f, 0.0f)},
+        // 1000 instances of 1 triangle
+        {Vec3f(-0.8f, 0.8f, 0.73f), Vec4u(100, 110, 120, 1), Vec2f(1.0f, 0.0f)},
+        {Vec3f(-0.7f, 0.6f, 0.73f), Vec4u(100, 110, 120, 1), Vec2f(0.0f, 1.0f)},
+        {Vec3f(-0.6f, 0.8f, 0.73f), Vec4u(100, 110, 120, 1), Vec2f(0.0f, 0.0f)},
+    };
+
     // negate y if we're using negative viewport height
     if(KHR_maintenance1)
     {
       for(DefaultA2V &v : VBData)
+        v.pos.y = -v.pos.y;
+      for(UintDefaultA2V &v : uintVBData)
         v.pos.y = -v.pos.y;
     }
 
@@ -248,6 +305,14 @@ void main()
                        VmaAllocationCreateInfo({0, VMA_MEMORY_USAGE_CPU_TO_GPU}));
 
     vb.upload(VBData);
+
+    AllocatedBuffer uintvb(
+        this,
+        vkh::BufferCreateInfo(sizeof(uintVBData),
+                              VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT),
+        VmaAllocationCreateInfo({0, VMA_MEMORY_USAGE_CPU_TO_GPU}));
+
+    uintvb.upload(uintVBData);
 
     VkFormat depthStencilFormat = VK_FORMAT_UNDEFINED;
     {
@@ -266,6 +331,36 @@ void main()
       TEST_ASSERT(depthStencilFormat != VK_FORMAT_UNDEFINED,
                   "Couldn't find depth/stencil attachment image format");
     }
+
+    // create uint render target image
+    VkFormat uintRenderFormat = VK_FORMAT_R32G32B32A32_UINT;
+    // VkFormat uintRenderFormat = VK_FORMAT_R16G16B16A16_UINT;
+    // VkFormat uintRenderFormat = VK_FORMAT_R8G8B8A8_UINT;
+    AllocatedImage uintimg(
+        this,
+        vkh::ImageCreateInfo(mainWindow->scissor.extent.width, mainWindow->scissor.extent.height, 0,
+                             uintRenderFormat, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT),
+        VmaAllocationCreateInfo({0, VMA_MEMORY_USAGE_GPU_ONLY}));
+    setName(uintimg.image, "uintimg");
+
+    VkImageView uintView = createImageView(
+        vkh::ImageViewCreateInfo(uintimg.image, VK_IMAGE_VIEW_TYPE_2D, uintRenderFormat));
+
+    // create renderpass using the uint image
+    vkh::RenderPassCreator uintRenderPassCreateInfo;
+
+    uintRenderPassCreateInfo.attachments.push_back(vkh::AttachmentDescription(
+        uintRenderFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL,
+        VK_ATTACHMENT_LOAD_OP_CLEAR, VK_ATTACHMENT_STORE_OP_STORE));
+    uintRenderPassCreateInfo.attachments.push_back(vkh::AttachmentDescription(
+        depthStencilFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL,
+        VK_ATTACHMENT_LOAD_OP_CLEAR, VK_ATTACHMENT_STORE_OP_DONT_CARE, VK_SAMPLE_COUNT_1_BIT,
+        VK_ATTACHMENT_LOAD_OP_CLEAR, VK_ATTACHMENT_STORE_OP_DONT_CARE));
+
+    uintRenderPassCreateInfo.addSubpass({VkAttachmentReference({0, VK_IMAGE_LAYOUT_GENERAL})}, 1,
+                                        VK_IMAGE_LAYOUT_GENERAL);
+
+    VkRenderPass uintRenderPass = createRenderPass(uintRenderPassCreateInfo);
 
     // create depth-stencil image
     AllocatedImage depthimg(
@@ -298,10 +393,16 @@ void main()
     // create framebuffers using swapchain images and DS image
     std::vector<VkFramebuffer> fbs;
     fbs.resize(mainWindow->GetCount());
+    std::vector<VkFramebuffer> uintFbs;
+    uintFbs.resize(mainWindow->GetCount());
 
     for(size_t i = 0; i < mainWindow->GetCount(); i++)
+    {
       fbs[i] = createFramebuffer(vkh::FramebufferCreateInfo(
           renderPass, {mainWindow->GetView(i), dsvview}, mainWindow->scissor.extent));
+      uintFbs[i] = createFramebuffer(vkh::FramebufferCreateInfo(uintRenderPass, {uintView, dsvview},
+                                                                mainWindow->scissor.extent));
+    }
 
     // create PSO
     vkh::GraphicsPipelineCreateInfo pipeCreateInfo;
@@ -320,6 +421,11 @@ void main()
         CompileShaderModule(common + vertex, ShaderLang::glsl, ShaderStage::vert, "main");
     VkPipelineShaderStageCreateInfo fragmentShader =
         CompileShaderModule(common + pixel, ShaderLang::glsl, ShaderStage::frag, "main");
+
+    VkPipelineShaderStageCreateInfo uintVertexShader =
+        CompileShaderModule(common + uintvertex, ShaderLang::glsl, ShaderStage::vert, "main");
+    VkPipelineShaderStageCreateInfo uintFragmentShader =
+        CompileShaderModule(common + uintpixel, ShaderLang::glsl, ShaderStage::frag, "main");
 
     pipeCreateInfo.stages = {vertexShader, fragmentShader};
 
@@ -383,6 +489,19 @@ void main()
       depthPipe = createGraphicsPipeline(depthPipeInfo);
       setName(depthPipe, "depthPipe");
     }
+
+    vkh::GraphicsPipelineCreateInfo uintDepthPipeInfo = pipeCreateInfo;
+    uintDepthPipeInfo.renderPass = uintRenderPass;
+    uintDepthPipeInfo.vertexInputState.vertexBindingDescriptions = {
+        vkh::vertexBind(0, UintDefaultA2V)};
+    uintDepthPipeInfo.vertexInputState.vertexAttributeDescriptions = {
+        vkh::vertexAttr(0, 0, UintDefaultA2V, pos),
+        vkh::vertexAttr(1, 0, UintDefaultA2V, col),
+        vkh::vertexAttr(2, 0, UintDefaultA2V, uv),
+    };
+    uintDepthPipeInfo.stages = {uintVertexShader, uintFragmentShader};
+    VkPipeline uintDepthWritePipe = createGraphicsPipeline(uintDepthPipeInfo);
+    setName(uintDepthWritePipe, "uintDepthPipe");
 
     pipeCreateInfo.depthStencilState.stencilTestEnable = VK_TRUE;
     VkPipeline stencilWritePipe = createGraphicsPipeline(pipeCreateInfo);
@@ -607,6 +726,25 @@ void main()
       vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, depthPipe);
       vkCmdSetDepthBounds(cmd, 0.15f, 1.0f);
       vkCmdDraw(cmd, 6 * 3, 1, 45, 0);
+
+      vkCmdEndRenderPass(cmd);
+
+      setMarker(cmd, "UINT: Begin RenderPass");
+      vkh::ClearValue uintColourClear;
+      uintColourClear.clear.color.uint32[0] = 0;
+      uintColourClear.clear.color.uint32[1] = 0;
+      uintColourClear.clear.color.uint32[2] = 0;
+      uintColourClear.clear.color.uint32[3] = 1;
+      vkCmdBeginRenderPass(cmd,
+                           vkh::RenderPassBeginInfo(uintRenderPass, uintFbs[mainWindow->imgIndex],
+                                                    mainWindow->scissor,
+                                                    {uintColourClear, vkh::ClearValue(1.0f, 0)}),
+                           VK_SUBPASS_CONTENTS_INLINE);
+      setMarker(cmd, "UINT Test");
+      vkh::cmdBindVertexBuffers(cmd, 0, {uintvb.buffer}, {0});
+      vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, uintDepthWritePipe);
+      vkCmdDraw(cmd, 3, 3, 0, 0);
+      vkCmdDraw(cmd, 3, 3, 3, 0);
 
       vkCmdEndRenderPass(cmd);
 

@@ -95,6 +95,18 @@ VkFormat _FormatFromObj<Vec2f>()
   return VK_FORMAT_R32G32_SFLOAT;
 }
 
+template <>
+VkFormat _FormatFromObj<Vec4i>()
+{
+  return VK_FORMAT_R32G32B32A32_SINT;
+}
+
+template <>
+VkFormat _FormatFromObj<Vec4u>()
+{
+  return VK_FORMAT_R32G32B32A32_UINT;
+}
+
 void updateDescriptorSets(VkDevice device, const std::vector<VkWriteDescriptorSet> &writes,
                           const std::vector<VkCopyDescriptorSet> &copies)
 {

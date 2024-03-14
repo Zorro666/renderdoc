@@ -71,6 +71,51 @@ float4 main(v2f vertIn) : SV_Target0
 
 )EOSHADER";
 
+  const std::string uintvertex = R"EOSHADER(
+
+struct vertin
+{
+	float3 pos : POSITION;
+	uint4 col : COLOR0;
+	float2 uv : TEXCOORD0;
+};
+
+struct v2f
+{
+	float4 pos : SV_POSITION;
+	uint4 col : COLOR0;
+	float2 uv : TEXCOORD0;
+};
+
+v2f main(vertin IN, uint vid : SV_VertexID, uint instid : SV_InstanceID)
+{
+	v2f OUT = (v2f)0;
+
+	OUT.pos = float4(IN.pos, 1.0f);
+	OUT.col = IN.col + uint4(1, 2, 3, 0) * instid;
+	OUT.uv = IN.uv;
+
+	return OUT;
+}
+
+)EOSHADER";
+
+  const std::string uintpixel = R"EOSHADER(
+
+struct v2f
+{
+	float4 pos : SV_POSITION;
+	uint4 col : COLOR0;
+	float2 uv : TEXCOORD0;
+};
+
+uint4 main(v2f vertIn) : SV_Target0
+{
+	return vertIn.col + uint4(30, 100, 200, 0);
+}
+
+)EOSHADER";
+
   std::string mspixel = R"EOSHADER(
 
 float4 main(v2f vertIn, uint primId : SV_PrimitiveID, uint sampleId : SV_SampleIndex) : SV_Target0
@@ -227,13 +272,38 @@ float4 main(v2f vertIn, uint primId : SV_PrimitiveID, uint sampleId : SV_SampleI
         {Vec3f(-0.6f, 0.8f, 0.33f), Vec4f(1.0f, 0.5f, 0.0f, 1.0f), Vec2f(0.0f, 0.0f)},
     };
 
+    struct UintDefaultA2V
+    {
+      Vec3f pos;
+      Vec4u col;
+      Vec2f uv;
+    };
+
+    UintDefaultA2V UintVBData[] = {
+        // 1000 instances of 1 triangle
+        {Vec3f(-0.7f, 0.6f, 0.33f), Vec4u(0x40000000, 20, 30, 1), Vec2f(0.0f, 1.0f)},
+        {Vec3f(-0.8f, 0.8f, 0.33f), Vec4u(0x40000000, 20, 30, 1), Vec2f(1.0f, 0.0f)},
+        {Vec3f(-0.6f, 0.8f, 0.33f), Vec4u(0x40000000, 20, 30, 1), Vec2f(0.0f, 0.0f)},
+        // 1000 instances of 1 triangle
+        {Vec3f(-0.7f, 0.6f, 0.73f), Vec4u(100, 110, 120, 1), Vec2f(0.0f, 1.0f)},
+        {Vec3f(-0.8f, 0.8f, 0.73f), Vec4u(100, 110, 120, 1), Vec2f(1.0f, 0.0f)},
+        {Vec3f(-0.6f, 0.8f, 0.73f), Vec4u(100, 110, 120, 1), Vec2f(0.0f, 0.0f)},
+    };
+
     ID3D12ResourcePtr vb = MakeBuffer().Data(VBData);
+    ID3D12ResourcePtr uintvb = MakeBuffer().Data(UintVBData);
 
     uint32_t rtvIndex = 1;    // Start at 1, backbuffer takes id 0
     uint32_t dsvIndex = 0;
 
-    const DXGI_FORMAT renderSurfaceFormat = DXGI_FORMAT_R8G8B8A8_TYPELESS;
-    const DXGI_FORMAT renderViewFormat = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+    // const DXGI_FORMAT renderSurfaceFormat = DXGI_FORMAT_R8G8B8A8_TYPELESS;
+    // const DXGI_FORMAT renderViewFormat = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+    // const DXGI_FORMAT renderSurfaceFormat = DXGI_FORMAT_R32G32B32A32_UINT;
+    // const DXGI_FORMAT renderViewFormat = DXGI_FORMAT_R32G32B32A32_UINT;
+    // const DXGI_FORMAT renderSurfaceFormat = DXGI_FORMAT_R16G16B16A16_UINT;
+    // const DXGI_FORMAT renderViewFormat = DXGI_FORMAT_R16G16B16A16_UINT;
+    const DXGI_FORMAT renderSurfaceFormat = DXGI_FORMAT_R8G8B8A8_UINT;
+    const DXGI_FORMAT renderViewFormat = DXGI_FORMAT_R8G8B8A8_UINT;
     const DXGI_FORMAT depthFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
     const DXGI_FORMAT depth16Format = DXGI_FORMAT_D16_UNORM;
 
@@ -275,6 +345,7 @@ float4 main(v2f vertIn, uint primId : SV_PrimitiveID, uint sampleId : SV_SampleI
       ID3D12PipelineStatePtr cullFrontPipe;
       ID3D12PipelineStatePtr depthBoundsPipe;
       ID3D12PipelineStatePtr whitePipe;
+      ID3D12PipelineStatePtr uintPipe;
       ID3D12PipelineStatePtr msaaPipe;
       ID3D12PipelineStatePtr depth16Pipe;
     };
@@ -403,16 +474,27 @@ float4 main(v2f vertIn, uint primId : SV_PrimitiveID, uint sampleId : SV_SampleI
 
       ID3DBlobPtr vsBlob = Compile(common + vertex, "main", ("vs" + profileSuffix[i]).c_str());
       ID3DBlobPtr psBlob = Compile(common + pixel, "main", ("ps" + profileSuffix[i]).c_str());
+      ID3DBlobPtr uintvsBlob = Compile(uintvertex, "main", ("vs" + profileSuffix[i]).c_str());
+      ID3DBlobPtr uintpsBlob = Compile(uintpixel, "main", ("ps" + profileSuffix[i]).c_str());
       ID3DBlobPtr psMsaaBlob = Compile(common + mspixel, "main", ("ps" + profileSuffix[i]).c_str());
 
       pass.rootSig =
           MakeSig({}, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT, 1, &staticSamp);
       // TODO: Different root sig setup for SM6.6
 
+      static const std::vector<D3D12_INPUT_ELEMENT_DESC> uintInputLayout = {
+          {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,
+           D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+          {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_UINT, 0, 12,
+           D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+          {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 28,
+           D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+      };
+
       D3D12PSOCreator baselinePSO = MakePSO()
                                         .RootSig(pass.rootSig)
                                         .InputLayout()
-                                        .RTVs({DXGI_FORMAT_R8G8B8A8_UNORM_SRGB})
+                                        .RTVs({renderViewFormat})
                                         .DSV(depthFormat)
                                         .VS(vsBlob)
                                         .PS(psBlob);
@@ -476,6 +558,9 @@ float4 main(v2f vertIn, uint primId : SV_PrimitiveID, uint sampleId : SV_SampleI
 
       depthState.StencilEnable = FALSE;
       pass.backgroundPipe = baselinePSO;
+
+      D3D12PSOCreator jakePSO = baselinePSO;
+      pass.uintPipe = jakePSO.VS(uintvsBlob).PS(uintpsBlob).InputLayout(uintInputLayout);
 
       depthState.StencilEnable = FALSE;
       pass.depth16Pipe = baselinePSO.DSV(DXGI_FORMAT_D16_UNORM);
@@ -617,11 +702,15 @@ float4 main(v2f vertIn, uint primId : SV_PrimitiveID, uint sampleId : SV_SampleI
           cmd->DrawInstanced(3, 1, 72, 0);
         popMarker(cmd);
         setMarker(cmd, "1000 Instances");
-        cmd->DrawInstanced(3, 1000, 75, 0);
+        IASetVertexBuffer(cmd, uintvb, sizeof(UintDefaultA2V), 0);
+        cmd->SetPipelineState(pass.uintPipe);
+        cmd->DrawInstanced(3, 1000, 0, 0);
+        cmd->DrawInstanced(3, 1000, 3, 0);
         popMarker(cmd);
 
         // Add a marker so we can easily locate this draw
         setMarker(cmd, "Test Begin");
+        IASetVertexBuffer(cmd, vb, sizeof(DefaultA2V), 0);
 
         cmd->SetPipelineState(pass.mainTestPipe);
         cmd->DrawInstanced(24, 1, 9, 0);
@@ -779,7 +868,7 @@ float4 main(v2f vertIn, uint primId : SV_PrimitiveID, uint sampleId : SV_SampleI
         ResourceBarrier(cmd, passes[i].mainRT, D3D12_RESOURCE_STATE_COMMON,
                         D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 
-        blitToSwap(cmd, passes[i].mainRT, bb, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB);
+        // blitToSwap(cmd, passes[i].mainRT, bb, renderViewFormat);
 
         ResourceBarrier(cmd, passes[i].mainRT, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
                         D3D12_RESOURCE_STATE_COMMON);
