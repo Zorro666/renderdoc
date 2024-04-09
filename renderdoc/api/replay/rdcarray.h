@@ -161,8 +161,18 @@ public:
 
   /////////////////////////////////////////////////////////////////
   // simple accessors
-  T &operator[](size_t i) { return elems[i]; }
-  const T &operator[](size_t i) const { return elems[i]; }
+  T &operator[](size_t i)
+  {
+    if(i >= usedCount)
+      return elems[0];
+    return elems[i];
+  }
+  const T &operator[](size_t i) const
+  {
+    if(i >= usedCount)
+      return elems[0];
+    return elems[i];
+  }
   bool operator==(const rdcarray<T> &o) const
   {
     return usedCount == o.usedCount && ItemHelper<T>::compRange(elems, o.elems, usedCount) == 0;
