@@ -292,9 +292,14 @@ struct LocalMapping
       return false;
 
     // the common prefix of indexes is identical
+    // the indexes are in reverse order (they are used back to front)
     for(size_t i = 0; i < indexes.size(); i++)
-      if(indexes[i] != o.indexes[i])
+    {
+      size_t iReversed = indexes.size() - i - 1;
+      size_t oReversed = o.indexes.size() - i - 1;
+      if(indexes[iReversed] != o.indexes[oReversed])
         return false;
+    }
 
     // if all those conditions are true, we either map to the same index (indexes size is the same -
     // likely case) or else we cover a whole sub-tree where the other only covers a leaf (other has
