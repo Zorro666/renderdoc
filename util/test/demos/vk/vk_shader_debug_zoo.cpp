@@ -1817,15 +1817,17 @@ void main()
   std::string extinstimport =
       R"EOSHADER(
     %glsl450 = OpExtInstImport "GLSL.std.450"
+    %debuginfo100 = OpExtInstImport "NonSemantic.Shader.DebugInfo.100"
 )EOSHADER";
   std::string executionmodes =
       R"EOSHADER(
                OpExecutionMode %main OriginUpperLeft
 )EOSHADER";
-  std::string spv_debug =
+  std::string spv_debug_strings =
       R"EOSHADER(
    %filename = OpString "file.foo"
 )EOSHADER";
+  std::string spv_debug_names;
   std::string decorations = R"EOSHADER(
                OpDecorate %flatData Flat
                OpDecorate %flatData Location 1
@@ -1909,6 +1911,7 @@ void main()
 %ptr_Private_float4x4 = OpTypePointer Private %float4x4
 
 %ptr_Function_float = OpTypePointer Function %float
+%ptr_Function_float3 = OpTypePointer Function %float3
 
 %ptr_Uniform_float = OpTypePointer Uniform %float
 %ptr_Uniform_float2 = OpTypePointer Uniform %float2
@@ -1953,6 +1956,7 @@ void main()
       %v2f_negoneVal_idx = OpConstant %int 5
 
 )EOSHADER";
+  std::string nonSemanticInstrs;
   std::string functions = R"EOSHADER(
 
        %doubler = OpFunction %float None %doublerfunc
@@ -2863,7 +2867,7 @@ void main()
 )EOTEST",
     });
 
-    spv_debug +=
+    spv_debug_names +=
         "OpName %C14FA880_4F83_4982_BEAD_CE9103446C76 \"C14FA880_4F83_4982_BEAD_CE9103446C76\"\n";
 
     // test OpPhi
@@ -3040,6 +3044,68 @@ OpBranch %_bottomlabel
         });
       }
     }
+    // OpDeugValue Tests
+    spv_debug_strings +=
+        R"EOSHADER(
+%str_entrypoint = OpString "computeMain"
+     %str_float = OpString "float"
+      %str_Test = OpString "Test"
+         %str_t = OpString "t"
+   %str_memberA = OpString "memberA"
+   %str_memberB = OpString "memberB"
+)EOSHADER";
+
+    spv_debug_names +=
+        R"EOSHADER(
+OpName %t "t"
+OpName %Test "Test"
+OpMemberName %Test 0 "memberA"
+OpMemberName %Test 1 "memberB"
+)EOSHADER";
+
+    decorations += R"EOSHADER(
+OpMemberDecorate %Test 0 Offset 0
+OpMemberDecorate %Test 1 Offset 4
+)EOSHADER";
+
+    typesConstants += R"EOSHADER(
+             %Test = OpTypeStruct %float %float3
+%ptr_Function_Test = OpTypePointer Function %Test
+)EOSHADER";
+
+    nonSemanticInstrs += R"EOSHADER(
+         %dbg_src = OpExtInst %void %debuginfo100 DebugSource %filename %filename
+   %dbg_type_func = OpExtInst %void %debuginfo100 DebugTypeFunction %uint_0 %void
+          %dbg_cu = OpExtInst %void %debuginfo100 DebugCompilationUnit %uint_100 %uint_5 %dbg_src %uint_2
+        %dbg_func = OpExtInst %void %debuginfo100 DebugFunction %str_entrypoint %dbg_type_func %dbg_src %uint_100 %uint_5 %dbg_cu %str_entrypoint %uint_0 %uint_61 
+  %dbg_type_basic = OpExtInst %void %debuginfo100 DebugTypeBasic %str_float %uint_32 %uint_3 %uint_131072
+%dbg_type_memberA = OpExtInst %void %debuginfo100 DebugTypeMember %str_memberA %dbg_type_basic %dbg_src %uint_100 %uint_5 %uint_0 %uint_32 %uint_0
+ %dbg_type_vector = OpExtInst %void %debuginfo100 DebugTypeVector %dbg_type_basic %uint_3
+%dbg_type_memberB = OpExtInst %void %debuginfo100 DebugTypeMember %str_memberB %dbg_type_vector %dbg_src %uint_100 %uint_5 %uint_32 %uint_96 %uint_0
+   %dbg_type_comp = OpExtInst %void %debuginfo100 DebugTypeComposite %str_Test %uint_1 %dbg_src %uint_100 %uint_5 %dbg_cu %str_Test %uint_128 %uint_131072 %dbg_type_memberA %dbg_type_memberB
+   %dbg_typelocal = OpExtInst %void %debuginfo100 DebugLocalVariable %str_t %dbg_type_comp %dbg_src %uint_100 %uint_5 %dbg_func %uint_0
+         %dbg_exp = OpExtInst %void %debuginfo100 DebugExpression
+)EOSHADER";
+
+    append_tests({
+        R"EOTEST(
+   %dbg_func_def = OpExtInst %void %debuginfo100 DebugFunctionDefinition %dbg_func %computeMain
+      %dbg_scope = OpExtInst %void %debuginfo100 DebugScope %dbg_func
+ %ptr_t_member_B = OpAccessChain %ptr_Function_float3 %t %int_1
+     %_dbg_value = OpExtInst %void %debuginfo100 DebugValue %dbg_typelocal %float3_123 %dbg_exp %int_1
+                   OpStore %ptr_t_member_B %float3_123 
+%ptr_t_memberB_x = OpAccessChain %ptr_Function_float %ptr_t_member_B %int_0
+%ptr_t_memberB_y = OpAccessChain %ptr_Function_float %ptr_t_member_B %int_1
+%ptr_t_memberB_z = OpAccessChain %ptr_Function_float %ptr_t_member_B %int_2
+     %_dbg_value = OpExtInst %void %debuginfo100 DebugValue %dbg_typelocal %float_4_0 %dbg_exp %int_1 %int_0
+                   OpStore %ptr_t_memberB_x %float_4_0
+     %_dbg_value = OpExtInst %void %debuginfo100 DebugValue %dbg_typelocal %float_3_0 %dbg_exp %int_1 %int_1
+                   OpStore %ptr_t_memberB_y %float_3_0
+     %_dbg_value = OpExtInst %void %debuginfo100 DebugValue %dbg_typelocal %float_2_0 %dbg_exp %int_1 %int_2
+                   OpStore %ptr_t_memberB_z %float_2_0
+    %_out_float3 = OpLoad %float3 %ptr_t_member_B Aligned 16
+)EOTEST",
+    });
   }
 
   std::string make_pixel_asm()
@@ -3053,7 +3119,7 @@ OpBranch %_bottomlabel
     std::set<std::string> null_constants;
     std::set<float> float_constants = {0.0f, 1.0f, 2.0f, 3.0f, 4.0f};
     std::set<int32_t> int_constants = {7};
-    std::set<uint32_t> uint_constants;
+    std::set<uint32_t> uint_constants = {3, 5, 32, 61, 96, 100, 128, 131072};
     std::set<int64_t> i64_constants;
     std::set<uint64_t> u64_constants;
     std::set<uint8_t> u8_constants;
@@ -3589,7 +3655,8 @@ OpMemberDecorate %bda_data_struct 1 Offset 16       ; float f32[4..7]
 
     std::string cbuffer =
         "%cbuffer_struct = OpTypeStruct %float4 %float4 %float4 %float4 %float4 %float4 %float4 "
-        "                               %float4 %float4 %float4 %float4 %float4 %uint %uint %uint "
+        "                               %float4 %float4 %float4 %float4 %float4 %uint %uint "
+        "%uint "
         "                               %uint %uint2";
 
     if(features.shaderFloat64)
@@ -3628,6 +3695,10 @@ OpMemberDecorate %cbuffer_struct 17 Offset 216    ; double doublePackSource
     typesConstants +=
         "%ptr_Uniform_cbuffer_struct = OpTypePointer Uniform %cbuffer_struct\n"
         "%cbuffer = OpVariable %ptr_Uniform_cbuffer_struct Uniform\n";
+
+    spv_extensions += R"EOSHADER(
+               OpExtension "SPV_KHR_non_semantic_info"
+)EOSHADER";
 
     // now generate all the constants
 
@@ -3742,10 +3813,12 @@ OpMemberDecorate %cbuffer_struct 17 Offset 216    ; double doublePackSource
                       R"EOSHADER(
                OpEntryPoint Fragment %main "main" %flatData %linearData %Color %gl_FragCoord
 )EOSHADER" + executionmodes +
-                      spv_debug + decorations + typesConstants + functions +
+                      spv_debug_strings + spv_debug_names + decorations + typesConstants +
+                      nonSemanticInstrs + functions +
                       R"EOSHADER(
        %main = OpFunction %void None %mainfunc
  %main_begin = OpLabel
+          %t = OpVariable %ptr_Function_Test Function
    %test_ptr = OpAccessChain %ptr_Input_uint %flatData %flatv2f_test_idx
        %test = OpLoad %uint %test_ptr
 
@@ -3985,14 +4058,16 @@ OpMemberDecorate %cbuffer_struct 17 Offset 216    ; double doublePackSource
             "available";
       else if(!descIndexingFeatures.shaderSampledImageArrayNonUniformIndexing)
         Avail =
-            "Descriptor indexing feature 'shaderSampledImageArrayNonUniformIndexing' not available";
+            "Descriptor indexing feature 'shaderSampledImageArrayNonUniformIndexing' not "
+            "available";
       else if(!descIndexingFeatures.shaderStorageBufferArrayNonUniformIndexing)
         Avail =
             "Descriptor indexing feature 'shaderStorageBufferArrayNonUniformIndexing' not "
             "available";
       else if(!descIndexingFeatures.shaderStorageImageArrayNonUniformIndexing)
         Avail =
-            "Descriptor indexing feature 'shaderStorageImageArrayNonUniformIndexing' not available";
+            "Descriptor indexing feature 'shaderStorageImageArrayNonUniformIndexing' not "
+            "available";
       else if(!descIndexingFeatures.shaderUniformTexelBufferArrayNonUniformIndexing)
         Avail =
             "Descriptor indexing feature 'shaderUniformTexelBufferArrayNonUniformIndexing' not "
