@@ -1560,6 +1560,7 @@ void Debugger::FillDebugSourceVars(rdcarray<InstructionSourceInfo> &instInfo)
     // track which mappings we've processed, so if the same variable has mappings in multiple scopes
     // we only pick the innermost.
     rdcarray<LocalMapping> processed;
+    rdcarray<Id> sourceVars;
 
     // capture the scopes upwards (from child to parent)
     rdcarray<const ScopeData *> scopes;
@@ -1626,103 +1627,256 @@ void Debugger::FillDebugSourceVars(rdcarray<InstructionSourceInfo> &instInfo)
         if(supercede)
           continue;
 
-        const LocalData &l = m_DebugInfo.locals[mapping.sourceVar];
+        processed.push_back(mapping);
+        Id sourceVar = mapping.sourceVar;
+        if(!sourceVars.contains(mapping.sourceVar))
+          sourceVars.push_back(mapping.sourceVar);
+      }
+    }
+
+    struct Node
+    {
+      rdcarray<Node> children;
+      Id debugVar;
+      rdcstr name;
+      rdcstr regSuffix;
+      VarType type = VarType::Unknown;
+      uint32_t rows = 0;
+      uint32_t columns = 0;
+      uint32_t debugVarComponent = 0;
+      uint32_t offset = 0;
+      bool emitSourceVar = false;
+    };
+
+    ::std::map<Id, Node> roots;
+
+    for(size_t sv = 0; sv < sourceVars.size(); ++sv)
+    {
+      Id sourceVarId = sourceVars[sv];
+      const LocalData &l = m_DebugInfo.locals[sourceVarId];
+
+      // Convert processed mappings into a usage map
+      for(size_t m = 0; m < processed.size(); ++m)
+      {
+        const LocalMapping &mapping = processed[m];
+        if(mapping.sourceVar != sourceVarId)
+          continue;
+
+        const TypeData *typeWalk = l.type;
+        Node *usage = &roots[sourceVarId];
+        if(usage->name.isEmpty())
+        {
+          usage->name = l.name;
+          usage->rows = 1U;
+          usage->columns = 1U;
+        }
 
         // if it doesn't have indexes this is simple, set up a 1:1 map
         if(mapping.indexes.isEmpty())
         {
-          SourceVariableMapping sourceVar;
-
-          const TypeData *typeWalk = l.type;
-
-          sourceVar.name = l.name;
-          sourceVar.offset = 0;
-          sourceVar.rows = 1U;
-          sourceVar.columns = 1U;
-
+          uint32_t rows = 1;
+          uint32_t columns = 1;
           // skip past any pointer types to get the 'real' type that we'll see
           while(typeWalk && typeWalk->baseType != Id() && typeWalk->type == VarType::GPUPointer)
             typeWalk = &m_DebugInfo.types[typeWalk->baseType];
 
+          const uint32_t arrayDimension = typeWalk->arrayDimensions.size();
+          if(arrayDimension > 0)
+          {
+            // walk down until we get to a scalar type, if we get there. This means arrays of
+            // basic types will get the right type
+            while(typeWalk && typeWalk->baseType != Id() && typeWalk->type == VarType::Unknown)
+              typeWalk = &m_DebugInfo.types[typeWalk->baseType];
+
+            usage->type = typeWalk->type;
+          }
+          else if(!typeWalk->structMembers.empty())
+          {
+            usage->type = typeWalk->type;
+          }
           if(typeWalk->matSize != 0)
           {
             const TypeData &vec = m_DebugInfo.types[typeWalk->baseType];
             const TypeData &scalar = m_DebugInfo.types[vec.baseType];
 
-            sourceVar.type = scalar.type;
+            usage->type = scalar.type;
 
             if(typeWalk->colMajorMat)
             {
-              sourceVar.rows = RDCMAX(1U, vec.vecSize);
-              sourceVar.columns = RDCMAX(1U, typeWalk->matSize);
+              columns = RDCMAX(1U, vec.vecSize);
+              rows = RDCMAX(1U, typeWalk->matSize);
             }
             else
             {
-              sourceVar.rows = RDCMAX(1U, typeWalk->matSize);
-              sourceVar.columns = RDCMAX(1U, vec.vecSize);
+              rows = RDCMAX(1U, vec.vecSize);
+              columns = RDCMAX(1U, typeWalk->matSize);
             }
           }
           else if(typeWalk->vecSize != 0)
           {
             const TypeData &scalar = m_DebugInfo.types[typeWalk->baseType];
 
-            sourceVar.type = scalar.type;
-            sourceVar.columns = RDCMAX(1U, typeWalk->vecSize);
-          }
-          else
-          {
-            // walk down until we get to a scalar type, if we get there. This means arrays of basic
-            // types will get the right type
-            while(typeWalk && typeWalk->baseType != Id() && typeWalk->type == VarType::Unknown)
-              typeWalk = &m_DebugInfo.types[typeWalk->baseType];
-
-            sourceVar.type = typeWalk->type;
-
-            // anything else we treat as a struct
-            if(sourceVar.type == VarType::Unknown)
-              sourceVar.type = VarType::Struct;
+            usage->type = scalar.type;
+            columns = RDCMAX(1U, typeWalk->vecSize);
           }
 
-          for(uint32_t x = 0; x < sourceVar.rows * sourceVar.columns; x++)
-            sourceVar.variables.push_back(DebugVariableReference(DebugVariableType::Variable,
-                                                                 GetRawName(mapping.debugVar), x));
-
-          i.sourceVars.push_back(sourceVar);
+          usage->debugVar = mapping.debugVar;
+          // Remove any child mappings : this mapping covers everything
+          usage->children.clear();
+          usage->emitSourceVar = true;
+          usage->rows = rows;
+          usage->columns = columns;
         }
         else
         {
-          SourceVariableMapping sourceVar;
-
           rdcarray<uint32_t> indexes = mapping.indexes;
 
-          const TypeData *typeWalk = l.type;
-
-          sourceVar.name = l.name;
-          sourceVar.offset = 0;
-          sourceVar.rows = 1U;
-          sourceVar.columns = 1U;
-
+          // walk any aggregate types
           while(!indexes.empty())
           {
-            if(typeWalk->arrayDimensions.size() > 0)
+            uint32_t idx = ~0U;
+            const TypeData *childType = NULL;
+            const uint32_t arrayDimension = typeWalk->arrayDimensions.size();
+            if(arrayDimension > 0)
             {
+              rdcarray<uint32_t> dims = typeWalk->arrayDimensions;
               uint32_t numIdxs = (uint32_t)indexes.size();
-              for(size_t a = 0; a < RDCMIN((uint32_t)typeWalk->arrayDimensions.size(), numIdxs); a++)
+              childType = &m_DebugInfo.types[typeWalk->baseType];
+              uint32_t childRows = 1U;
+              uint32_t childColumns = 1U;
+              VarType elementType = childType->type;
+              if(childType->matSize != 0)
               {
-                sourceVar.name += StringFormat::Fmt("[%u]", indexes.back());
-                indexes.pop_back();
-              }
+                const TypeData &vec = m_DebugInfo.types[childType->baseType];
+                const TypeData &scalar = m_DebugInfo.types[vec.baseType];
 
-              typeWalk = &m_DebugInfo.types[typeWalk->baseType];
+                elementType = scalar.type;
+                if(childType->colMajorMat)
+                {
+                  childColumns = RDCMAX(1U, vec.vecSize);
+                  childRows = RDCMAX(1U, childType->matSize);
+                }
+                else
+                {
+                  childRows = RDCMAX(1U, vec.vecSize);
+                  childColumns = RDCMAX(1U, childType->matSize);
+                }
+              }
+              else if(childType->vecSize != 0)
+              {
+                const TypeData &scalar = m_DebugInfo.types[childType->baseType];
+                uint32_t vecColumns = RDCMAX(1U, childType->vecSize);
+
+                elementType = scalar.type;
+
+                childRows = 1U;
+                childColumns = vecColumns;
+              }
+              const uint32_t countDims = RDCMIN(arrayDimension, numIdxs);
+              // handle N dimensional arrays
+              for(uint32_t d = 0; d < countDims; ++d)
+              {
+                idx = indexes.back();
+                indexes.pop_back();
+                uint32_t rows = dims[d];
+                usage->rows = rows;
+                usage->columns = 1U;
+                // Expand the node if required
+                if(usage->children.isEmpty())
+                {
+                  usage->children.resize(rows);
+                  for(uint32_t x = 0; x < rows; x++)
+                  {
+                    usage->children[x].debugVar = usage->debugVar;
+                    rdcstr suffix = StringFormat::Fmt("[%u]", x);
+                    usage->children[x].regSuffix = usage->regSuffix + suffix;
+                    usage->children[x].name = usage->name + suffix;
+                    usage->children[x].type = elementType;
+                    usage->children[x].rows = childRows;
+                    usage->children[x].columns = childColumns;
+                    usage->children[x].offset = x;
+                  }
+                }
+                // if the whole node was displayed : display the sub-elements
+                if(usage->emitSourceVar)
+                {
+                  for(uint32_t x = 0; x < rows; x++)
+                    usage->children[x].emitSourceVar = true;
+                  usage->emitSourceVar = false;
+                }
+                usage = &usage->children[idx];
+                usage->type = childType->type;
+                typeWalk = childType;
+              }
             }
             else if(!typeWalk->structMembers.empty())
             {
-              uint32_t idx = indexes.back();
+              idx = indexes.back();
               indexes.pop_back();
+              childType = &m_DebugInfo.types[typeWalk->structMembers[idx].second];
+              uint32_t rows = typeWalk->structMembers.size();
+              usage->rows = rows;
+              usage->columns = 1U;
+              // Expand the node if required
+              if(usage->children.isEmpty())
+              {
+                usage->children.resize(rows);
+                for(uint32_t x = 0; x < rows; x++)
+                {
+                  rdcstr suffix = StringFormat::Fmt(".%s", typeWalk->structMembers[x].first.c_str());
+                  usage->children[x].debugVar = usage->debugVar;
+                  usage->children[x].regSuffix = usage->regSuffix + suffix;
+                  usage->children[x].name = usage->name + suffix;
+                  usage->children[x].offset = x;
+                  uint32_t memberRows = 1U;
+                  uint32_t memberColumns = 1U;
+                  const TypeData *memberType = &m_DebugInfo.types[typeWalk->structMembers[x].second];
+                  VarType elementType = memberType->type;
+                  if(memberType->matSize != 0)
+                  {
+                    const TypeData &vec = m_DebugInfo.types[memberType->baseType];
+                    const TypeData &scalar = m_DebugInfo.types[vec.baseType];
 
-              sourceVar.name += StringFormat::Fmt(".%s", typeWalk->structMembers[idx].first.c_str());
+                    elementType = scalar.type;
+                    if(memberType->colMajorMat)
+                    {
+                      memberColumns = RDCMAX(1U, vec.vecSize);
+                      memberRows = RDCMAX(1U, memberType->matSize);
+                    }
+                    else
+                    {
+                      memberRows = RDCMAX(1U, vec.vecSize);
+                      memberColumns = RDCMAX(1U, memberType->matSize);
+                    }
+                  }
+                  else if(memberType->vecSize != 0)
+                  {
+                    const TypeData &scalar = m_DebugInfo.types[memberType->baseType];
+                    uint32_t vecColumns = RDCMAX(1U, memberType->vecSize);
 
-              typeWalk = &m_DebugInfo.types[typeWalk->structMembers[idx].second];
+                    elementType = scalar.type;
+
+                    memberRows = 1U;
+                    memberColumns = vecColumns;
+                  }
+                  usage->children[x].type = elementType;
+                  usage->children[x].rows = memberRows;
+                  usage->children[x].columns = memberColumns;
+                }
+              }
+              // if the whole node was displayed : display the sub-elements
+              if(usage->emitSourceVar)
+              {
+                for(uint32_t x = 0; x < rows; x++)
+                  usage->children[x].emitSourceVar = true;
+                usage->emitSourceVar = false;
+              }
+
+              RDCASSERTEQUAL(usage->children.size(), rows);
+
+              usage = &usage->children[idx];
+              usage->type = childType->type;
+              typeWalk = childType;
             }
             else
             {
@@ -1731,109 +1885,276 @@ void Debugger::FillDebugSourceVars(rdcarray<InstructionSourceInfo> &instInfo)
           }
 
           const char swizzle[] = "xyzw";
-
+          uint32_t rows = 1U;
+          uint32_t columns = 1U;
+          size_t countRemainingIndexes = indexes.size();
           if(typeWalk->matSize != 0)
           {
             const TypeData &vec = m_DebugInfo.types[typeWalk->baseType];
             const TypeData &scalar = m_DebugInfo.types[vec.baseType];
 
-            sourceVar.type = scalar.type;
+            usage->type = scalar.type;
 
             if(typeWalk->colMajorMat)
             {
-              sourceVar.rows = RDCMAX(1U, vec.vecSize);
-              sourceVar.columns = RDCMAX(1U, typeWalk->matSize);
+              columns = RDCMAX(1U, vec.vecSize);
+              rows = RDCMAX(1U, typeWalk->matSize);
             }
             else
             {
-              sourceVar.rows = RDCMAX(1U, typeWalk->matSize);
-              sourceVar.columns = RDCMAX(1U, vec.vecSize);
+              rows = RDCMAX(1U, vec.vecSize);
+              columns = RDCMAX(1U, typeWalk->matSize);
             }
+            usage->rows = rows;
+            usage->columns = columns;
 
-            // two remaining indices selects a scalar within the matrix
-            if(indexes.size() == 2)
+            if((countRemainingIndexes == 2) || (countRemainingIndexes == 1))
             {
-              uint32_t col = indexes[0];
-              uint32_t row = indexes[1];
-              RDCASSERT(col < 4 && row < 4, col, row);
-              sourceVar.name += StringFormat::Fmt(".row%u.%c", row, swizzle[RDCMIN(col, 3U)]);
-
-              sourceVar.variables.push_back(DebugVariableReference(
-                  DebugVariableType::Variable, GetRawName(mapping.debugVar), indexes[0]));
-            }
-            // one remaining index selects a column within the matrix. Since we display source vars
-            // as row-major, this means adding 4 mappings
-            else if(indexes.size() == 1)
-            {
-              uint32_t col = indexes[0];
-              rdcstr name = sourceVar.name;
-              for(uint32_t row = 0; row < sourceVar.rows; row++)
+              if(usage->children.isEmpty())
               {
-                sourceVar.name = name + StringFormat::Fmt(".row%u.%c", row, swizzle[RDCMIN(col, 3U)]);
-                sourceVar.variables.push_back(DebugVariableReference(
-                    DebugVariableType::Variable, GetRawName(mapping.debugVar), row));
+                // Matrices are stored as [row][col]
+                usage->children.resize(rows);
+                for(uint32_t r = 0; r < rows; ++r)
+                {
+                  usage->children[r].emitSourceVar = false;
+                  usage->children[r].name = usage->name + StringFormat::Fmt(".row%u", r);
+                  usage->children[r].type = scalar.type;
+                  usage->children[r].debugVar = usage->debugVar;
+                  usage->children[r].debugVarComponent = 0;
+                  usage->children[r].rows = 1U;
+                  usage->children[r].columns = columns;
+                  usage->children[r].offset = r;
+                  usage->children[r].children.resize(columns);
+                  for(uint32_t c = 0; c < columns; ++c)
+                  {
+                    usage->children[r].children[c].emitSourceVar = false;
+                    usage->children[r].children[c].name =
+                        usage->name + StringFormat::Fmt(".row%u.%c", r, swizzle[RDCMIN(c, 3U)]);
+                    usage->children[r].children[c].type = scalar.type;
+                    usage->children[r].children[c].debugVar = usage->debugVar;
+                    usage->children[r].children[c].debugVarComponent = r;
+                    usage->children[r].children[c].rows = 1U;
+                    usage->children[r].children[c].columns = 1U;
+                    usage->children[r].children[c].offset = c;
+                  }
+                }
               }
+
+              // two remaining indices selects a scalar within the matrix
+              if(countRemainingIndexes == 2)
+              {
+                uint32_t row = indexes[0];
+                RDCASSERT(row < rows, row, rows);
+                uint32_t col = indexes[1];
+                RDCASSERT(col < columns, col, columns);
+
+                usage->children[row].children[col].emitSourceVar =
+                    !usage->children[row].emitSourceVar;
+                usage->children[row].children[col].debugVar = mapping.debugVar;
+                usage->children[row].children[col].debugVarComponent = 0;
+
+                // try to recombine matrix rows to a single source var display
+                if(!usage->children[row].emitSourceVar)
+                {
+                  bool collapseVector = true;
+                  for(uint32_t c = 0; c < columns; ++c)
+                  {
+                    collapseVector = usage->children[row].children[c].emitSourceVar;
+                    if(!collapseVector)
+                      break;
+                  }
+                  if(collapseVector)
+                  {
+                    usage->children[row].emitSourceVar = true;
+                    for(uint32_t c = 0; c < columns; ++c)
+                      usage->children[row].children[c].emitSourceVar = false;
+                  }
+                }
+              }
+              else
+              {
+                uint32_t col = indexes[0];
+                RDCASSERT(col < columns, col, columns);
+                // one remaining index selects a column within the matrix.
+                // source vars are displayed as row-major, need <rows> mappings
+                for(uint32_t r = 0; r < rows; ++r)
+                {
+                  usage->children[r].children[col].emitSourceVar = !usage->children[r].emitSourceVar;
+                  usage->children[r].children[col].debugVar = mapping.debugVar;
+                  usage->children[r].children[col].debugVarComponent = r;
+                }
+              }
+              // try to recombine matrix rows to a single source var display
+              for(uint32_t r = 0; r < rows; ++r)
+              {
+                if(!usage->children[r].emitSourceVar)
+                {
+                  bool collapseVector = true;
+                  for(uint32_t c = 0; c < columns; ++c)
+                  {
+                    collapseVector = usage->children[r].children[c].emitSourceVar;
+                    if(!collapseVector)
+                      break;
+                  }
+                  if(collapseVector)
+                  {
+                    usage->children[r].emitSourceVar = true;
+                    for(uint32_t c = 0; c < columns; ++c)
+                      usage->children[r].children[c].emitSourceVar = false;
+                  }
+                }
+              }
+              usage->emitSourceVar = false;
             }
             else
             {
-              RDCASSERT(indexes.empty(), indexes.size());
-              for(uint32_t x = 0; x < sourceVar.rows * sourceVar.columns; x++)
-                sourceVar.variables.push_back(DebugVariableReference(
-                    DebugVariableType::Variable, GetRawName(mapping.debugVar), x));
+              RDCASSERTEQUAL(countRemainingIndexes, 0);
+              // Remove mappings : this mapping covers everything
+              usage->debugVar = mapping.debugVar;
+              usage->children.clear();
+              usage->emitSourceVar = true;
+              usage->regSuffix.clear();
             }
           }
           else if(typeWalk->vecSize != 0)
           {
             const TypeData &scalar = m_DebugInfo.types[typeWalk->baseType];
+            columns = RDCMAX(1U, typeWalk->vecSize);
 
-            sourceVar.type = scalar.type;
-            sourceVar.columns = RDCMAX(1U, typeWalk->vecSize);
+            usage->type = scalar.type;
+
+            usage->rows = 1U;
+            usage->columns = columns;
 
             // remaining index selects a scalar within the vector
-            if(indexes.size() == 1)
+            if(countRemainingIndexes == 1)
             {
-              RDCASSERT(indexes[0] < 4, indexes[0]);
-              sourceVar.name += StringFormat::Fmt(".%c", swizzle[RDCMIN(indexes[0], 3U)]);
-              sourceVar.variables.push_back(DebugVariableReference(
-                  DebugVariableType::Variable, GetRawName(mapping.debugVar), 0));
+              if(usage->children.isEmpty())
+              {
+                usage->children.resize(columns);
+                for(uint32_t x = 0; x < columns; ++x)
+                {
+                  usage->children[x].emitSourceVar = usage->emitSourceVar;
+                  usage->children[x].name =
+                      usage->name + StringFormat::Fmt(".%c", swizzle[RDCMIN(x, 3U)]);
+                  usage->children[x].type = scalar.type;
+                  usage->children[x].debugVar = usage->debugVar;
+                  usage->children[x].debugVarComponent = x;
+                  usage->children[x].rows = 1U;
+                  usage->children[x].columns = 1U;
+                  usage->children[x].offset = x;
+                }
+                usage->emitSourceVar = false;
+              }
+              uint32_t col = indexes[0];
+              RDCASSERT(col < columns, col, columns);
+              usage->children[col].debugVar = mapping.debugVar;
+              usage->children[col].debugVarComponent = 0;
+              usage->children[col].emitSourceVar = true;
+
+              // try to recombine vector to a single source var display
+              bool collapseVector = true;
+              for(uint32_t x = 0; x < columns; ++x)
+              {
+                collapseVector = usage->children[x].emitSourceVar;
+                if(!collapseVector)
+                  break;
+              }
+              if(collapseVector)
+              {
+                usage->emitSourceVar = true;
+                for(uint32_t x = 0; x < columns; ++x)
+                  usage->children[x].emitSourceVar = false;
+              }
             }
             else
             {
-              RDCASSERT(indexes.empty(), indexes.size());
-              for(uint32_t x = 0; x < sourceVar.rows * sourceVar.columns; x++)
-                sourceVar.variables.push_back(DebugVariableReference(
-                    DebugVariableType::Variable, GetRawName(mapping.debugVar), x));
+              RDCASSERTEQUAL(countRemainingIndexes, 0);
+              // Remove mappings : this mapping covers everything
+              usage->debugVar = mapping.debugVar;
+              usage->children.clear();
+              usage->emitSourceVar = true;
+              usage->regSuffix.clear();
             }
           }
           else
           {
-            // walk down until we get to a scalar type, if we get there. This means arrays of basic
-            // types will get the right type
+            // walk down until we get to a scalar type, if we get there. This means arrays of
+            // basic types will get the right type
             while(typeWalk && typeWalk->baseType != Id() && typeWalk->type == VarType::Unknown)
               typeWalk = &m_DebugInfo.types[typeWalk->baseType];
 
-            sourceVar.type = typeWalk->type;
-
-            // anything else we treat as a struct
-            if(sourceVar.type == VarType::Unknown)
-              sourceVar.type = VarType::Struct;
-
-            sourceVar.variables.push_back(DebugVariableReference(DebugVariableType::Variable,
-                                                                 GetRawName(mapping.debugVar), 0));
+            usage->type = typeWalk->type;
+            usage->debugVar = mapping.debugVar;
+            usage->debugVarComponent = 0;
+            usage->rows = 1U;
+            usage->columns = 1U;
+            usage->emitSourceVar = true;
+            usage->children.clear();
+            usage->regSuffix.clear();
           }
-
-          i.sourceVars.push_back(sourceVar);
         }
-
-        processed.push_back(mapping);
       }
+    }
 
-      // if we reach a function scope, don't go up any further.
-      if(scope->type == DebugScope::Function)
-        break;
+    for(size_t sv = 0; sv < sourceVars.size(); ++sv)
+    {
+      Id sourceVarId = sourceVars[sv];
+      Node *usage = &roots[sourceVarId];
+      rdcarray<const Node *> nodesToProcess;
+      rdcarray<const Node *> sourceVarNodes;
+      nodesToProcess.push_back(usage);
+      while(!nodesToProcess.isEmpty())
+      {
+        const Node *n = nodesToProcess.back();
+        nodesToProcess.pop_back();
+        if(n->emitSourceVar)
+        {
+          sourceVarNodes.push_back(n);
+        }
+        else
+        {
+          for(size_t x = 0; x < n->children.size(); ++x)
+          {
+            const Node *child = &n->children[x];
+            nodesToProcess.push_back(child);
+          }
+        }
+      }
+      for(size_t x = 0; x < sourceVarNodes.size(); ++x)
+      {
+        const Node *n = sourceVarNodes[x];
+        SourceVariableMapping sourceVar;
+        sourceVar.name = n->name;
+        sourceVar.offset = 0;
+        sourceVar.type = n->type;
+        sourceVar.signatureIndex = -1;
+        sourceVar.offset = n->offset;
+        sourceVar.variables.clear();
+        // unknown is treated as a struct
+        if(sourceVar.type == VarType::Unknown)
+          sourceVar.type = VarType::Struct;
 
-      // move to the parent scope and apply the mappings there
-      scope = scope->parent;
+        if(n->children.empty())
+        {
+          RDCASSERTNOTEQUAL(n->rows * n->columns, 0);
+          for(uint32_t c = 0; c < n->rows * n->columns; ++c)
+          {
+            sourceVar.variables.push_back(DebugVariableReference(
+                DebugVariableType::Variable, GetRawName(n->debugVar) + n->regSuffix, c));
+          }
+        }
+        else
+        {
+          RDCASSERTEQUAL(n->rows * n->columns, (uint32_t)n->children.count());
+          for(int32_t c = 0; c < n->children.count(); ++c)
+            sourceVar.variables.push_back(DebugVariableReference(
+                DebugVariableType::Variable,
+                GetRawName(n->children[c].debugVar) + n->children[c].regSuffix,
+                n->children[c].debugVarComponent));
+        }
+        i.sourceVars.push_back(sourceVar);
+      }
     }
   }
 }
