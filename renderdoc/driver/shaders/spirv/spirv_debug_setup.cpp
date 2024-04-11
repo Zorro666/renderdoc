@@ -1561,8 +1561,22 @@ void Debugger::FillDebugSourceVars(rdcarray<InstructionSourceInfo> &instInfo)
     // we only pick the innermost.
     rdcarray<LocalMapping> processed;
 
+    // capture the scopes upwards (from child to parent)
+    rdcarray<const ScopeData *> scopes;
     while(scope)
     {
+      scopes.push_back(scope);
+      // if we reach a function scope, don't go up any further.
+      if(scope->type == DebugScope::Function)
+        break;
+
+      scope = scope->parent;
+    }
+
+    // Iterate over the scopes downwards (parent->child)
+    for(size_t s = 0; s < scopes.size(); ++s)
+    {
+      scope = scopes[scopes.size() - 1 - s];
       for(size_t m = 0; m < scope->localMappings.size(); m++)
       {
         const LocalMapping &mapping = scope->localMappings[m];
@@ -1576,10 +1590,12 @@ void Debugger::FillDebugSourceVars(rdcarray<InstructionSourceInfo> &instInfo)
         // start and end points for each mapping and update the end points, but this is simple and
         // should be limited since it's only per-scope
         bool supercede = false;
+        size_t startIdx = m + 1;
+        // Iterate upwards from the current scope (child->parent)
         const ScopeData *supercedeScope = scope;
         while(supercedeScope)
         {
-          for(size_t n = m + 1; n < supercedeScope->localMappings.size(); n++)
+          for(size_t n = startIdx; n < supercedeScope->localMappings.size(); n++)
           {
             const LocalMapping &laterMapping = supercedeScope->localMappings[n];
 
@@ -1603,18 +1619,10 @@ void Debugger::FillDebugSourceVars(rdcarray<InstructionSourceInfo> &instInfo)
             break;
 
           supercedeScope = supercedeScope->parent;
+          startIdx = 0;
         }
 
-        for(size_t n = 0; n < processed.size(); n++)
-        {
-          if(processed[n].isSourceSupersetOf(mapping))
-          {
-            supercede = true;
-            break;
-          }
-        }
-
-        // don't add the current mapping if it's going to be superceded.
+        // don't add the current mapping if it's going to be superceded by something later
         if(supercede)
           continue;
 
