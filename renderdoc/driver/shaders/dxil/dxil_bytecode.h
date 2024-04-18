@@ -43,6 +43,23 @@ struct BlockOrRecord;
 
 namespace DXIL
 {
+static const unsigned kDxilTypeSystemStructTag = 0;
+static const unsigned kDxilTypeSystemFunctionTag = 1;
+static const unsigned kDxilFieldAnnotationSNormTag = 0;
+static const unsigned kDxilFieldAnnotationUNormTag = 1;
+static const unsigned kDxilFieldAnnotationMatrixTag = 2;
+static const unsigned kDxilFieldAnnotationCBufferOffsetTag = 3;
+static const unsigned kDxilFieldAnnotationSemanticStringTag = 4;
+static const unsigned kDxilFieldAnnotationInterpolationModeTag = 5;
+static const unsigned kDxilFieldAnnotationFieldNameTag = 6;
+static const unsigned kDxilFieldAnnotationCompTypeTag = 7;
+static const unsigned kDxilFieldAnnotationPreciseTag = 8;
+static const unsigned kDxilFieldAnnotationCBUsedTag = 9;
+static const unsigned kDxilFieldAnnotationResPropTag = 10;
+static const unsigned kDxilFieldAnnotationBitFieldsTag = 11;
+static const unsigned kDxilFieldAnnotationBitFieldWidthTag = 12;
+static const unsigned kDxilFieldAnnotationVectorSizeTag = 13;
+
 struct BumpAllocator
 {
   BumpAllocator(size_t totalSize);
