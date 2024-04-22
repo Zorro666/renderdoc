@@ -190,6 +190,7 @@
     <ClCompile Include="d3d12\d3d12_descriptor_indexing.cpp" />
     <ClCompile Include="d3d12\d3d12_discard_zoo.cpp" />
     <ClCompile Include="d3d12\d3d12_draw_zoo.cpp" />
+    <ClCompile Include="d3d12\d3d12_dxil_shader_zoo.cpp" />
     <ClCompile Include="d3d12\d3d12_empty_capture.cpp" />
     <ClCompile Include="d3d12\d3d12_execute_indirect.cpp" />
     <ClCompile Include="d3d12\d3d12_existing_heap.cpp" />
