@@ -71,6 +71,13 @@ WrappedMTLCommandBuffer *WrappedMTLCommandQueue::commandBuffer()
 {
   MTL::CommandBuffer *realMTLCommandBuffer;
   SERIALISE_TIME_CALL(realMTLCommandBuffer = Unwrap(this)->commandBuffer());
+  {
+    const void *key = realMTLCommandBuffer;
+    id object = realMTLCommandBuffer;
+    id value = objc_getAssociatedObject(object, key);
+    if(value)
+      DeallocateObjCBridge((WrappedMTLCommandBuffer *)value);
+  }
   WrappedMTLCommandBuffer *wrappedMTLCommandBuffer;
   ResourceId id = GetResourceManager()->WrapResource(realMTLCommandBuffer, wrappedMTLCommandBuffer);
   wrappedMTLCommandBuffer->SetCommandQueue(this);

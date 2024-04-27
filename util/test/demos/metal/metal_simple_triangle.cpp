@@ -44,6 +44,8 @@ RD_TEST(Metal_Simple_Triangle, MetalGraphicsTest)
 
     while(Running())
     {
+      if(!m_autoreleasePool)
+        m_autoreleasePool = NS::AutoreleasePool::alloc()->init();
       MTL::CommandBuffer *cmdBuffer = GetCommandBuffer();
 
       MTL::RenderCommandEncoder *encoder = CreateRenderPass(m_mainWindow->BackBuffer(), cmdBuffer);
@@ -55,6 +57,8 @@ RD_TEST(Metal_Simple_Triangle, MetalGraphicsTest)
 
       cmdBuffer->commit();
       Present();
+      m_autoreleasePool->drain();
+      m_autoreleasePool = NULL;
     }
 
     rpState->release();

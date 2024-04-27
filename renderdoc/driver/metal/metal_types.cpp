@@ -61,12 +61,19 @@ RDCCOMPILE_ASSERT(sizeof(NS::UInteger) == sizeof(std::uintptr_t),
     MTL::CPPTYPE *real = (MTL::CPPTYPE *)wrappedCPP->m_Real;                                      \
     if(real)                                                                                      \
     {                                                                                             \
-      objc_setAssociatedObject((id)real, objc, objc, OBJC_ASSOCIATION_RETAIN);                    \
+      const void *key = real;                                                                     \
+      id value = (id)objc;                                                                        \
+      id object = (id)real;                                                                       \
+      objc_setAssociatedObject(object, key, value, OBJC_ASSOCIATION_RETAIN);                      \
       ((MTL::CPPTYPE *)objc)->release();                                                          \
     }                                                                                             \
   }                                                                                               \
   void DeallocateObjCBridge(WrappedMTL##CPPTYPE *wrappedCPP)                                      \
   {                                                                                               \
+    MTL::CPPTYPE *real = (MTL::CPPTYPE *)wrappedCPP->m_Real;                                      \
+    const void *key = real;                                                                       \
+    id object = (id)real;                                                                         \
+    /*objc_setAssociatedObject(object, key, nil, OBJC_ASSOCIATION_ASSIGN);*/                      \
     wrappedCPP->m_ObjcBridge = NULL;                                                              \
     wrappedCPP->m_Real = NULL;                                                                    \
     wrappedCPP->GetResourceManager()->ReleaseWrappedResource(wrappedCPP);                         \

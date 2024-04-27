@@ -120,9 +120,8 @@ public:
     wrapped->m_Real = obj;
     AddCurrentResource(id, wrapped);
 
-    // TODO: implement RD MTL replay
     //    if(IsReplayMode(m_State))
-    //     AddWrapper(wrapMetalResourceManager(obj));
+    //      AddWrapper(wrapped, obj);
     return id;
   }
 
@@ -131,9 +130,8 @@ public:
   {
     ResourceId id = GetResID(wrapped);
 
-    // TODO: implement RD MTL replay
     //    if(IsReplayMode(m_State))
-    //      ResourceManager::RemoveWrapper(ToTypedHandle(Unwrap(wrapped)));
+    //      ResourceManager::RemoveWrapper(wrapped->m_Real);
 
     ResourceManager::ReleaseCurrentResource(id);
     MetalResourceRecord *record = GetRecord(wrapped);
