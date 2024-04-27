@@ -34,6 +34,7 @@ class WrappedMTLCommandBuffer : public WrappedMTLObject
 public:
   WrappedMTLCommandBuffer(MTL::CommandBuffer *realMTLCommandBuffer, ResourceId objId,
                           WrappedMTLDevice *wrappedMTLDevice);
+  ~WrappedMTLCommandBuffer();
 
   void SetCommandQueue(WrappedMTLCommandQueue *commandQueue) { m_CommandQueue = commandQueue; }
   WrappedMTLCommandQueue *GetCommandQueue() { return m_CommandQueue; }

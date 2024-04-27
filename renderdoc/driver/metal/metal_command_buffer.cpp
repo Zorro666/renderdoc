@@ -29,12 +29,22 @@
 #include "metal_resources.h"
 #include "metal_texture.h"
 
+static int32_t s_activeCmdBuffers = 0;
+
 WrappedMTLCommandBuffer::WrappedMTLCommandBuffer(MTL::CommandBuffer *realMTLCommandBuffer,
                                                  ResourceId objId, WrappedMTLDevice *wrappedMTLDevice)
     : WrappedMTLObject(realMTLCommandBuffer, objId, wrappedMTLDevice, wrappedMTLDevice->GetStateRef())
 {
   if(realMTLCommandBuffer && objId != ResourceId())
+  {
     AllocateObjCBridge(this);
+  }
+  ++s_activeCmdBuffers;
+}
+
+WrappedMTLCommandBuffer::~WrappedMTLCommandBuffer()
+{
+  --s_activeCmdBuffers;
 }
 
 template <typename SerialiserType>
