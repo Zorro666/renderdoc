@@ -932,7 +932,6 @@ void nk_appkit_window_delete(nk_appkit_window *window)
   }
   window->nsPool = nil;
 
-  free(window);
   s_state.window = NULL;
 }
 

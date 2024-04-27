@@ -128,28 +128,26 @@ void MetalGraphicsTest::Shutdown()
     WaitForGPU();
     delete m_mainWindow;
 
-    if(m_autoreleasePool)
-      m_autoreleasePool->release();
-
     m_queue->release();
+    m_queue = NULL;
     m_device->release();
+    m_device = NULL;
+  }
+  if(m_autoreleasePool)
+  {
+    m_autoreleasePool->drain();
+    m_autoreleasePool = NULL;
   }
 }
 
 bool MetalGraphicsTest::Running()
 {
-  if(m_autoreleasePool)
-  {
-    m_autoreleasePool->release();
-    m_autoreleasePool = NULL;
-  }
   if(!FrameLimit())
     return false;
 
   if(!m_mainWindow->Update())
     return false;
 
-  m_autoreleasePool = NS::AutoreleasePool::alloc()->init();
   return true;
 }
 
