@@ -85,6 +85,9 @@
     <Filter Include="3rdparty\tinyfiledialogs">
       <UniqueIdentifier>{25fdbb3b-123c-48c3-8ad3-286345771d07}</UniqueIdentifier>
     </Filter>
+    <Filter Include="3rdparty\minhook">
+      <UniqueIdentifier>{e46c1209-b268-4154-ac27-bc8f9df33c5f}</UniqueIdentifier>
+    </Filter>
     <Filter Include="PCH">
       <UniqueIdentifier>{364a44c3-ab9f-44d1-ab3f-e9f640202224}</UniqueIdentifier>
     </Filter>
@@ -296,6 +299,27 @@
     </ClInclude>
     <ClInclude Include="3rdparty\stb\stb_image_resize2.h">
       <Filter>3rdparty\stb</Filter>
+    </ClInclude>
+    <ClInclude Include="3rdparty\minhook\src\buffer.h">
+      <Filter>3rdparty\minhook</Filter>
+    </ClInclude>
+    <ClInclude Include="3rdparty\minhook\src\trampoline.h">
+      <Filter>3rdparty\minhook</Filter>
+    </ClInclude>
+    <ClInclude Include="3rdparty\minhook\src\hde\hde64.h">
+      <Filter>3rdparty\minhook</Filter>
+    </ClInclude>
+    <ClInclude Include="3rdparty\minhook\src\hde\pstdint.h">
+      <Filter>3rdparty\minhook</Filter>
+    </ClInclude>
+    <ClInclude Include="3rdparty\minhook\src\hde\table32.h">
+      <Filter>3rdparty\minhook</Filter>
+    </ClInclude>
+    <ClInclude Include="3rdparty\minhook\src\hde\table64.h">
+      <Filter>3rdparty\minhook</Filter>
+    </ClInclude>
+    <ClInclude Include="3rdparty\minhook\src\hde\hde32.h">
+      <Filter>3rdparty\minhook</Filter>
     </ClInclude>
     <ClInclude Include="api\replay\version.h">
       <Filter>API\Replay</Filter>
@@ -724,6 +748,21 @@
     </ClCompile>
     <ClCompile Include="3rdparty\plthook\plthook_elf.c">
       <Filter>3rdparty\plthook</Filter>
+    </ClCompile>
+    <ClCompile Include="3rdparty\minhook\src\hook.c">
+      <Filter>3rdparty\minhook</Filter>
+    </ClCompile>
+    <ClCompile Include="3rdparty\minhook\src\trampoline.c">
+      <Filter>3rdparty\minhook</Filter>
+    </ClCompile>
+    <ClCompile Include="3rdparty\minhook\src\buffer.c">
+      <Filter>3rdparty\minhook</Filter>
+    </ClCompile>
+    <ClCompile Include="3rdparty\minhook\src\hde\hde64.c">
+      <Filter>3rdparty\minhook</Filter>
+    </ClCompile>
+    <ClCompile Include="3rdparty\minhook\src\hde\hde32.c">
+      <Filter>3rdparty\minhook</Filter>
     </ClCompile>
     <ClCompile Include="os\posix\linux\linux_hook.cpp">
       <Filter>OS\Posix\Linux</Filter>
