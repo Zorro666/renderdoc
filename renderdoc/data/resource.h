@@ -36,6 +36,9 @@
 #define RESOURCE_pixelhistory_fixedcol_5_dxbc  128
 #define RESOURCE_pixelhistory_fixedcol_6_dxbc  129
 #define RESOURCE_pixelhistory_fixedcol_7_dxbc  130
+#define RESOURCE_shaderdebug_cs_dxbc 131
+#define RESOURCE_shaderdebug_vs_dxbc 132
+#define RESOURCE_shaderdebug_ps_dxbc 133
 
 #define RESOURCE_sourcecodepro_ttf  301
 

@@ -140,6 +140,9 @@ RESOURCE_pixelhistory_fixedcol_4_dxbc  TYPE_EMBED  pixelhistory_fixedcol_4.dxbc
 RESOURCE_pixelhistory_fixedcol_5_dxbc  TYPE_EMBED  pixelhistory_fixedcol_5.dxbc
 RESOURCE_pixelhistory_fixedcol_6_dxbc  TYPE_EMBED  pixelhistory_fixedcol_6.dxbc
 RESOURCE_pixelhistory_fixedcol_7_dxbc  TYPE_EMBED  pixelhistory_fixedcol_7.dxbc
+RESOURCE_shaderdebug_cs_dxbc TYPE_EMBED shaderdebug_cs.dxbc
+RESOURCE_shaderdebug_vs_dxbc TYPE_EMBED shaderdebug_vs.dxbc
+RESOURCE_shaderdebug_ps_dxbc TYPE_EMBED shaderdebug_ps.dxbc
 
 #else
 
@@ -157,6 +160,9 @@ RESOURCE_pixelhistory_fixedcol_4_dxbc  TYPE_EMBED  "hlsl/empty.dxbc"
 RESOURCE_pixelhistory_fixedcol_5_dxbc  TYPE_EMBED  "hlsl/empty.dxbc"
 RESOURCE_pixelhistory_fixedcol_6_dxbc  TYPE_EMBED  "hlsl/empty.dxbc"
 RESOURCE_pixelhistory_fixedcol_7_dxbc  TYPE_EMBED  "hlsl/empty.dxbc"
+RESOURCE_shaderdebug_cs_dxbc TYPE_EMBED "hlsl/empty.dxbc"
+RESOURCE_shaderdebug_vs_dxbc TYPE_EMBED "hlsl/empty.dxbc"
+RESOURCE_shaderdebug_ps_dxbc TYPE_EMBED "hlsl/empty.dxbc"
 
 #endif
 
