@@ -60,6 +60,7 @@ public:
   ID3DBlob *GetQuadShaderDXILBlob();
   ID3DBlob *GetPrimitiveIDShaderDXILBlob();
   ID3DBlob *GetFixedColorShaderDXILBlob(uint32_t variant);
+  ID3DBlob *GetShaderDebugDXILBlob(ShaderStage stage);
 
   void LoadDXC();
 

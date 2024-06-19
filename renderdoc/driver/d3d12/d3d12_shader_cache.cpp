@@ -1105,6 +1105,24 @@ ID3DBlob *D3D12ShaderCache::GetFixedColorShaderDXILBlob(uint32_t variant)
   return ret;
 }
 
+ID3DBlob *D3D12ShaderCache::GetShaderDebugDXILBlob(ShaderStage stage)
+{
+  rdcstr embedded;
+  switch(stage)
+  {
+    case ShaderStage::Compute: embedded = GetEmbeddedResource(shaderdebug_cs_dxbc); break;
+    case ShaderStage::Vertex: embedded = GetEmbeddedResource(shaderdebug_vs_dxbc); break;
+    case ShaderStage::Pixel: embedded = GetEmbeddedResource(shaderdebug_ps_dxbc); break;
+    default: RDCERR("Invalid Stage %s", ToStr(stage).c_str()); return NULL;
+  }
+  if(embedded.empty() || !embedded.beginsWith("DXBC"))
+    return NULL;
+
+  ID3DBlob *ret = NULL;
+  D3D12ShaderCacheCallbacks.Create((uint32_t)embedded.size(), embedded.data(), &ret);
+  return ret;
+}
+
 void D3D12ShaderCache::LoadDXC()
 {
   GetDXC();
