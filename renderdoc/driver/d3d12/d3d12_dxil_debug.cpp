@@ -403,7 +403,7 @@ void FetchConstantBufferData(WrappedID3D12Device *device, const DXIL::Program *p
             // Find out how many descriptors are left after
             numDescriptors = heap->GetNumDescriptors() - offset - (UINT)element.offset;
 
-            // TODO: Look up the bind point in the D3D12 state to try to get
+            // JAKE TODO: Look up the bind point in the D3D12 state to try to get
             // a better guess at the number of descriptors
           }
 
@@ -457,7 +457,7 @@ InterpolationMode GetInterpolationModeForInputParam(const SigParameter &sig,
 
     InterpolationMode interpolation = DXBC::InterpolationMode::INTERPOLATION_UNDEFINED;
 
-    // TODO SEARCH THE DXIL PROGRAM INPUTS FOR THE INTERPOLATION MODE
+    // JAKE TODO SEARCH THE DXIL PROGRAM INPUTS FOR THE INTERPOLATION MODE
 #if 0
     if(program)
     {
@@ -620,7 +620,7 @@ void D3D12APIWrapper::FetchSRV(const BindingSlot &slot)
               // Find out how many descriptors are left after
               numDescriptors = heap->GetNumDescriptors() - offset - (UINT)element.offset;
 
-              // TODO: Should we look up the bind point in the D3D12 state to try to get
+              // JAKE TODO: Should we look up the bind point in the D3D12 state to try to get
               // a better guess at the number of descriptors?
             }
 
@@ -759,7 +759,7 @@ bool D3D12APIWrapper::IsSRVBound(const BindingSlot &slot)
               // Find out how many descriptors are left after
               numDescriptors = heap->GetNumDescriptors() - offset - (UINT)element.offset;
 
-              // TODO: Should we look up the bind point in the D3D12 state to try to get
+              // JAKE TODO: Should we look up the bind point in the D3D12 state to try to get
               // a better guess at the number of descriptors?
             }
 
@@ -899,7 +899,7 @@ void D3D12APIWrapper::FetchUAV(const BindingSlot &slot)
               // Find out how many descriptors are left after
               numDescriptors = heap->GetNumDescriptors() - offset - (UINT)element.offset;
 
-              // TODO: Should we look up the bind point in the D3D12 state to try to get
+              // JAKE TODO: Should we look up the bind point in the D3D12 state to try to get
               // a better guess at the number of descriptors?
             }
 
@@ -919,7 +919,7 @@ void D3D12APIWrapper::FetchUAV(const BindingSlot &slot)
 
                 if(pResource)
                 {
-                  // TODO: Need to fetch counter resource if applicable
+                  // JAKE TODO: Need to fetch counter resource if applicable
 
                   D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = desc->GetUAV();
 
@@ -937,7 +937,7 @@ void D3D12APIWrapper::FetchUAV(const BindingSlot &slot)
                     {
                       uavData.format.stride = uavDesc.Buffer.StructureByteStride;
 
-                      // TODO: Try looking up UAV from shader reflection info?
+                      // JAKE TODO: Try looking up UAV from shader reflection info?
                     }
                   }
 
@@ -1046,7 +1046,7 @@ bool D3D12APIWrapper::IsUAVBound(const BindingSlot &slot)
               // Find out how many descriptors are left after
               numDescriptors = heap->GetNumDescriptors() - offset - (UINT)element.offset;
 
-              // TODO: Should we look up the bind point in the D3D12 state to try to get
+              // JAKE TODO: Should we look up the bind point in the D3D12 state to try to get
               // a better guess at the number of descriptors?
             }
 
@@ -1131,9 +1131,9 @@ bool D3D12APIWrapper::CalculateSampleGather(
     case DXOp::CalculateLOD: sampleOp = DEBUG_SAMPLE_TEX_LOD; break;
     // In the shader DEBUG_SAMPLE_TEX_LOAD and DEBUG_SAMPLE_TEX_LOAD_MS behave equivalently
     case DXOp::TextureLoad: sampleOp = DEBUG_SAMPLE_TEX_LOAD; break;
-    // TODO: consider these DXIL opcode operations
+    // JAKE TODO: consider these DXIL opcode operations
     // DXOp::TextureGatherRaw
-    // TODO: consider these DXBC opcode operations
+    // JAKE TODO: consider these DXBC opcode operations
     // DEBUG_SAMPLE_TEX_GATHER4_PARAM_OFFSET_CMP
     default:
       // To support a new instruction, the shader created in
