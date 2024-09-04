@@ -2447,15 +2447,14 @@ ShaderCompileFlags EncodeFlags(const uint32_t flags, const rdcstr &profile)
 
 #include "catch/catch.hpp"
 
-#if 1
+#if 0
 
 TEST_CASE("DO NOT COMMIT - convenience test", "[dxbc]")
 {
   // this test loads a file from disk and passes it through DXBC::DXBCContainer. Useful for when you
   // are iterating on a shader and don't want to have to load a whole capture.
   bytebuf buf;
-  FileIO::ReadAll(
-      "c:/Users/ASUS/Workspace/RenderDoc/TestData/DXBCs/619e8073e75e1c4081cf38fdcf264a8c.dxbc", buf);
+  FileIO::ReadAll("/path/to/container_file.dxbc", buf);
 
   DXBC::DXBCContainer container(buf, rdcstr(), GraphicsAPI::D3D11, ~0U, ~0U);
 
