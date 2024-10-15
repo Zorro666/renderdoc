@@ -1829,7 +1829,7 @@ rdcstr Program::GetDebugStatus()
               case DXOp::TextureGatherCmp:
               case DXOp::AtomicBinOp:
               case DXOp::AtomicCompareExchange:
-              case DXOp::Barrier:
+              // case DXOp::Barrier:
               case DXOp::CalculateLOD:
               case DXOp::Discard:
               case DXOp::DerivFineX:
