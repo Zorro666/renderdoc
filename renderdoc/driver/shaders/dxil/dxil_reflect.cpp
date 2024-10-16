@@ -1747,9 +1747,6 @@ DXBC::Reflection *Program::BuildReflection()
 
 rdcstr Program::GetDebugStatus()
 {
-  if(!D3D12_Experimental_EnableDXILShaderDebugging())
-    return "Debugging DXIL is not supported";
-
   if((m_Type != DXBC::ShaderType::Vertex) && (m_Type != DXBC::ShaderType::Compute) &&
      (m_Type != DXBC::ShaderType::Pixel))
     return "Only DXIL Vertex, Pixel and Compute shaders are supported for debugging";
