@@ -1769,8 +1769,6 @@ rdcstr Program::GetDebugStatus()
         case Operation::InsertValue:
         case Operation::Fence:
         case Operation::CompareExchange:
-        case Operation::LoadAtomic:
-        case Operation::StoreAtomic:
         case Operation::AtomicExchange:
         case Operation::AtomicAdd:
         case Operation::AtomicSub:
