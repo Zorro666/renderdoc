@@ -29,6 +29,12 @@
 #include "maths/formatpacking.h"
 #include "replay/common/var_dispatch_helpers.h"
 
+// JAKE TODO: workgroup convergence
+// JAKE TODO: BIAS COMES FROM THE Sample*Bias arguments
+// JAKE TODO: ADD Sample, Gather overload opcodes
+// JAKE TODO: Implement and Test TextureStore
+// JAKE TODO: LLVM poison values are not supported
+
 using namespace DXIL;
 using namespace DXDebug;
 
@@ -952,7 +958,7 @@ static void ApplyDerivatives(GlobalState &global, rdcarray<ThreadState> &quad, i
       quad[quadIdxB].m_Input.members[input].value.f32v[w] += signmul * data[w];
   }
 
-  // TODO: SAMPLE EVALUATE
+  // JAKE TODO: SAMPLE EVALUATE
 #if 0
   // quick check to see if this register was evaluated
   if(global.sampleEvalRegisterMask & (1ULL << reg))
@@ -1184,8 +1190,8 @@ void ThreadState::EnterEntryPoint(const Function *function, ShaderDebugState *st
 
   EnterFunction(function, {});
 
+  // JAKE TODO: add the globals to known variables
   /*
-    //TODO : add the globals to known variables
     for(const ShaderVariable &v : m_GlobalState.globals)
       m_LiveVariables[v.name] = v;
   */
@@ -1223,7 +1229,7 @@ bool ThreadState::ExecuteInstruction(DebugAPIWrapper *apiWrapper,
   bool recordChange = true;
   switch(opCode)
   {
-      // TODO: increment the basic block
+      // JAKE TODO: increment the basic block
       // Operation::Switch
     case Operation::Call:
     {
@@ -1244,9 +1250,9 @@ bool ThreadState::ExecuteInstruction(DebugAPIWrapper *apiWrapper,
             // uint32_t rowIdx = arg.value.u32v[0];
             RDCASSERT(GetShaderVariable(inst.args[3], opCode, dxOpCode, arg));
             uint32_t colIdx = arg.value.u32v[0];
-            // TODO: get the type of the result and copy the correct value(s)
-            // TODO: rowIdx
-            // TODO: matrices
+            // JAKE TODO: get the type of the result and copy the correct value(s)
+            // JAKE TODO: rowIdx
+            // JAKE TODO: matrices
             result.value.f32v[0] = m_Input.members[inputIdx].value.f32v[colIdx];
             break;
           }
@@ -1261,9 +1267,9 @@ bool ThreadState::ExecuteInstruction(DebugAPIWrapper *apiWrapper,
             RDCASSERT(GetShaderVariable(inst.args[3], opCode, dxOpCode, arg));
             uint32_t colIdx = arg.value.u32v[0];
             RDCASSERT(GetShaderVariable(inst.args[4], opCode, dxOpCode, arg));
-            // TODO: get the type of the result and copy the correct value(s)
-            // TODO: rowIdx
-            // TODO: matrices
+            // JAKE TODO: get the type of the result and copy the correct value(s)
+            // JAKE TODO: rowIdx
+            // JAKE TODO: matrices
             // Only the active lane stores outputs
             if(m_State)
             {
@@ -1374,7 +1380,7 @@ bool ThreadState::ExecuteInstruction(DebugAPIWrapper *apiWrapper,
           case DXOp::SampleLevel:
           case DXOp::SampleCmpLevelZero:
           {
-            // TODO
+            // JAKE TODO
             // case DXOp::SampleBias:
             // case DXOp::SampleGrad:
             // case DXOp::SampleCmp:
@@ -1424,7 +1430,7 @@ bool ThreadState::ExecuteInstruction(DebugAPIWrapper *apiWrapper,
 
             const bool load = (dxOpCode == DXOp::TextureLoad) || (dxOpCode == DXOp::BufferLoad) ||
                               (dxOpCode == DXOp::RawBufferLoad);
-            // TODO: could be a TextureStore
+            // JAKE TODO: could be a TextureStore
             const Type *baseType = NULL;
             uint32_t resultNumComps = 0;
             if(load)
@@ -1535,7 +1541,7 @@ bool ThreadState::ExecuteInstruction(DebugAPIWrapper *apiWrapper,
             uint32_t texCoords[3] = {0, 0, 0};
             uint32_t elemIdx = 0;
             ShaderVariable arg;
-            // TODO: BufferStore 2D
+            // JAKE TODO: BufferStore 2D
             if(!texData)
             {
               if(GetShaderVariable(inst.args[2], opCode, dxOpCode, arg))
@@ -1641,7 +1647,7 @@ bool ThreadState::ExecuteInstruction(DebugAPIWrapper *apiWrapper,
                 {
                   if(GetShaderVariable(inst.args[a], opCode, dxOpCode, arg))
                   {
-                    // TODO: get the type of the value's make sure it an expected value
+                    // JAKE TODO: get the type of the value's make sure it an expected value
                     const uint32_t dstComp = a - 4;
                     const uint32_t srcComp = 0;
                     result.value.u32v[dstComp] = arg.value.u32v[srcComp];
@@ -1697,7 +1703,7 @@ bool ThreadState::ExecuteInstruction(DebugAPIWrapper *apiWrapper,
             }
             else
             {
-              // TODO: support for dynamic handles i.e. array lookups
+              // JAKE TODO: support for dynamic handles i.e. array lookups
               RDCERR("Unhandled dynamic handle");
               /*
                             DescriptorCategory category;
@@ -1743,8 +1749,8 @@ bool ThreadState::ExecuteInstruction(DebugAPIWrapper *apiWrapper,
           {
             ShaderVariable arg;
             RDCASSERT(GetShaderVariable(inst.args[1], opCode, dxOpCode, arg));
-            // TODO: HALF TYPE
-            // TODO: DOUBLE TYPE
+            // JAKE TODO: HALF TYPE
+            // JAKE TODO: DOUBLE TYPE
             RDCASSERTEQUAL(arg.type, VarType::Float);
             RDCASSERTEQUAL(arg.rows, 1);
             RDCASSERTEQUAL(arg.columns, 1);
@@ -1777,8 +1783,8 @@ bool ThreadState::ExecuteInstruction(DebugAPIWrapper *apiWrapper,
           {
             ShaderVariable arg;
             RDCASSERT(GetShaderVariable(inst.args[1], opCode, dxOpCode, arg));
-            // TODO: HALF TYPE
-            // TODO: DOUBLE TYPE
+            // JAKE TODO: HALF TYPE
+            // JAKE TODO: DOUBLE TYPE
             RDCASSERTEQUAL(arg.rows, 1);
             RDCASSERTEQUAL(arg.columns, 1);
             RDCASSERTEQUAL(arg.type, VarType::Float);
@@ -2246,7 +2252,7 @@ bool ThreadState::ExecuteInstruction(DebugAPIWrapper *apiWrapper,
     case Operation::NoOp: return false;
     case Operation::Unreachable:
     {
-      // TODO: DXOP::Discard might behave similarly
+      // JAKE TODO: DXOP::Discard might behave similarly
       m_Killed = true;
       RDCERR("Operation::Unreachable reached, terminating debugging!");
       return true;
@@ -2311,11 +2317,11 @@ bool ThreadState::ExecuteInstruction(DebugAPIWrapper *apiWrapper,
     }
     case Operation::ExtractVal:
     {
-      // TODO: need helper function to convert DXIL::Type* -> ShaderVariable
+      // JAKE TODO: need helper function to convert DXIL::Type* -> ShaderVariable
       Id src = GetArgumentId(0);
       const ShaderVariable &srcVal = m_LiveVariables[src];
       RDCASSERT(srcVal.members.empty());
-      // TODO: handle greater than one index
+      // JAKE TODO: handle greater than one index
       RDCASSERTEQUAL(inst.args.size(), 2);
       uint32_t idx = ~0U;
       RDCASSERT(getival(inst.args[1], idx));
@@ -2347,8 +2353,9 @@ bool ThreadState::ExecuteInstruction(DebugAPIWrapper *apiWrapper,
       break;
     }
     case Operation::Load:
+    case Operation::LoadAtomic:
     {
-      // TODO: full proper load from resource memory i.e. group shared
+      // JAKE TODO: full proper load from memory i.e. group shared
       // Currently only supporting Stack allocated pointers
       // Load(ptr)
       Id ptrId = GetArgumentId(0);
@@ -2359,44 +2366,42 @@ bool ThreadState::ExecuteInstruction(DebugAPIWrapper *apiWrapper,
       break;
     }
     case Operation::Store:
+    case Operation::StoreAtomic:
     {
-      // TODO: full proper store to resource memory i.e. group shared
+      // JAKE TODO: full proper store to memory i.e. group shared
       // Currently only supporting Stack allocated pointers
       // Store(ptr, value)
+      Id baseMemoryId = DXILDebug::INVALID_ID;
+      void *baseMemoryBackingPtr = NULL;
+      size_t allocSize = 0;
+      void *allocMemoryBackingPtr = NULL;
       Id ptrId = GetArgumentId(0);
       auto itPtr = m_StackAllocPointers.find(ptrId);
       RDCASSERT(itPtr != m_StackAllocPointers.end());
+
       const StackAllocPointer &ptr = itPtr->second;
-      Id baseMemoryId = ptr.baseMemoryId;
-      RDCASSERT(ptr.backingMemory);
-      RDCASSERTNOTEQUAL(baseMemoryId, DXILDebug::INVALID_ID);
+      baseMemoryId = ptr.baseMemoryId;
+      baseMemoryBackingPtr = ptr.backingMemory;
+
       auto itAlloc = m_StackAllocs.find(baseMemoryId);
       RDCASSERT(itAlloc != m_StackAllocs.end());
       StackAlloc &alloc = itAlloc->second;
+      allocSize = alloc.size;
+      allocMemoryBackingPtr = alloc.backingMemory;
 
-      ShaderVariable arg;
-      RDCASSERT(GetShaderVariable(inst.args[1], opCode, dxOpCode, arg));
+      RDCASSERT(baseMemoryBackingPtr);
+      RDCASSERTNOTEQUAL(baseMemoryId, DXILDebug::INVALID_ID);
+
+      ShaderVariable val;
+      RDCASSERT(GetShaderVariable(inst.args[1], opCode, dxOpCode, val));
       RDCASSERTEQUAL(resultId, DXILDebug::INVALID_ID);
 
-      // Memory copy from value to backing memory
-      VarType type = ConvertDXILTypeToVarType(inst.args[1]->type);
-      size_t size = GetElementByteSize(type);
-      RDCASSERT(size <= alloc.size);
-      RDCASSERT(size < sizeof(arg.value.f32v));
-      memcpy(ptr.backingMemory, &arg.value.f32v[0], size);
+      UpdateBackingMemoryFromVariable(baseMemoryBackingPtr, allocSize, val);
 
       ShaderVariableChange change;
       change.before = m_LiveVariables[baseMemoryId];
-      ShaderVariable &baseMemory = m_LiveVariables[baseMemoryId];
-      // TODO: Make this be a helper function UpdateVariableFromBackingMemory()
-      // Memory copy from backing memory to base memory variable
-      const uint8_t *src = (uint8_t *)alloc.backingMemory;
-      size_t elementSize = GetElementByteSize(baseMemory.type);
-      for(uint32_t i = 0; i < baseMemory.rows; ++i)
-      {
-        memcpy(&m_LiveVariables[baseMemoryId].members[i].value.f32v[0], src, elementSize);
-        src += elementSize;
-      }
+
+      UpdateMemoryVariableFromBackingMemory(baseMemoryId, allocMemoryBackingPtr);
 
       // record the change to the base memory variable
       change.after = m_LiveVariables[baseMemoryId];
@@ -2404,10 +2409,10 @@ bool ThreadState::ExecuteInstruction(DebugAPIWrapper *apiWrapper,
         m_State->changes.push_back(change);
 
       // Update the ptr variable value
-      // Set the result to be the ptr variable whcih will then be reocrded as a change
-      result = m_LiveVariables[ptrId];
-      result.value = arg.value;
+      // Set the result to be the ptr variable which will then be recorded as a change
       resultId = ptrId;
+      result = m_LiveVariables[resultId];
+      result.value = val.value;
       break;
     }
     case Operation::Alloca:
@@ -2422,7 +2427,7 @@ bool ThreadState::ExecuteInstruction(DebugAPIWrapper *apiWrapper,
       }
       RDCASSERT((resultType->type == DXIL::Type::TypeKind::Scalar) ||
                 (resultType->type == DXIL::Type::TypeKind::Struct));
-      // TODO: NEED TO DEMANGLE THE NAME TO DEMANGLE TO MATCH DISASSEMBLY
+      // JAKE TODO: NEED TO DEMANGLE THE NAME TO MATCH DISASSEMBLY
       result.type = baseType;
       result.rows = (uint8_t)countElems;
       result.members.resize(countElems);
@@ -2466,13 +2471,13 @@ bool ThreadState::ExecuteInstruction(DebugAPIWrapper *apiWrapper,
       RDCASSERTEQUAL(indexes[0], 0);
       uint64_t offset = 0;
 
-      // TODO: Resolve indexes to a single offset
+      // JAKE TODO: Resolve indexes to a single offset
       const ShaderVariable &basePtr = m_LiveVariables[ptrId];
       if(indexes.size() > 1)
         offset += indexes[1] * GetElementByteSize(basePtr.type);
       RDCASSERT(indexes.size() <= 2);
 
-      // TODO: function to convert DXIL::Type* -> ShaderVariable
+      // JAKE TODO: function to convert DXIL::Type* -> ShaderVariable
       VarType baseType = ConvertDXILTypeToVarType(resultType);
       RDCASSERTNOTEQUAL(resultType->type, DXIL::Type::TypeKind::Struct);
       RDCASSERTEQUAL(resultType->type, DXIL::Type::TypeKind::Scalar);
@@ -3046,6 +3051,10 @@ bool ThreadState::ExecuteInstruction(DebugAPIWrapper *apiWrapper,
         // Result bit_width > Value bit_width
         RDCASSERT(retType->bitWidth > srcBitWidth);
       }
+      else
+      {
+        RDCERR("Unhandled opCode %s", ToStr(opCode).c_str());
+      }
       double x = 0.0;
 
 #undef _IMPL
@@ -3125,6 +3134,10 @@ bool ThreadState::ExecuteInstruction(DebugAPIWrapper *apiWrapper,
 #define _IMPL(I, S, U) comp<S>(result, c) = comp<S>(a, c) >> comp<S>(b, c)
 
         IMPL_FOR_INT_TYPES_FOR_TYPE(_IMPL, result.type);
+      }
+      else
+      {
+        RDCERR("Unhandled opCode %s", ToStr(opCode).c_str());
       }
       break;
     }
@@ -3293,12 +3306,10 @@ bool ThreadState::ExecuteInstruction(DebugAPIWrapper *apiWrapper,
       }
       break;
     }
-    case Operation::AddrSpaceCast:
-    case Operation::InsertValue:
     case Operation::Fence:
-    case Operation::CompareExchange:
-    case Operation::LoadAtomic:
-    case Operation::StoreAtomic:
+    {
+      break;
+    }
     case Operation::AtomicExchange:
     case Operation::AtomicAdd:
     case Operation::AtomicSub:
@@ -3309,7 +3320,158 @@ bool ThreadState::ExecuteInstruction(DebugAPIWrapper *apiWrapper,
     case Operation::AtomicMax:
     case Operation::AtomicMin:
     case Operation::AtomicUMax:
-    case Operation::AtomicUMin: RDCERR("Unhandled LLVM opcode %s", ToStr(opCode).c_str()); break;
+    case Operation::AtomicUMin:
+    {
+      // JAKE TODO: full proper load and store from/to memory i.e. group shared
+      // Currently only supporting Stack allocated pointers
+      size_t allocSize = 0;
+      void *allocMemoryBackingPtr = NULL;
+      void *baseMemoryBackingPtr = NULL;
+      Id baseMemoryId = DXILDebug::INVALID_ID;
+      Id ptrId = GetArgumentId(0);
+      {
+        auto itPtr = m_StackAllocPointers.find(ptrId);
+        RDCASSERT(itPtr != m_StackAllocPointers.end());
+
+        const StackAllocPointer &ptr = itPtr->second;
+        baseMemoryId = ptr.baseMemoryId;
+        baseMemoryBackingPtr = ptr.backingMemory;
+
+        auto itAlloc = m_StackAllocs.find(baseMemoryId);
+        RDCASSERT(itAlloc != m_StackAllocs.end());
+        StackAlloc &alloc = itAlloc->second;
+        allocSize = alloc.size;
+        allocMemoryBackingPtr = alloc.backingMemory;
+      }
+
+      RDCASSERT(baseMemoryBackingPtr);
+      RDCASSERTNOTEQUAL(baseMemoryId, DXILDebug::INVALID_ID);
+
+      RDCASSERTEQUAL(resultId, DXILDebug::INVALID_ID);
+      ShaderVariable a = m_LiveVariables[baseMemoryId];
+
+      ShaderVariable b;
+      RDCASSERT(GetShaderVariable(inst.args[1], opCode, dxOpCode, b));
+      const uint32_t c = 0;
+
+      ShaderVariable res;
+
+      if(opCode == Operation::AtomicExchange)
+      {
+        // *ptr = val
+#undef _IMPL
+#define _IMPL(I, S, U) comp<I>(res, c) = comp<I>(b, c)
+
+        IMPL_FOR_INT_TYPES_FOR_TYPE(_IMPL, b.type);
+      }
+      else if(opCode == Operation::AtomicAdd)
+      {
+        // *ptr = *ptr + val
+#undef _IMPL
+#define _IMPL(I, S, U) comp<I>(res, c) = comp<I>(a, c) + comp<I>(b, c)
+
+        IMPL_FOR_INT_TYPES_FOR_TYPE(_IMPL, b.type);
+      }
+      else if(opCode == Operation::AtomicSub)
+      {
+        // *ptr = *ptr - val
+#undef _IMPL
+#define _IMPL(I, S, U) comp<I>(res, c) = comp<I>(a, c) - comp<I>(b, c)
+
+        IMPL_FOR_INT_TYPES_FOR_TYPE(_IMPL, b.type);
+      }
+      else if(opCode == Operation::AtomicAnd)
+      {
+        // *ptr = *ptr & val
+#undef _IMPL
+#define _IMPL(I, S, U) comp<U>(res, c) = comp<U>(a, c) & comp<U>(b, c);
+
+        IMPL_FOR_INT_TYPES_FOR_TYPE(_IMPL, b.type);
+      }
+      else if(opCode == Operation::AtomicNand)
+      {
+        // *ptr = ~(*ptr & val)
+#undef _IMPL
+#define _IMPL(I, S, U) comp<U>(res, c) = ~(comp<U>(a, c) & comp<U>(b, c));
+
+        IMPL_FOR_INT_TYPES_FOR_TYPE(_IMPL, b.type);
+      }
+      else if(opCode == Operation::AtomicOr)
+      {
+        // *ptr = *ptr | val
+#undef _IMPL
+#define _IMPL(I, S, U) comp<U>(res, c) = comp<U>(a, c) | comp<U>(b, c);
+
+        IMPL_FOR_INT_TYPES_FOR_TYPE(_IMPL, b.type);
+      }
+      else if(opCode == Operation::AtomicXor)
+      {
+        // *ptr = *ptr ^ val
+#undef _IMPL
+#define _IMPL(I, S, U) comp<U>(res, c) = comp<U>(a, c) ^ comp<U>(b, c);
+
+        IMPL_FOR_INT_TYPES_FOR_TYPE(_IMPL, b.type);
+      }
+      else if(opCode == Operation::AtomicMax)
+      {
+        // *ptr = max(*ptr, val)
+#undef _IMPL
+#define _IMPL(I, S, U) comp<S>(res, c) = RDCMAX(comp<S>(a, c), comp<S>(b, c));
+
+        IMPL_FOR_INT_TYPES_FOR_TYPE(_IMPL, b.type);
+      }
+      else if(opCode == Operation::AtomicMin)
+      {
+        // *ptr = min(*ptr, val)
+#undef _IMPL
+#define _IMPL(I, S, U) comp<S>(res, c) = RDCMIN(comp<S>(a, c), comp<S>(b, c));
+
+        IMPL_FOR_INT_TYPES_FOR_TYPE(_IMPL, b.type);
+      }
+      else if(opCode == Operation::AtomicUMax)
+      {
+#undef _IMPL
+#define _IMPL(I, S, U) comp<S>(res, c) = RDCMAX(comp<S>(a, c), comp<S>(b, c));
+
+        IMPL_FOR_INT_TYPES_FOR_TYPE(_IMPL, b.type);
+      }
+      else if(opCode == Operation::AtomicUMin)
+      {
+#undef _IMPL
+#define _IMPL(I, S, U) comp<U>(res, c) = RDCMIN(comp<U>(a, c), comp<U>(b, c));
+
+        IMPL_FOR_INT_TYPES_FOR_TYPE(_IMPL, b.type);
+      }
+      else
+      {
+        RDCERR("Unhandled opCode %s", ToStr(opCode).c_str());
+      }
+
+      // Save the result back
+      UpdateBackingMemoryFromVariable(baseMemoryBackingPtr, allocSize, res);
+
+      ShaderVariableChange change;
+      change.before = m_LiveVariables[baseMemoryId];
+
+      UpdateMemoryVariableFromBackingMemory(baseMemoryId, allocMemoryBackingPtr);
+
+      // record the change to the base memory variable
+      change.after = m_LiveVariables[baseMemoryId];
+      if(m_State)
+        m_State->changes.push_back(change);
+
+      // Update the ptr variable value
+      // Set the result to be the ptr variable which will then be recorded as a change
+      resultId = ptrId;
+      result = m_LiveVariables[resultId];
+      result.value = res.value;
+      break;
+    }
+    case Operation::AddrSpaceCast:
+    case Operation::InsertValue:
+    case Operation::CompareExchange:
+      RDCERR("Unhandled LLVM opcode %s", ToStr(opCode).c_str());
+      break;
   };
 
   // Remove variables which have gone out of scope
@@ -3472,7 +3634,7 @@ bool ThreadState::GetShaderVariable(const DXIL::Value *dxilValue, Operation op, 
     }
     else if(c->isCompound())
     {
-      // TODO: Might be a vector
+      // JAKE TODO: Might be a vector
       if(c->op == Operation::GetElementPtr)
       {
         const rdcarray<DXIL::Value *> &members = c->getMembers();
@@ -3488,7 +3650,7 @@ bool ThreadState::GetShaderVariable(const DXIL::Value *dxilValue, Operation op, 
           indexes.push_back(index.value.u64v[0]);
         }
         var.value = ptrVal.value;
-        // TODO: Need to do the arithmetic with indexes
+        // JAKE TODO: Need to do the arithmetic with indexes
         return true;
       }
       else if(c->op != Operation::NoOp)
@@ -3578,7 +3740,7 @@ void ThreadState::MarkResourceAccess(const rdcstr &name, const DXIL::ResourceRef
 
   const DXIL::EntryPointInterface::ResourceBase &resourceBase = resRef->resourceBase;
   change.after.name = name;
-  // TODO: find the array index
+  // JAKE TODO: find the array index
   uint32_t arrayIdx = 0;
   if(resourceBase.regCount > 1)
     change.after.name += StringFormat::Fmt("[%u]", arrayIdx);
@@ -3606,6 +3768,29 @@ void ThreadState::MarkResourceAccess(const rdcstr &name, const DXIL::ResourceRef
     accessed.push_back(bp);
 }
 
+void ThreadState::UpdateBackingMemoryFromVariable(void *ptr, size_t allocSize,
+                                                  const ShaderVariable &var)
+{
+  // Memory copy from value to backing memory
+  size_t size = GetElementByteSize(var.type);
+  RDCASSERT(size <= allocSize);
+  RDCASSERT(size < sizeof(var.value.f32v));
+  memcpy(ptr, &var.value.f32v[0], size);
+}
+
+void ThreadState::UpdateMemoryVariableFromBackingMemory(Id memoryId, const void *ptr)
+{
+  ShaderVariable &baseMemory = m_LiveVariables[memoryId];
+  // Memory copy from backing memory to base memory variable
+  size_t elementSize = GetElementByteSize(baseMemory.type);
+  const uint8_t *src = (const uint8_t *)ptr;
+  for(uint32_t i = 0; i < baseMemory.rows; ++i)
+  {
+    memcpy(&baseMemory.members[i].value.f32v[0], src, elementSize);
+    src += elementSize;
+  }
+}
+
 void ThreadState::PerformGPUResourceOp(const rdcarray<ThreadState> &workgroups, Operation opCode,
                                        DXOp dxOpCode, const DXIL::ResourceReference *resRef,
                                        DebugAPIWrapper *apiWrapper, const DXIL::Instruction &inst,
@@ -3616,7 +3801,7 @@ void ThreadState::PerformGPUResourceOp(const rdcarray<ThreadState> &workgroups, 
   // SampleLevel(srv,sampler,coord0,coord1,coord2,coord3,offset0,offset1,offset2,LOD)
   // SampleCmpLevelZero(srv,sampler,coord0,coord1,coord2,coord3,offset0,offset1,offset2,compareValue)
 
-  // TODO
+  // JAKE TODO
   // SampleBias(srv,sampler,coord0,coord1,coord2,coord3,offset0,offset1,offset2,bias,clamp)
   // SampleGrad(srv,sampler,coord0,coord1,coord2,coord3,offset0,offset1,offset2,ddx0,ddx1,ddx2,ddy0,ddy1,ddy2,clamp)
   // SampleCmp(srv,sampler,coord0,coord1,coord2,coord3,offset0,offset1,offset2,compareValue,clamp)
@@ -3648,7 +3833,7 @@ void ThreadState::PerformGPUResourceOp(const rdcarray<ThreadState> &workgroups, 
   resourceData.binding.registerSpace = resRef->resourceBase.space;
   resourceData.binding.shaderRegister = resRef->resourceBase.regBase;
 
-  // TODO: SET THIS TO INCLUDE UINT FORMATS
+  // JAKE TODO: SET THIS TO INCLUDE UINT FORMATS
   if(result.type == VarType::Float)
     resourceData.retType = DXBC::RETURN_TYPE_FLOAT;
   else if(result.type == VarType::SInt)
@@ -3677,7 +3862,7 @@ void ThreadState::PerformGPUResourceOp(const rdcarray<ThreadState> &workgroups, 
     RDCASSERTEQUAL(samplerRef->resourceBase.resClass, ResourceClass::Sampler);
     // samplerRef->resourceBase must be a Sampler
     const DXIL::EntryPointInterface::Sampler &sampler = resRef->resourceBase.samplerData;
-    // TODO: BIAS COMES FROM THE Sample*Bias arguments
+    // JAKE TODO: BIAS COMES FROM THE Sample*Bias arguments
     samplerData.bias = 0.0f;
     samplerData.binding.registerSpace = samplerRef->resourceBase.space;
     samplerData.binding.shaderRegister = samplerRef->resourceBase.regBase;
@@ -3704,7 +3889,7 @@ void ThreadState::PerformGPUResourceOp(const rdcarray<ThreadState> &workgroups, 
     if(GetShaderVariable(inst.args[9], opCode, dxOpCode, arg, false))
       texelOffsets[2] = (int8_t)arg.value.s32v[0];
 
-    // TODO: Sample: Clamp is in arg 10
+    // JAKE TODO: Sample: Clamp is in arg 10
 
     // SampleLevel: LOD is in arg 10
     // SampleCmpLevelZero: compare is in arg 10
@@ -3720,7 +3905,7 @@ void ThreadState::PerformGPUResourceOp(const rdcarray<ThreadState> &workgroups, 
   else
   {
     ShaderVariable arg;
-    // TODO : mipLevelOrSampleCount is in arg 2
+    // JAKE TODO: mipLevelOrSampleCount is in arg 2
     if(GetShaderVariable(inst.args[2], opCode, dxOpCode, arg))
     {
       msIndex = arg.value.u32v[0];
@@ -3744,7 +3929,7 @@ void ThreadState::PerformGPUResourceOp(const rdcarray<ThreadState> &workgroups, 
       texelOffsets[2] = (int8_t)arg.value.s32v[0];
   }
 
-  // TODO: DDX & DDY
+  // JAKE TODO: DDX & DDY
   ShaderVariable ddx;
   ShaderVariable ddy;
   // Sample, SampleBias, SampleCmp, CalculateLOD need DDX, DDY
@@ -3758,7 +3943,7 @@ void ThreadState::PerformGPUResourceOp(const rdcarray<ThreadState> &workgroups, 
     else
     {
       // texture samples use coarse derivatives
-      // TODO: the UV should be the ID per UV compponent
+      // JAKE TODO: the UV should be the ID per UV compponent
       ShaderValue delta;
       for(uint32_t i = 0; i < 4; i++)
       {
@@ -3774,12 +3959,12 @@ void ThreadState::PerformGPUResourceOp(const rdcarray<ThreadState> &workgroups, 
   }
   else if(dxOpCode == DXOp::SampleGrad)
   {
-    // TODO: get from arguments
+    // JAKE TODO: get from arguments
   }
 
   uint8_t swizzle[4] = {0, 1, 2, 3};
 
-  // TODO: GATHER CHANNEL
+  // JAKE TODO: GATHER CHANNEL
   GatherChannel gatherChannel = GatherChannel::Red;
   uint32_t instructionIdx = m_FunctionInstructionIdx - 1;
   const char *opString = ToStr(dxOpCode).c_str();
@@ -3929,7 +4114,7 @@ void Debugger::CalcActiveMask(rdcarray<bool> &activeMask)
   if(m_Stage != ShaderStage::Pixel)
     return;
 
-  // TODO: implement pixel shader convergence
+  // JAKE TODO: implement pixel shader convergence
   return;
 }
 
@@ -4149,7 +4334,7 @@ const TypeData &Debugger::AddDebugType(const DXIL::Metadata *typeMD)
             uint32_t countElements = (uint32_t)baseElement->As<DXIL::DISubrange>()->count;
             typeData.arrayDimensions.push_back(countElements);
           }
-          // TODO : WHERE IS THE BASE ELEMENT TYPE
+          // JAKE TODO: WHERE IS THE BASE ELEMENT TYPE
           AddDebugType(compositeType->base);
           typeData.baseType = compositeType->base;
           // RDCERR("Unhandled Array %s", ToStr(typeData.name).c_str());
@@ -4299,7 +4484,7 @@ void Debugger::ParseDbgOpValue(const DXIL::Instruction &inst, uint32_t instructi
 void Debugger::ParseDebugData()
 {
   // Parse LLVM debug data
-  // TODO : Track current active scope, previous scope
+  // JAKE TODO: Track current active scope, previous scope
   for(const Function *f : m_Program->m_Functions)
   {
     if(!f->external)
@@ -4492,7 +4677,7 @@ void Debugger::ParseDebugData()
             {
               uint32_t rows = 1;
               uint32_t columns = 1;
-              // TODO: is it worth considering GPU pointers for DXIL
+              // JAKE TODO: is it worth considering GPU pointers for DXIL
               // skip past any pointer types to get the 'real' type that we'll see
               while(typeWalk && typeWalk->baseType != NULL && typeWalk->type == VarType::GPUPointer)
                 typeWalk = &m_DebugInfo.types[typeWalk->baseType];
@@ -4613,7 +4798,7 @@ void Debugger::ParseDebugData()
                   }
                   elementOffset *= childRows * childColumns;
                   const uint32_t countDims = (uint32_t)arrayDimension;
-                  // TODO : N dimensional arrays
+                  // JAKE TODO: N dimensional arrays
                   for(uint32_t d = 0; d < countDims; ++d)
                   {
                     uint32_t elementSize = childType->sizeInBytes;
@@ -4646,7 +4831,7 @@ void Debugger::ParseDebugData()
                         usage->children[x].emitSourceVar = true;
                       usage->emitSourceVar = false;
                     }
-                    // TODO : mapping covers whole sub-array
+                    // JAKE TODO: mapping covers whole sub-array
                     {
                       usage = &usage->children[elementIndex];
                       usage->type = childType->type;
@@ -4913,6 +5098,8 @@ void Debugger::ParseDebugData()
             SourceVariableMapping sourceVar;
             sourceVar.name = n->name;
             sourceVar.type = n->type;
+            sourceVar.rows = n->rows;
+            sourceVar.columns = n->columns;
             sourceVar.signatureIndex = -1;
             sourceVar.offset = n->offset;
             sourceVar.variables.clear();
@@ -4970,7 +5157,7 @@ ShaderDebugTrace *Debugger::BeginDebug(uint32_t eventId, const DXBC::DXBCContain
   for(uint32_t i = 0; i < workgroupSize; i++)
     m_Workgroups.push_back(ThreadState(i, *this, m_GlobalState));
 
-  // TODO: NEED TO POPULATE GROUPSHARED DATA
+  // JAKE TODO: NEED TO POPULATE GROUPSHARED DATA
   ThreadState &state = GetActiveLane();
 
   // Create the storage layout for the constant buffers
@@ -4998,7 +5185,7 @@ ShaderDebugTrace *Debugger::BeginDebug(uint32_t eventId, const DXBC::DXBCContain
     rdcarray<ShaderVariable> &dst;
   };
 
-  // TODO: need to handle SRVs, UAVs, Samplers which are arrays
+  // JAKE TODO: need to handle SRVs, UAVs, Samplers which are arrays
 
   // Create the variables for SRVs and UAVs
   ResourceList lists[] = {
@@ -5192,7 +5379,7 @@ ShaderDebugTrace *Debugger::BeginDebug(uint32_t eventId, const DXBC::DXBCContain
   // Add inputs to the shader trace
   const rdcarray<SigParameter> &inParams = dxbcContainer->GetReflection()->InputSig;
 
-  // TODO: compute this from DXIL
+  // JAKE TODO: compute this from DXIL
   const bool inputCoverage = false;
   const uint32_t countInParams = (uint32_t)inParams.size();
 
@@ -5250,11 +5437,11 @@ ShaderDebugTrace *Debugger::BeginDebug(uint32_t eventId, const DXBC::DXBCContain
       // Put the coverage mask at the end
       if(inputCoverage)
       {
-        // TODO
+        // JAKE TODO
         inStruct.members.back() = ShaderVariable("TODO_COVERAGE", 0U, 0U, 0U, 0U);
         inStruct.members.back().columns = 1;
 
-        // TODO: handle the input of system values
+        // JAKE TODO: handle the input of system values
         if(false)
         {
           SourceVariableMapping sourcemap;
@@ -5299,7 +5486,7 @@ ShaderDebugTrace *Debugger::BeginDebug(uint32_t eventId, const DXBC::DXBCContain
   {
     const SigParameter &sig = outParams[sigIdx];
 
-    // TODO: ShaderBuiltin::DepthOutput, ShaderBuiltin::DepthOutputLessEqual,
+    // JAKE TODO: ShaderBuiltin::DepthOutput, ShaderBuiltin::DepthOutputLessEqual,
     // ShaderBuiltin::DepthOutputGreaterEqual, ShaderBuiltin::MSAACoverage,
     // ShaderBuiltin::StencilReference
     ShaderVariable v;
@@ -5339,7 +5526,7 @@ ShaderDebugTrace *Debugger::BeginDebug(uint32_t eventId, const DXBC::DXBCContain
     }
     ret->sourceVars.push_back(outputMapping);
 
-    // TODO: handle the output of system values
+    // JAKE TODO: handle the output of system values
     if(false)
     {
       SourceVariableMapping sourcemap;
