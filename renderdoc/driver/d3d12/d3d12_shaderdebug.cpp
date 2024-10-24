@@ -3083,7 +3083,7 @@ struct PSInitialData
     DXILDebug::FetchConstantBufferData(m_pDevice, dxbc->GetDXILByteCode(), rs.graphics, refl,
                                        globalState, ret->sourceVars);
 
-    // TODO SAMPLE EVALUTE MASK
+    // JAKE TODO SAMPLE EVALUTE MASK
     // globalState.sampleEvalRegisterMask = sampleEvalRegisterMask;
 
     rdcarray<DXILDebug::PSInputData> psInputDatas;
@@ -3144,7 +3144,7 @@ struct PSInitialData
       }
     }
 
-    // TODO UPDATE INPUTS FROM SAMPLE CACHE
+    // JAKE TODO UPDATE INPUTS FROM SAMPLE CACHE
 #if 0
       for(const GlobalState::SampleEvalCacheKey &key : evalSampleCacheData)
       {
@@ -3338,7 +3338,7 @@ ShaderDebugTrace *D3D12Replay::DebugThread(uint32_t eventId,
         threadid[2] * threadDim[0] * threadDim[1] + threadid[1] * threadDim[0] + threadid[0], 0U,
         0U, 0U);
 
-    // TODO ADD ANY OTHER INPUTS
+    // JAKE TODO ADD ANY OTHER INPUTS
 
     // Fetch constant buffer data from root signature
     DXILDebug::FetchConstantBufferData(m_pDevice, dxbc->GetDXILByteCode(), rs.compute, refl,
