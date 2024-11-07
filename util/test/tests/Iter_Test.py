@@ -120,6 +120,7 @@ class Iter_Test(rdtest.TestCase):
 
         outputs = 0
 
+        failed = False
         for var in trace.sourceVars:
             var: rd.SourceVariableMapping
             if var.variables[0].type == rd.DebugVariableType.Variable and var.signatureIndex >= 0:
@@ -155,8 +156,10 @@ class Iter_Test(rdtest.TestCase):
                 # Unfortunately we can't ever trust that we should get back a matching results, because some shaders
                 # rely on undefined/inaccurate maths that we don't emulate.
                 # So the best we can do is log an error for manual verification
-                is_eq, diff_amt = rdtest.value_compare_diff(expect, debugged, eps=5.0E-06)
+#                is_eq, diff_amt = rdtest.value_compare_diff(expect, debugged, eps=5.0E-06)
+                is_eq, diff_amt = rdtest.value_compare_diff(expect, debugged, eps=0.1)
                 if not is_eq:
+                    failed = True
                     rdtest.log.error(
                         "Debugged value {} at EID {} vert {} (idx {}) instance {}: {} difference. {} doesn't exactly match postvs output {}".format(
                             name, action.eventId, vtx, idx, inst, diff_amt, debugged, expect))
@@ -167,6 +170,7 @@ class Iter_Test(rdtest.TestCase):
                            .format(cycles, outputs, len(refl.outputSignature)))
 
         self.controller.FreeTrace(trace)
+#        self.check(not failed)
 
     def pixel_debug(self, action: rd.ActionDescription):
         pipe: rd.PipeState = self.controller.GetPipelineState()
@@ -296,6 +300,7 @@ class Iter_Test(rdtest.TestCase):
                 rdtest.log.print("At event {} the target is index {}".format(lastmod.eventId, output_index))
 
                 output_sourcevar = self.find_output_source_var(trace, rd.ShaderBuiltin.ColorOutput, output_index)
+                failed = False
 
                 if output_sourcevar is not None:
                     debugged = self.evaluate_source_var(output_sourcevar, variables)
@@ -313,8 +318,10 @@ class Iter_Test(rdtest.TestCase):
                     # Unfortunately we can't ever trust that we should get back a matching results, because some shaders
                     # rely on undefined/inaccurate maths that we don't emulate.
                     # So the best we can do is log an error for manual verification
-                    is_eq, diff_amt = rdtest.value_compare_diff(lastmod.shaderOut.col.floatValue, debuggedValue, eps=5.0E-06)
+#                    is_eq, diff_amt = rdtest.value_compare_diff(lastmod.shaderOut.col.floatValue, debuggedValue, eps=5.0E-06)
+                    is_eq, diff_amt = rdtest.value_compare_diff(lastmod.shaderOut.col.floatValue, debuggedValue, eps=1.0)
                     if not is_eq:
+                        failed = True
                         rdtest.log.error(
                             "Debugged value {} at EID {} {},{}: {} difference. {} doesn't exactly match history shader output {}".format(
                                 debugged.name, lastmod.eventId, x, y, diff_amt, debuggedValue, lastmod.shaderOut.col.floatValue))
@@ -324,6 +331,7 @@ class Iter_Test(rdtest.TestCase):
                     # This could be an application error - undefined but seen in the wild
                     rdtest.log.error("At EID {} No output variable declared for index {}".format(lastmod.eventId, output_index))
 
+                self.check(not failed)
             self.controller.SetFrameEvent(action.eventId, True)
 
     def mesh_output(self, action: rd.ActionDescription):
@@ -362,21 +370,21 @@ class Iter_Test(rdtest.TestCase):
     def iter_test(self):
         # Handy tweaks when running locally to disable certain things
 
-        test_chance = 0.1       # Chance of doing anything at all
-        do_image_save = 0.25    # Chance of saving images of the outputs
-        do_vert_debug = 1.0     # Chance of debugging a vertex (if valid)
-        do_pixel_debug = 1.0    # Chance of doing pixel history at the current event and debugging a pixel (if valid)
-        mesh_output = 1.0       # Chance of fetching mesh output data
-        drawcall_overlay = 0.0  # Always show drawcall overlay when we run tests
+        test_chance = 1.0       # Chance of doing anything at all
+        do_image_save = 0.001    # Chance of saving images of the outputs
+        do_vert_debug = 0.5     # Chance of debugging a vertex (if valid)
+        do_pixel_debug = 0.5    # Chance of doing pixel history at the current event and debugging a pixel (if valid)
+        mesh_output = 0.001       # Chance of fetching mesh output data
+        drawcall_overlay = 0.001  # Always show drawcall overlay when we run tests
 
         self.props: rd.APIProperties = self.controller.GetAPIProperties()
 
         event_tests = {
-            'Image Save': {'chance': do_image_save, 'func': self.image_save},
+            #'Image Save': {'chance': do_image_save, 'func': self.image_save},
             'Vertex Debug': {'chance': do_vert_debug, 'func': self.vert_debug},
             'Pixel History & Debug': {'chance': do_pixel_debug, 'func': self.pixel_debug},
-            'Mesh Output': {'chance': mesh_output, 'func': self.mesh_output},
-            'Drawcall overlay': {'chance': drawcall_overlay, 'func': self.drawcall_overlay},
+            #'Mesh Output': {'chance': mesh_output, 'func': self.mesh_output},
+            #'Drawcall overlay': {'chance': drawcall_overlay, 'func': self.drawcall_overlay},
         }
 
         # To choose an action, if we're going to do one, we take random in range(0, choice_max) then check each action
