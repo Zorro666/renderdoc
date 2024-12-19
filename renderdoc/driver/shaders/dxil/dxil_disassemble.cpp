@@ -3339,6 +3339,8 @@ void Program::MakeRDDisassemblyString(const DXBC::Reflection *reflection)
                                            DXBC::BasicDemangle(func.blocks[curBlock]->name).c_str(),
                                            func.blocks[curBlock]->id);
       DisassemblyAddNewLine(1);
+      uint32_t currentDebugLoc = ~0U;
+      const Metadata *lastScope = NULL;
 
       for(size_t funcIdx = 0; funcIdx < func.instructions.size(); funcIdx++)
       {
@@ -5078,6 +5080,36 @@ void Program::MakeRDDisassemblyString(const DXBC::Reflection *reflection)
             break;
           }
         }
+        uint32_t dbgLoc = ShouldIgnoreSourceMapping(inst) ? ~0U : inst.debugLoc;
+        if(dbgLoc != ~0U)
+        {
+          // if(dbgLoc != currentDebugLoc)
+          {
+            const DebugLocation &debugLoc = m_DebugLocations[dbgLoc];
+            if(!commentStr.empty())
+              commentStr += ", ";
+            const Metadata *scope = debugLoc.scope;
+            if(scope)
+            {
+              const DIBase *const dwarfInfo = scope->dwarf;
+              if(dwarfInfo)
+              {
+                commentStr += " ; ";
+                commentStr += " " + ToStr(dwarfInfo->type);
+                commentStr += " ";
+                commentStr += GetFunctionScopeName(dwarfInfo);
+                commentStr += " ";
+                rdcstr shaderFilePath =
+                    standardise_directory_separator(GetDebugScopeFilePath(dwarfInfo));
+                commentStr += get_basename(shaderFilePath);
+              }
+              lastScope = scope;
+            }
+            commentStr += StringFormat::Fmt(" line:%llu col:%llu", debugLoc.line, debugLoc.col);
+            currentDebugLoc = dbgLoc;
+          }
+        }
+
         if(!resultIdStr.empty())
           lineStr = resultTypeStr + resultIdStr + " = " + lineStr;
 
