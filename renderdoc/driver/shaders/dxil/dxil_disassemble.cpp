@@ -153,6 +153,11 @@ bool ShouldIgnoreSourceMapping(const Instruction &inst)
       }
     }
   }
+  // Do not set source mapping for branch instructions
+  else if(inst.op == Operation::Branch)
+  {
+    return false;
+  }
   return false;
 }
 
