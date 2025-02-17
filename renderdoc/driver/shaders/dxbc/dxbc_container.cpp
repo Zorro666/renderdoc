@@ -3039,17 +3039,28 @@ TEST_CASE("DO NOT COMMIT - convenience test", "[dxbc]")
 {
   // this test loads a file from disk and passes it through DXBC::DXBCContainer. Useful for when you
   // are iterating on a shader and don't want to have to load a whole capture.
-  bytebuf buf;
-  FileIO::ReadAll(
-      "c:/Users/ASUS/Workspace/RenderDoc/TestData/DXBCs/619e8073e75e1c4081cf38fdcf264a8c.dxbc", buf);
+  //  FileIO::ReadAll(
+  //      "c:/Users/ASUS/Workspace/RenderDoc/TestData/DXBCs/lib.0a1ba82f494730722530044b6b803f88.dxbc",
+  //      buf);
+  //      "c:/Users/ASUS/Workspace/RenderDoc/TestData/DXBCs/rt.489a5af6cd5e862ee5ec6ae70f04c3db.dxbc",
 
-  DXBC::DXBCContainer container(buf, rdcstr(), GraphicsAPI::D3D11, ~0U, ~0U);
+  rdcarray<PathEntry> entries;
+  rdcstr dir = "c:/Users/ASUS/Workspace/RenderDoc/TestData/DXBCs";
+  FileIO::GetFilesInDirectory(dir, entries);
+  for(const PathEntry &pathEntry : entries)
+  {
+    if(pathEntry.filename.find(".dxbc") == -1)
+      continue;
 
-  // the only thing fetched lazily is the disassembly, so grab that here
+    bytebuf buf;
+    FileIO::ReadAll(dir + "/" + pathEntry.filename, buf);
+    DXBC::DXBCContainer container(buf, rdcstr(), GraphicsAPI::D3D11, ~0U, ~0U);
 
-  rdcstr disasm = container.GetDisassembly(false);
+    // the only thing fetched lazily is the disassembly, so grab that here
+    rdcstr disasm = container.GetDisassembly(false);
 
-  RDCLOG("%s", disasm.c_str());
+    RDCLOG("%s", disasm.c_str());
+  }
 }
 
 #endif
