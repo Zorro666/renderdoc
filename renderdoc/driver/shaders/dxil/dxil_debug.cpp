@@ -854,7 +854,7 @@ static VarType ConvertDXILTypeToVarType(const Type *type)
   if(type->type == Type::TypeKind::Array)
     return ConvertDXILTypeToVarType(type->inner);
   if(type->type == Type::TypeKind::Pointer)
-    return VarType::GPUPointer;
+    return ConvertDXILTypeToVarType(type->inner);
 
   RDCASSERTEQUAL(type->type, Type::TypeKind::Scalar);
   if(type->scalarType == Type::ScalarKind::Int)
@@ -7614,8 +7614,9 @@ void ThreadState::OperationAtomic(const DXIL::Instruction &inst, DXIL::Operation
     a = m_Variables[ptrId];
   }
 
+  // Only global pointers will be encoded like this
   // Get the underling type of the GPUPointer
-  if(a.type == VarType::GPUPointer)
+  if(IsEncodedPointer(a))
   {
     Id id;
     uint64_t offset;
