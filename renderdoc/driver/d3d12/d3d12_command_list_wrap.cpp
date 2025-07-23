@@ -3574,10 +3574,26 @@ void WrappedID3D12GraphicsCommandList::ResetAndRecordExecuteIndirectStates(
         case D3D12_INDIRECT_ARGUMENT_TYPE_INDEX_BUFFER_VIEW: state.ibuffer = {}; break;
         case D3D12_INDIRECT_ARGUMENT_TYPE_CONSTANT:
           if(arg.Constant.RootParameterIndex < state.graphics.sigelems.size())
-            state.graphics.sigelems[arg.Constant.RootParameterIndex].constants.clear();
+          {
+            for(uint32_t j = 0; j < arg.Constant.Num32BitValuesToSet; j++)
+            {
+              size_t index = j + arg.Constant.DestOffsetIn32BitValues;
+              state.graphics.sigelems[arg.Constant.RootParameterIndex].constants.resize_for_index(
+                  index);
+              state.graphics.sigelems[arg.Constant.RootParameterIndex].constants[index] = 0;
+            }
+          }
 
           if(arg.Constant.RootParameterIndex < state.compute.sigelems.size())
-            state.compute.sigelems[arg.Constant.RootParameterIndex].constants.clear();
+          {
+            for(uint32_t j = 0; j < arg.Constant.Num32BitValuesToSet; j++)
+            {
+              size_t index = j + arg.Constant.DestOffsetIn32BitValues;
+              state.compute.sigelems[arg.Constant.RootParameterIndex].constants.resize_for_index(
+                  index);
+              state.compute.sigelems[arg.Constant.RootParameterIndex].constants[index] = 0;
+            }
+          }
           break;
         case D3D12_INDIRECT_ARGUMENT_TYPE_CONSTANT_BUFFER_VIEW:
         case D3D12_INDIRECT_ARGUMENT_TYPE_SHADER_RESOURCE_VIEW:
@@ -3932,12 +3948,26 @@ void WrappedID3D12GraphicsCommandList::FinaliseExecuteIndirectEvents(BakedCmdLis
             structuriser.Serialise("Values"_lit, data32, arg.Constant.Num32BitValuesToSet).Important();
 
             if(arg.Constant.RootParameterIndex < state.graphics.sigelems.size())
-              state.graphics.sigelems[arg.Constant.RootParameterIndex].constants.assign(
-                  data32, arg.Constant.Num32BitValuesToSet);
+            {
+              for(uint32_t j = 0; j < arg.Constant.Num32BitValuesToSet; j++)
+              {
+                size_t index = j + arg.Constant.DestOffsetIn32BitValues;
+                state.graphics.sigelems[arg.Constant.RootParameterIndex].constants.resize_for_index(
+                    index);
+                state.graphics.sigelems[arg.Constant.RootParameterIndex].constants[index] = data32[j];
+              }
+            }
 
             if(arg.Constant.RootParameterIndex < state.compute.sigelems.size())
-              state.compute.sigelems[arg.Constant.RootParameterIndex].constants.assign(
-                  data32, arg.Constant.Num32BitValuesToSet);
+            {
+              for(uint32_t j = 0; j < arg.Constant.Num32BitValuesToSet; j++)
+              {
+                size_t index = j + arg.Constant.DestOffsetIn32BitValues;
+                state.compute.sigelems[arg.Constant.RootParameterIndex].constants.resize_for_index(
+                    index);
+                state.compute.sigelems[arg.Constant.RootParameterIndex].constants[index] = data32[j];
+              }
+            }
 
             // advance only the EID, since we're still in the same action
             eid++;
