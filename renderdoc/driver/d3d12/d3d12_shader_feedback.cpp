@@ -1133,8 +1133,12 @@ static bool AddArraySlots(WrappedID3D12PipelineState::ShaderEntry *shad, uint32_
 
 struct D3D12StatCallback : public D3D12ActionCallback
 {
-  D3D12StatCallback(WrappedID3D12Device *dev, ID3D12QueryHeap *heap)
-      : m_pDevice(dev), m_PipeStatsQueryHeap(heap)
+  D3D12StatCallback(WrappedID3D12Device *dev, ID3D12QueryHeap *heap, ID3D12RootSignature *rootSig,
+                    ID3D12CommandSignature **ppCommandSignature)
+      : m_pDevice(dev),
+        m_PipeStatsQueryHeap(heap),
+        m_pRootSignature(rootSig),
+        m_ppCommandSignature(ppCommandSignature)
   {
     m_pDevice->GetQueue()->GetCommandData()->m_ActionCallback = this;
   }
@@ -1143,6 +1147,46 @@ struct D3D12StatCallback : public D3D12ActionCallback
   {
     if(cmd->GetType() == D3D12_COMMAND_LIST_TYPE_DIRECT)
       cmd->BeginQuery(m_PipeStatsQueryHeap, D3D12_QUERY_TYPE_PIPELINE_STATISTICS, 0);
+
+    D3D12CommandData *cmdData = m_pDevice->GetQueue()->GetCommandData();
+    WrappedID3D12CommandSignature *comSig =
+        (WrappedID3D12CommandSignature *)cmdData->m_IndirectData.commandSig;
+    if(comSig)
+    {
+      // Need to create a new command signature using our modified root signature if the command
+      // signature modifies the root arguments i.e. setting root constants, updating bindings.
+      bool needNewCommandSig = false;
+      for(D3D12_INDIRECT_ARGUMENT_DESC &arg : comSig->sig.arguments)
+      {
+        D3D12_INDIRECT_ARGUMENT_TYPE argType = arg.Type;
+        if(argType == D3D12_INDIRECT_ARGUMENT_TYPE_VERTEX_BUFFER_VIEW ||
+           argType == D3D12_INDIRECT_ARGUMENT_TYPE_INDEX_BUFFER_VIEW ||
+           argType == D3D12_INDIRECT_ARGUMENT_TYPE_CONSTANT ||
+           argType == D3D12_INDIRECT_ARGUMENT_TYPE_CONSTANT_BUFFER_VIEW ||
+           argType == D3D12_INDIRECT_ARGUMENT_TYPE_SHADER_RESOURCE_VIEW ||
+           argType == D3D12_INDIRECT_ARGUMENT_TYPE_UNORDERED_ACCESS_VIEW ||
+           argType == D3D12_INDIRECT_ARGUMENT_TYPE_INCREMENTING_CONSTANT)
+        {
+          needNewCommandSig = true;
+          break;
+        }
+      }
+      if(needNewCommandSig)
+      {
+        D3D12_COMMAND_SIGNATURE_DESC comSigDesc;
+        comSigDesc.ByteStride = comSig->sig.ByteStride;
+        comSigDesc.NodeMask = 0;
+        comSigDesc.NumArgumentDescs = (uint32_t)comSig->sig.arguments.size();
+        comSigDesc.pArgumentDescs = comSig->sig.arguments.data();
+
+        m_pDevice->CreateCommandSignature(&comSigDesc, m_pRootSignature,
+                                          __uuidof(ID3D12CommandSignature),
+                                          (void **)m_ppCommandSignature);
+
+        RDCASSERT(*m_ppCommandSignature);
+        cmdData->m_IndirectData.commandSig = *m_ppCommandSignature;
+      }
+    }
   }
 
   bool PostDraw(uint32_t eid, ID3D12GraphicsCommandListX *cmd) override
@@ -1186,6 +1230,8 @@ struct D3D12StatCallback : public D3D12ActionCallback
   void AliasEvent(uint32_t primary, uint32_t alias) override {}
   WrappedID3D12Device *m_pDevice;
   ID3D12QueryHeap *m_PipeStatsQueryHeap;
+  ID3D12RootSignature *m_pRootSignature = NULL;
+  ID3D12CommandSignature **m_ppCommandSignature = NULL;
 };
 
 bool D3D12Replay::FetchShaderFeedback(uint32_t eventId)
@@ -1477,8 +1523,9 @@ bool D3D12Replay::FetchShaderFeedback(uint32_t eventId)
         D3D12RenderState::SignatureElement(eRootUAV, GetResID(m_BindlessFeedback.FeedbackBuffer), 0);
   }
 
+  ID3D12CommandSignature *modComSig = NULL;
   {
-    D3D12StatCallback cb(m_pDevice, m_BindlessFeedback.PipeStatsHeap);
+    D3D12StatCallback cb(m_pDevice, m_BindlessFeedback.PipeStatsHeap, annotatedSig, &modComSig);
 
     m_pDevice->ReplayLog(0, eventId, eReplay_OnlyDraw);
 
@@ -1497,6 +1544,7 @@ bool D3D12Replay::FetchShaderFeedback(uint32_t eventId)
 
   SAFE_RELEASE(annotatedPipe);
   SAFE_RELEASE(annotatedSig);
+  SAFE_RELEASE(modComSig);
 
   rs = prev;
 
