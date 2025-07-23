@@ -4260,6 +4260,9 @@ bool WrappedID3D12GraphicsCommandList::Serialise_ExecuteIndirect(
             uint32_t eventId =
                 m_Cmd->HandlePreCallback(list, drawType, (i + 1) * comSig->sig.arguments.count());
 
+            // Allow the callback to recreate the command signature i.e. to match the root signature
+            pCommandSignature = m_Cmd->m_IndirectData.commandSig;
+
             // action up to and including i. The previous draws will be nop'd out
             Unwrap(list)->ExecuteIndirect(Unwrap(pCommandSignature), 1, argBuffer, argOffset, NULL,
                                           0);
