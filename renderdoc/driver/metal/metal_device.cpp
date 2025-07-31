@@ -436,6 +436,17 @@ WrappedMTLRenderPipelineState *WrappedMTLDevice::newRenderPipelineStateWithDescr
   SERIALISE_TIME_CALL(realMTLRenderPipelineState =
                           Unwrap(this)->newRenderPipelineState(realDescriptor, error));
   realDescriptor->release();
+  if(!realMTLRenderPipelineState)
+  {
+    if(IsCaptureMode(m_State))
+    {
+      return NULL;
+    }
+    RDCASSERT(error && *error);
+    RDCFATAL("newRenderPipelineStateWithDescriptor() failed\n%s",
+             (*error)->localizedDescription()->utf8String());
+    return NULL;
+  }
 
   WrappedMTLRenderPipelineState *wrappedMTLRenderPipelineState;
   ResourceId id =

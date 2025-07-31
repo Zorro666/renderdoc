@@ -249,7 +249,11 @@ bool WrappedMTLDevice::ProcessChunk(ReadSerialiser &ser, MetalChunk chunk)
     case MetalChunk::MTLRenderCommandEncoder_setViewports: METAL_CHUNK_NOT_HANDLED();
     case MetalChunk::MTLRenderCommandEncoder_setFrontFacingWinding: METAL_CHUNK_NOT_HANDLED();
     case MetalChunk::MTLRenderCommandEncoder_setVertexAmplificationCount: METAL_CHUNK_NOT_HANDLED();
-    case MetalChunk::MTLRenderCommandEncoder_setCullMode: METAL_CHUNK_NOT_HANDLED();
+    case MetalChunk::MTLRenderCommandEncoder_setCullMode:
+    {
+      MTL::CullMode cullMode;
+      return m_DummyReplayRenderCommandEncoder->Serialise_setCullMode(ser, cullMode);
+    }
     case MetalChunk::MTLRenderCommandEncoder_setDepthClipMode: METAL_CHUNK_NOT_HANDLED();
     case MetalChunk::MTLRenderCommandEncoder_setDepthBias: METAL_CHUNK_NOT_HANDLED();
     case MetalChunk::MTLRenderCommandEncoder_setScissorRect: METAL_CHUNK_NOT_HANDLED();
@@ -298,11 +302,11 @@ bool WrappedMTLDevice::ProcessChunk(ReadSerialiser &ser, MetalChunk chunk)
       return m_DummyReplayRenderCommandEncoder->Serialise_drawPrimitives(
           ser, MTL::PrimitiveTypePoint, 0, 0, 0, 0);
     case MetalChunk::MTLRenderCommandEncoder_drawPrimitives_indirect: METAL_CHUNK_NOT_HANDLED();
-    case MetalChunk::MTLRenderCommandEncoder_drawIndexedPrimitives: METAL_CHUNK_NOT_HANDLED();
+    case MetalChunk::MTLRenderCommandEncoder_drawIndexedPrimitives:
     case MetalChunk::MTLRenderCommandEncoder_drawIndexedPrimitives_instanced:
-      METAL_CHUNK_NOT_HANDLED();
     case MetalChunk::MTLRenderCommandEncoder_drawIndexedPrimitives_instanced_base:
-      METAL_CHUNK_NOT_HANDLED();
+      return m_DummyReplayRenderCommandEncoder->Serialise_drawIndexedPrimitives(
+          ser, MTL::PrimitiveTypePoint, 0, MTL::IndexTypeUInt16, NULL, 0, 0, 0, 0);
     case MetalChunk::MTLRenderCommandEncoder_drawIndexedPrimitives_indirect:
       METAL_CHUNK_NOT_HANDLED();
     case MetalChunk::MTLRenderCommandEncoder_textureBarrier: METAL_CHUNK_NOT_HANDLED();
@@ -473,6 +477,11 @@ bool WrappedMTLDevice::ProcessChunk(ReadSerialiser &ser, MetalChunk chunk)
   return true;
 }
 
+WrappedMTLCommandBuffer *WrappedMTLDevice::GetNextCommandBuffer()
+{
+  METAL_NOT_IMPLEMENTED();
+  return NULL;
+}
 void WrappedMTLDevice::AddResource(ResourceId id, ResourceType type, const char *defaultNamePrefix)
 {
   ResourceDescription &descr = GetReplay()->GetResourceDesc(id);
@@ -487,7 +496,7 @@ void WrappedMTLDevice::AddResource(ResourceId id, ResourceType type, const char 
 
 void WrappedMTLDevice::DerivedResource(ResourceId parentLive, ResourceId child)
 {
-  ResourceId parentId = GetResourceManager()->GetOriginalID(parentLive);
+  ResourceId parentId = GetResourceManager()->GetUnreplacedOriginalID(parentLive);
 
   GetReplay()->GetResourceDesc(parentId).derivedResources.push_back(child);
   GetReplay()->GetResourceDesc(child).parentResources.push_back(parentId);
@@ -1066,6 +1075,75 @@ MetalDrawableInfo WrappedMTLDevice::UnregisterDrawableInfo(MTL::Drawable *mtlDra
   drawableInfo.mtlLayer = NULL;
   drawableInfo.texture = NULL;
   return drawableInfo;
+}
+
+void WrappedMTLDevice::ClearActiveRenderCommandEncoder()
+{
+  METAL_NOT_IMPLEMENTED();
+}
+
+void WrappedMTLDevice::SetActiveRenderCommandEncoder(WrappedMTLRenderCommandEncoder *renderCommandEncoder)
+{
+  METAL_NOT_IMPLEMENTED();
+}
+
+WrappedMTLRenderCommandEncoder *WrappedMTLDevice::GetCurrentReplayRenderEncoder()
+{
+  METAL_NOT_IMPLEMENTED();
+  return NULL;
+}
+
+void WrappedMTLDevice::ClearActiveBlitCommandEncoder()
+{
+  METAL_NOT_IMPLEMENTED();
+}
+
+void WrappedMTLDevice::SetActiveBlitCommandEncoder(WrappedMTLBlitCommandEncoder *blitCommandEncoder)
+{
+  METAL_NOT_IMPLEMENTED();
+}
+
+WrappedMTLBlitCommandEncoder *WrappedMTLDevice::GetCurrentReplayBlitEncoder()
+{
+  METAL_NOT_IMPLEMENTED();
+  return NULL;
+}
+
+WrappedMTLCommandBuffer *WrappedMTLDevice::GetCurrentReplayCommandBuffer()
+{
+  METAL_NOT_IMPLEMENTED();
+  return NULL;
+}
+
+bool WrappedMTLDevice::IsCurrentCommandBufferEventInReplayRange()
+{
+  METAL_NOT_IMPLEMENTED();
+  return false;
+}
+
+void WrappedMTLDevice::NewReplayCommandBuffer(WrappedMTLCommandBuffer *cmdBuffer)
+{
+  METAL_NOT_IMPLEMENTED();
+}
+
+void WrappedMTLDevice::ResetReplayCommandBuffer(WrappedMTLCommandBuffer *cmdBuffer)
+{
+  METAL_NOT_IMPLEMENTED();
+}
+
+void WrappedMTLDevice::ReplayCommandBufferEnqueue(WrappedMTLCommandBuffer *cmdBuffer)
+{
+  METAL_NOT_IMPLEMENTED();
+}
+
+void WrappedMTLDevice::ReplayCommandBufferCommit(WrappedMTLCommandBuffer *cmdBuffer)
+{
+  METAL_NOT_IMPLEMENTED();
+}
+
+void WrappedMTLDevice::SetCurrentCommandBuffer(WrappedMTLCommandBuffer *cmdBuffer)
+{
+  METAL_NOT_IMPLEMENTED();
 }
 
 MetalInitParams::MetalInitParams()
