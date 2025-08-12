@@ -172,7 +172,7 @@ enum
 #define FORCE_ASSERTS OPTION_ON
 
 // force debugbreaks regardless of debug/release mode
-#define FORCE_DEBUGBREAK OPTION_OFF
+#define FORCE_DEBUGBREAK OPTION_ON
 
 /////////////////////////////////////////////////
 // Logging configuration
