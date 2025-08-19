@@ -108,6 +108,7 @@ class D3D12_Shader_Debug_Zoo(rdtest.TestCase):
         undefined_tests = [int(test) for test in self.find_action("Undefined tests: ").customName.split(" ")[2:]]
 
         failed = False
+        countTracesToCheck = 5
 
         shaderModels = [
             "sm_5_0", "sm_5_1", "sm_6_0", "sm_6_2", "sm_6_6",
@@ -160,6 +161,25 @@ class D3D12_Shader_Debug_Zoo(rdtest.TestCase):
 
                 # Loop over every test
                 for test in range(action.numInstances):
+                    child = 0
+                    x = 4 * test + 1
+                    y = 4 * child + 1
+
+                    # Debug the shader
+                    mtOption = rd.SetConfigSetting("D3D12_DXILShaderDebugger_EnableMT")
+                    mtOption.data.basic.b = False
+                    t: rd.ShaderDebugTrace = self.controller.DebugPixel(x, y, rd.DebugPixelInputs())
+                    baseStates = self.generate_full_trace(t)
+                    self.controller.FreeTrace(t)
+                    mtOption.data.basic.b = True
+                    for i in range(countTracesToCheck):
+                        t: rd.ShaderDebugTrace = self.controller.DebugPixel(x, y, rd.DebugPixelInputs())
+                        newStates = self.generate_full_trace(t)
+                        if not self.compare_full_traces(baseStates, newStates):
+                            rdtest.log.error(f"Test {test} sub-section {child} at {x},{y} multiple traces did not match")
+                            failed = True
+                        self.controller.FreeTrace(t)
+
                     # Debug the shader
                     trace: rd.ShaderDebugTrace = self.controller.DebugPixel(4 * test, 0, rd.DebugPixelInputs())
 
@@ -244,6 +264,21 @@ class D3D12_Shader_Debug_Zoo(rdtest.TestCase):
             pipe: rd.PipeState = self.controller.GetPipelineState()
 
             if pipe.GetShaderReflection(rd.ShaderStage.Vertex).debugInfo.debuggable:
+                # Debug the shader
+                mtOption = rd.SetConfigSetting("D3D12_DXILShaderDebugger_EnableMT")
+                mtOption.data.basic.b = False
+                t: rd.ShaderDebugTrace = self.controller.DebugVertex(0, 0, 0, 0)
+                baseStates = self.generate_full_trace(t)
+                self.controller.FreeTrace(t)
+                mtOption.data.basic.b = True
+                for i in range(countTracesToCheck):
+                    t: rd.ShaderDebugTrace = self.controller.DebugVertex(0, 0, 0, 0)
+                    newStates = self.generate_full_trace(t)
+                    if not self.compare_full_traces(baseStates, newStates):
+                        rdtest.log.error(f"Debug Vertex multiple traces did not match")
+                        failed = True
+                    self.controller.FreeTrace(t)
+
                 # Debug the vertex shader
                 trace: rd.ShaderDebugTrace = self.controller.DebugVertex(0, 0, 0, 0)
                 cycles, variables = self.process_trace(trace)
@@ -356,6 +391,22 @@ class D3D12_Shader_Debug_Zoo(rdtest.TestCase):
                 groupid = (groupX, 1, 0)
                 threadid = (0, 0, 0)
                 testIndex = groupX
+
+                # Debug the shader
+                mtOption = rd.SetConfigSetting("D3D12_DXILShaderDebugger_EnableMT")
+                mtOption.data.basic.b = False
+                t: rd.ShaderDebugTrace = self.controller.DebugThread(groupid, threadid)
+                baseStates = self.generate_full_trace(t)
+                self.controller.FreeTrace(t)
+                mtOption.data.basic.b = True
+                for i in range(countTracesToCheck):
+                    t: rd.ShaderDebugTrace = self.controller.DebugThread(groupid, threadid)
+                    newStates = self.generate_full_trace(t)
+                    if not self.compare_full_traces(baseStates, newStates):
+                        rdtest.log.error(f"Test {test} Group:{groupid} Thread:{threadid} Index:{testIndex} multiple traces did not match")
+                        failed = True
+                    self.controller.FreeTrace(t)
+
                 trace: rd.ShaderDebugTrace = self.controller.DebugThread(groupid, threadid)
                 cycles, variables = self.process_trace(trace)
                 # Check for non-zero cycles
