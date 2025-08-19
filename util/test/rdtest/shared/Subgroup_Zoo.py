@@ -7,8 +7,11 @@ class Subgroup_Zoo(rdtest.TestCase):
     internal = True
     demos_test_name = None
     workgroup = (0, 0, 0)
+    countTracesToCheck = 5
+    mtOption : rd.SDObject
 
     def check_compute_thread_result(self, test, action, x, y, z, dim, bufdata):
+        failed = False
         try:
             real = struct.unpack_from(
                 "4f", bufdata, 16*y*dim[0] + 16*x)
@@ -17,7 +20,20 @@ class Subgroup_Zoo(rdtest.TestCase):
             return False
 
         try:
-            trace = self.controller.DebugThread(self.workgroup, (x, y, z))
+            self.mtOption.data.basic.b = False
+            t: rd.ShaderDebugTrace = self.controller.DebugThread(self.workgroup, (x, y, z))
+            baseStates = self.generate_full_trace(t)
+            self.controller.FreeTrace(t)
+            self.mtOption.data.basic.b = True
+            for i in range(self.countTracesToCheck):
+                t: rd.ShaderDebugTrace = self.controller.DebugThread(self.workgroup, (x, y, z))
+                newStates = self.generate_full_trace(t)
+                if not self.compare_full_traces(baseStates, newStates):
+                    rdtest.log.error(f"Test {test} at EID:{action.eventId} at {x},{y},{z} multiple traces did not match")
+                    failed = True
+                self.controller.FreeTrace(t)
+
+            trace: rd.ShaderDebugTrace = self.controller.DebugThread(self.workgroup, (x, y, z))
 
             _, variables = self.process_trace(trace)
 
@@ -54,6 +70,9 @@ class Subgroup_Zoo(rdtest.TestCase):
         finally:
             self.controller.FreeTrace(trace)
 
+        if failed:
+            rdtest.log.error(f"Test {test} failed EID:{action.eventId} TID:{x},{y},{z}") 
+            return False
         return True
 
     def check_compute_tests(self, compute_dims, thread_checks):
@@ -154,8 +173,22 @@ class Subgroup_Zoo(rdtest.TestCase):
                         action, rd.MeshDataStage.VSOut, first_index=0, num_indices=action.numIndices, instance=inst)
 
                     for vtx in range(action.numIndices):
-                        trace = self.controller.DebugVertex(
-                            vtx, inst, vtx, view)
+
+                        self.mtOption.data.basic.b = False
+                        t: rd.ShaderDebugTrace = self.controller.DebugVertex(vtx, inst, vtx, view)
+                        baseStates = self.generate_full_trace(t)
+                        self.controller.FreeTrace(t)
+                        self.mtOption.data.basic.b = True
+                        for i in range(self.countTracesToCheck):
+                            t: rd.ShaderDebugTrace = self.controller.DebugVertex(vtx, inst, vtx, view)
+                            newStates = self.generate_full_trace(t)
+                            if not self.compare_full_traces(baseStates, newStates):
+                                rdtest.log.error(
+                                    f"Test {idx} at EID:{action.eventId} at {vtx} inst {inst} view {view} multiple traces did not match")
+                                failed = True
+                            self.controller.FreeTrace(t)
+
+                        trace: rd.ShaderDebugTrace = self.controller.DebugVertex(vtx, inst, vtx, view)
 
                         if trace.debugger is None:
                             self.controller.FreeTrace(trace)
@@ -210,11 +243,26 @@ class Subgroup_Zoo(rdtest.TestCase):
                     if real == clear_col:
                         continue
 
-                    inputs = rd.DebugPixelInputs()
+                    inputs : rd.DebugPixelInputs = rd.DebugPixelInputs()
                     inputs.sample = 0
                     inputs.primitive = rd.ReplayController.NoPreference
                     inputs.view = view
-                    trace = self.controller.DebugPixel(x, y, inputs)
+
+                    self.mtOption.data.basic.b = False
+                    t: rd.ShaderDebugTrace = self.controller.DebugPixel(x, y, inputs)
+                    baseStates = self.generate_full_trace(t)
+                    self.controller.FreeTrace(t)
+                    self.mtOption.data.basic.b = True
+                    for i in range(self.countTracesToCheck):
+                        t: rd.ShaderDebugTrace = self.controller.DebugPixel(x, y, inputs)
+                        newStates = self.generate_full_trace(t)
+                        if not self.compare_full_traces(baseStates, newStates):
+                            rdtest.log.error(
+                                  f"Test {idx} at EID:{action.eventId} at {x},{y} multiple traces did not match")
+                            failed = True
+                        self.controller.FreeTrace(t)
+
+                    trace: rd.ShaderDebugTrace = self.controller.DebugPixel(x, y, inputs)
 
                     if trace.debugger is None:
                         self.controller.FreeTrace(trace)

@@ -12,6 +12,7 @@ class VK_Shader_Debug_Zoo(rdtest.TestCase):
             return
 
         failed = False
+        countTracesToCheck = 5
 
         for test_name in ["GLSL1 tests", "GLSL2 tests", "ASM tests"]:
             rdtest.log.begin_section(test_name)
@@ -30,6 +31,20 @@ class VK_Shader_Debug_Zoo(rdtest.TestCase):
                     y = 4 * child + 1
 
                     # Debug the shader
+                    mtOption = rd.SetConfigSetting("Vulkan_Hack_EnableShaderDebugMT")
+                    mtOption.data.basic.b = False
+                    t: rd.ShaderDebugTrace = self.controller.DebugPixel(x, y, rd.DebugPixelInputs())
+                    baseStates = self.generate_full_trace(t)
+                    self.controller.FreeTrace(t)
+                    mtOption.data.basic.b = True
+                    for i in range(countTracesToCheck):
+                        t: rd.ShaderDebugTrace = self.controller.DebugPixel(x, y, rd.DebugPixelInputs())
+                        newStates = self.generate_full_trace(t)
+                        if not self.compare_full_traces(baseStates, newStates):
+                            rdtest.log.error(f"Test {test} sub-section {child} at {x},{y} multiple traces did not match")
+                            failed = True
+                        self.controller.FreeTrace(t)
+
                     trace: rd.ShaderDebugTrace = self.controller.DebugPixel(x, y, rd.DebugPixelInputs())
 
                     if trace.debugger is None:
