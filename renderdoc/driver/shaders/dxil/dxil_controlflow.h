@@ -48,7 +48,7 @@ public:
     return m_PartialConvergentBlocks;
   }
   uint32_t GetNextUniformBlock(uint32_t from) const;
-  bool IsForwardConnection(uint32_t from, uint32_t to) const;
+  bool IsConnected(uint32_t from, uint32_t to) const;
 
 private:
   typedef rdcarray<uint32_t> BlockPath;
@@ -58,14 +58,6 @@ private:
     Unknown,
     NotConnected,
     Connected,
-  };
-
-  enum PathType : uint32_t
-  {
-    IncLoops = 0,
-    NoLoops = 1,
-    Count = 2
-
   };
 
   enum class DirectPathState
@@ -82,33 +74,40 @@ private:
     RouteDoesNotContainBlock,
   };
 
-  bool TraceBlockFlow(const size_t pathsType, const uint32_t from, BlockPath &path);
-  bool BlockInAllPaths(const size_t pathsType, uint32_t block, uint32_t pathIdx,
-                       int32_t startIdx) const;
-  int32_t BlockInAnyPath(const size_t pathsType, uint32_t block, uint32_t pathIdx, int32_t startIdx,
-                         int32_t steps) const;
-  uint32_t BlockInMultipleUniquePaths(const size_t pathsType, uint32_t block, uint32_t pathIdx,
-                                      int32_t startIdx, BlockPath &route,
-                                      const uint32_t countPaths) const;
-  RouteState BlockInAllPossibleRoutes(const size_t pathsType, uint32_t to, uint32_t mustInclude,
-                                      uint32_t pathIdx, uint32_t startIdx, BlockArray &route) const;
-  bool IsBlockConnected(const size_t pathsType, uint32_t from, uint32_t to) const;
+  struct Node
+  {
+    uint32_t blockId;
+    uint32_t idx;
+    rdcarray<Node *> parents;
+    rdcarray<Node *> children;
+  };
+
+  const Node *GetNode(const uint32_t blockId) const
+  {
+    return m_Nodes.data() + m_BlockIDsToIDx[blockId];
+  }
+
+  void TraceBlockFlow(const Node *from, BlockPath &path);
+  bool BlockInAllPaths(uint32_t from, uint32_t to) const;
+  bool BlockInMultiplePaths(uint32_t from, uint32_t to) const;
+
+  bool AnyPath(uint32_t from, uint32_t to) const;
   bool AllPathsContainBlock(uint32_t from, uint32_t to, uint32_t mustInclude) const;
-  DirectPathState ComputeDirectPathState(uint32_t from, uint32_t to,
-                                         const rdcarray<uint32_t> *pathIdxsToCheck) const;
+
+  int32_t BlockInAnyPathSlow(uint32_t block, uint32_t pathIdx, int32_t startIdx, int32_t steps) const;
 
   uint32_t PATH_END = ~0U;
 
+  rdcarray<Node> m_Nodes;
+  rdcarray<uint32_t> m_BlockIDsToIDx;
+  mutable rdcarray<uint8_t> m_TracedNodes;
+
   std::unordered_set<uint32_t> m_Blocks;
-  rdcarray<BlockArray> m_BlockOutLinks;
-  rdcarray<BlockArray> m_BlockInLinks;
 
   mutable rdcarray<bool> m_TracedBlocks;
   mutable rdcarray<bool> m_CheckedPaths;
-  mutable rdcarray<BlockPath> m_ValidRoutes;
-  const size_t COUNT_PATHS_TYPES = 2;
-  rdcarray<rdcarray<uint32_t>> m_BlockPathLinks[PathType::Count];
-  rdcarray<BlockPath> m_PathSets[PathType::Count];
+  rdcarray<rdcarray<uint32_t>> m_BlockPathLinks;
+  rdcarray<BlockPath> m_Paths;
 
   rdcarray<uint32_t> m_UniformBlocks;
   rdcarray<uint32_t> m_LoopBlocks;

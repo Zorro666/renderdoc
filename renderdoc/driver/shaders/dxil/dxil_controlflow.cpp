@@ -63,15 +63,13 @@ already computed
 6. Find ConvergentBlocks
   * For each divergent block find its convergent block
   * defined to be the first block which is in all possible paths that start from the divergent block
-  * loops are not taken when walking the paths
   * this is similar to uniform blocks find convergent blocks starting from the block zero
   * the convergent blocks can be thought of as a local uniform block
   * where local is defined by the graph/paths which contain the divergent block
 
-7. Find Partial CovergentBlock
+7. Find Partial ConvergentBlock
   * For each divergent block find its partial convergent blocks in paths before its convergent block
   * defined to be blocks which are in more than one path that start from the divergent block
-  * loops are not taken when walking the paths
   * this is similar to finding convergent blocks
   * prune partial convergence blocks from existing divergent block entries
     * if an existing divergent block includes this partial convergence block
@@ -120,8 +118,9 @@ rdcstr GenerateGraph(const char *const name, const ControlFlow *graph)
       output += StringFormat::Fmt(" [shape=Mrecord color=green]");
     output += ";\n";
 
-    for(uint32_t to : graph->m_BlockOutLinks[from])
-      output += StringFormat::Fmt("%u -> %u;\n", from, to);
+    const ControlFlow::Node *node = graph->GetNode(from);
+    for(const ControlFlow::Node *child : node->children)
+      output += StringFormat::Fmt("%u -> %u;\n", from, child->blockId);
   }
   for(const ConvergentBlockData &data : convergentBlockDatas)
   {
@@ -139,70 +138,217 @@ rdcstr GenerateGraph(const char *const name, const ControlFlow *graph)
   return output;
 }
 
-bool ControlFlow::IsBlockConnected(const size_t pathsType, uint32_t from, uint32_t to) const
+bool ControlFlow::BlockInAllPaths(uint32_t from, uint32_t to) const
 {
-  const rdcarray<BlockPath> &paths = m_PathSets[pathsType];
-  for(uint32_t pathIdx = 0; pathIdx < paths.size(); ++pathIdx)
+  uint32_t fromIdx = m_BlockIDsToIDx[from];
+  if(fromIdx == 0xFFFFFFFF)
+    return false;
+  uint32_t toIdx = m_BlockIDsToIDx[to];
+  if(toIdx == 0xFFFFFFFF)
+    return false;
+
+  m_TracedNodes.resize(m_Nodes.size());
+  memset(m_TracedNodes.data(), 0, m_TracedNodes.size() * sizeof(uint8_t));
+
+  const Node *fromNode = m_Nodes.data() + fromIdx;
+  rdcarray<const Node *> nodesToCheck;
+  nodesToCheck.push_back(fromNode);
+  while(!nodesToCheck.empty())
   {
-    m_CheckedPaths.clear();
-    m_CheckedPaths.resize(paths.size());
-    for(size_t i = 0; i < m_CheckedPaths.size(); ++i)
-      m_CheckedPaths[i] = false;
-    int32_t startIdx = -1;
-    for(uint32_t i = 0; i < paths[pathIdx].size() - 1; ++i)
+    const Node *currentNode = nodesToCheck.back();
+    if(currentNode->children.empty())
+      return false;
+
+    nodesToCheck.pop_back();
+    m_TracedNodes[currentNode->idx] = 1;
+
+    if(m_Connections[currentNode->blockId][to] == ConnectionState::NotConnected)
+      return false;
+
+    for(const Node *child : currentNode->children)
     {
-      if(paths[pathIdx][i] == from)
+      if(child->blockId == to)
       {
-        startIdx = i;
-        break;
+        m_Connections[from][to] = ConnectionState::Connected;
+        continue;
       }
+
+      if(!m_TracedNodes[child->idx])
+        nodesToCheck.push_back(child);
     }
-    // BlockInAnyPath will also check all paths linked to from the end node of the path
-    if(startIdx != -1 && (BlockInAnyPath(pathsType, to, pathIdx, startIdx + 1, 0) != -1))
+  }
+  return true;
+}
+
+bool ControlFlow::BlockInMultiplePaths(uint32_t from, uint32_t to) const
+{
+  uint32_t fromIdx = m_BlockIDsToIDx[from];
+  if(fromIdx == 0xFFFFFFFF)
+    return false;
+  uint32_t toIdx = m_BlockIDsToIDx[to];
+  if(toIdx == 0xFFFFFFFF)
+    return false;
+
+  m_TracedNodes.resize(m_Nodes.size());
+  memset(m_TracedNodes.data(), 0, m_TracedNodes.size() * sizeof(uint8_t));
+  uint32_t countPaths = 0;
+
+  const Node *fromNode = m_Nodes.data() + fromIdx;
+  rdcarray<const Node *> nodesToCheck;
+  nodesToCheck.push_back(fromNode);
+  while(!nodesToCheck.empty())
+  {
+    const Node *currentNode = nodesToCheck.back();
+    nodesToCheck.pop_back();
+    m_TracedNodes[currentNode->idx] = 1;
+
+    if(m_Connections[currentNode->blockId][to] == ConnectionState::NotConnected)
+      continue;
+
+    for(const Node *child : currentNode->children)
     {
-      return true;
+      if(child->blockId == to)
+      {
+        m_Connections[from][to] = ConnectionState::Connected;
+        if(countPaths > 0)
+          return true;
+        ++countPaths;
+        continue;
+      }
+
+      if(!m_TracedNodes[child->idx])
+        nodesToCheck.push_back(child);
     }
   }
   return false;
 }
 
-bool ControlFlow::TraceBlockFlow(const size_t pathsType, const uint32_t from, BlockPath &path)
+bool ControlFlow::AllPathsContainBlock(uint32_t from, uint32_t to, uint32_t mustInclude) const
 {
-  rdcarray<BlockPath> &paths = m_PathSets[pathsType];
-  if(from == PATH_END)
+  uint32_t fromIdx = m_BlockIDsToIDx[from];
+  if(fromIdx == 0xFFFFFFFF)
+    return false;
+  uint32_t toIdx = m_BlockIDsToIDx[to];
+  if(toIdx == 0xFFFFFFFF)
+    return false;
+
+  m_TracedNodes.resize(m_Nodes.size());
+  memset(m_TracedNodes.data(), 0, m_TracedNodes.size() * sizeof(uint8_t));
+
+  const Node *fromNode = m_Nodes.data() + fromIdx;
+  struct NodeData
   {
-    paths.push_back(path);
-    return true;
-  }
-  if(m_BlockOutLinks[from].empty())
+    const Node *node;
+    bool foundMustInclude;
+  };
+
+  rdcarray<NodeData> nodesToCheck;
+  nodesToCheck.emplace_back(NodeData({fromNode, false}));
+  bool foundEnd = false;
+  while(!nodesToCheck.empty())
   {
-    paths.push_back(path);
-    return true;
-  }
-  if(m_TracedBlocks[from])
-  {
-    paths.push_back(path);
-    return true;
-  }
-  m_TracedBlocks[from] = true;
-  BlockPath newPath = path;
-  const BlockArray &gotos = m_BlockOutLinks.at(from);
-  for(uint32_t to : gotos)
-  {
-    // Ignore loops
-    if((pathsType == PathType::NoLoops) && path.contains(to))
+    NodeData &nodeData = nodesToCheck.back();
+    const Node *currentNode = nodeData.node;
+    bool foundMustInclude = nodeData.foundMustInclude;
+
+    nodesToCheck.pop_back();
+    m_TracedNodes[currentNode->idx] = 1;
+
+    if(m_Connections[currentNode->blockId][to] == ConnectionState::NotConnected)
       continue;
-    newPath.push_back(to);
-    if(TraceBlockFlow(pathsType, to, newPath))
-      newPath = path;
+
+    for(const Node *child : currentNode->children)
+    {
+      if(child->blockId == to)
+      {
+        m_Connections[from][to] = ConnectionState::Connected;
+        if(!foundMustInclude)
+          return false;
+        foundEnd = true;
+        continue;
+      }
+
+      if(!m_TracedNodes[child->idx])
+      {
+        bool newMustInclude = foundMustInclude || (child->blockId == mustInclude);
+        nodesToCheck.emplace_back(NodeData({child, newMustInclude}));
+      }
+    }
   }
-  return true;
+  return foundEnd;
 }
 
-int32_t ControlFlow::BlockInAnyPath(const size_t pathsType, uint32_t block, uint32_t pathIdx,
-                                    int32_t startIdx, int32_t steps) const
+bool ControlFlow::AnyPath(uint32_t from, uint32_t to) const
 {
-  const rdcarray<BlockPath> &paths = m_PathSets[pathsType];
+  uint32_t fromIdx = m_BlockIDsToIDx[from];
+  if(fromIdx == 0xFFFFFFFF)
+    return false;
+  uint32_t toIdx = m_BlockIDsToIDx[to];
+  if(toIdx == 0xFFFFFFFF)
+    return false;
+
+  m_TracedNodes.resize(m_Nodes.size());
+  memset(m_TracedNodes.data(), 0, m_TracedNodes.size() * sizeof(uint8_t));
+
+  const Node *fromNode = m_Nodes.data() + fromIdx;
+  rdcarray<const Node *> nodesToCheck;
+  nodesToCheck.push_back(fromNode);
+  while(!nodesToCheck.empty())
+  {
+    const Node *currentNode = nodesToCheck.back();
+    nodesToCheck.pop_back();
+    m_TracedNodes[currentNode->idx] = 1;
+
+    if(m_Connections[currentNode->blockId][to] == ConnectionState::Connected)
+      return true;
+    if(m_Connections[currentNode->blockId][to] == ConnectionState::NotConnected)
+      continue;
+
+    for(const Node *child : currentNode->children)
+    {
+      if(child->blockId == to)
+        return true;
+
+      if(!m_TracedNodes[child->idx])
+        nodesToCheck.push_back(child);
+    }
+  }
+  return false;
+}
+
+void ControlFlow::TraceBlockFlow(const Node *from, BlockPath &path)
+{
+  rdcarray<BlockPath> &paths = m_Paths;
+  if(from->blockId == PATH_END)
+  {
+    paths.push_back(path);
+    return;
+  }
+  if(from->children.empty())
+  {
+    paths.push_back(path);
+    return;
+  }
+  if(m_TracedBlocks[from->blockId])
+  {
+    paths.push_back(path);
+    return;
+  }
+  m_TracedBlocks[from->blockId] = true;
+  BlockPath newPath = path;
+  for(const Node *child : from->children)
+  {
+    newPath.push_back(child->blockId);
+    TraceBlockFlow(child, newPath);
+    newPath = path;
+  }
+  return;
+}
+
+int32_t ControlFlow::BlockInAnyPathSlow(uint32_t block, uint32_t pathIdx, int32_t startIdx,
+                                        int32_t steps) const
+{
+  const rdcarray<BlockPath> &paths = m_Paths;
   const BlockPath &path = paths[pathIdx];
   if(path.size() == 0)
     return -1;
@@ -220,7 +366,7 @@ int32_t ControlFlow::BlockInAnyPath(const size_t pathsType, uint32_t block, uint
     return -1;
 
   // Check any paths linked to by the end node of the current path
-  const rdcarray<BlockArray> &blockPathLinks = m_BlockPathLinks[pathsType];
+  const rdcarray<BlockArray> &blockPathLinks = m_BlockPathLinks;
   const rdcarray<uint32_t> &childPathsToCheck = blockPathLinks.at(endNode);
   for(uint32_t childPathIdx : childPathsToCheck)
   {
@@ -242,7 +388,7 @@ int32_t ControlFlow::BlockInAnyPath(const size_t pathsType, uint32_t block, uint
     }
     if(childPartStartIdx != -1)
     {
-      newSteps = BlockInAnyPath(pathsType, block, childPathIdx, childPartStartIdx, newSteps);
+      newSteps = BlockInAnyPathSlow(block, childPathIdx, childPartStartIdx, newSteps);
       if(newSteps != -1)
         return newSteps;
     }
@@ -250,249 +396,17 @@ int32_t ControlFlow::BlockInAnyPath(const size_t pathsType, uint32_t block, uint
   return -1;
 }
 
-bool ControlFlow::BlockInAllPaths(const size_t pathsType, uint32_t block, uint32_t pathIdx,
-                                  int32_t startIdx) const
-{
-  const rdcarray<BlockPath> &paths = m_PathSets[pathsType];
-  const BlockPath &path = paths[pathIdx];
-  if(path.size() == 0)
-    return false;
-
-  // Check the current path
-  for(uint32_t i = startIdx; i < path.size(); ++i)
-  {
-    if(block == path[i])
-      return true;
-  }
-
-  uint32_t endNode = path[path.size() - 1];
-  if(endNode == block)
-    return true;
-
-  m_CheckedPaths[pathIdx] = true;
-  if(endNode == PATH_END)
-    return false;
-
-  // Check any paths linked to by the end node of the current path
-  const rdcarray<rdcarray<uint32_t>> &blockPathLinks = m_BlockPathLinks[pathsType];
-  const rdcarray<uint32_t> &childPathsToCheck = blockPathLinks.at(endNode);
-  for(uint32_t childPathIdx : childPathsToCheck)
-  {
-    if(m_CheckedPaths[childPathIdx])
-      continue;
-
-    m_CheckedPaths[childPathIdx] = true;
-    int32_t childPartStartIdx = paths[childPathIdx].indexOf(endNode);
-    RDCASSERTNOTEQUAL(childPartStartIdx, -1);
-    if(!BlockInAllPaths(pathsType, block, childPathIdx, childPartStartIdx + 1))
-      return false;
-  }
-  return true;
-}
-
-uint32_t ControlFlow::BlockInMultipleUniquePaths(const size_t pathsType, uint32_t block,
-                                                 uint32_t pathIdx, int32_t startIdx,
-                                                 BlockPath &route, const uint32_t countPaths) const
-{
-  const rdcarray<BlockPath> &paths = m_PathSets[pathsType];
-  const BlockPath &path = paths[pathIdx];
-  if(path.size() == 0)
-    return countPaths;
-
-  // Check the current path
-  bool foundPath = false;
-  for(uint32_t i = startIdx; i < path.size(); ++i)
-  {
-    if(block == path[i])
-    {
-      foundPath = true;
-      break;
-    }
-    route.push_back(path[i]);
-  }
-
-  uint32_t endNode = path[path.size() - 1];
-  if(endNode == block)
-    foundPath = true;
-
-  if(foundPath)
-  {
-    // Check if the path has already been traced
-    route.push_back(block);
-    for(const BlockPath &foundRoute : m_ValidRoutes)
-    {
-      if(foundRoute == route)
-        return countPaths;
-    }
-    m_ValidRoutes.push_back(route);
-    return countPaths + 1;
-  }
-
-  m_CheckedPaths[pathIdx] = true;
-  if(endNode == PATH_END)
-    return countPaths;
-
-  // Check any paths linked to by the end node of the current path
-  const rdcarray<rdcarray<uint32_t>> &blockPathLinks = m_BlockPathLinks[pathsType];
-  const rdcarray<uint32_t> &childPathsToCheck = blockPathLinks.at(endNode);
-  uint32_t newCountPaths = countPaths;
-  for(uint32_t childPathIdx : childPathsToCheck)
-  {
-    if(m_CheckedPaths[childPathIdx])
-      continue;
-
-    m_CheckedPaths[childPathIdx] = true;
-    int32_t childPartStartIdx = paths[childPathIdx].indexOf(endNode);
-    RDCASSERTNOTEQUAL(childPartStartIdx, -1);
-    BlockPath newRoute(route);
-    newCountPaths = BlockInMultipleUniquePaths(pathsType, block, childPathIdx,
-                                               childPartStartIdx + 1, newRoute, newCountPaths);
-    if(newCountPaths > 1)
-      return newCountPaths;
-  }
-  return newCountPaths;
-}
-
-ControlFlow::RouteState ControlFlow::BlockInAllPossibleRoutes(const size_t pathsType, uint32_t to,
-                                                              uint32_t mustInclude,
-                                                              uint32_t pathIdx, uint32_t startIdx,
-                                                              BlockArray &route) const
-{
-  const rdcarray<BlockPath> &paths = m_PathSets[pathsType];
-  const BlockPath &path = paths[pathIdx];
-  if(path.size() == 0)
-    return RouteState::NoRoute;
-
-  // Check the current path
-  bool foundPath = false;
-  for(uint32_t i = startIdx; i < path.size(); ++i)
-  {
-    if(to == path[i])
-    {
-      foundPath = true;
-      break;
-    }
-    route.push_back(path[i]);
-  }
-
-  uint32_t endNode = path[path.size() - 1];
-  if(endNode == to)
-    foundPath = true;
-
-  if(foundPath)
-  {
-    route.push_back(to);
-
-    // Check if the route contains the block
-    if(route.contains(mustInclude))
-      return RouteState::RouteContainsBlock;
-
-    return RouteState::RouteDoesNotContainBlock;
-  }
-
-  m_CheckedPaths[pathIdx] = true;
-  if(endNode == PATH_END)
-    return RouteState::NoRoute;
-
-  // Check any paths linked to by the end node of the current path
-  const rdcarray<rdcarray<uint32_t>> &blockPathLinks = m_BlockPathLinks[pathsType];
-  const rdcarray<uint32_t> &childPathsToCheck = blockPathLinks.at(endNode);
-  bool validRoute = false;
-  for(uint32_t childPathIdx : childPathsToCheck)
-  {
-    if(m_CheckedPaths[childPathIdx])
-      continue;
-
-    m_CheckedPaths[childPathIdx] = true;
-    int32_t childPartStartIdx = paths[childPathIdx].indexOf(endNode);
-    RDCASSERTNOTEQUAL(childPartStartIdx, -1);
-    BlockPath newRoute(route);
-    RouteState routeState = BlockInAllPossibleRoutes(pathsType, to, mustInclude, childPathIdx,
-                                                     childPartStartIdx + 1, newRoute);
-    if(routeState == RouteState::RouteDoesNotContainBlock)
-      return routeState;
-    validRoute |= (routeState == RouteState::RouteContainsBlock);
-  }
-  return validRoute ? RouteState::RouteContainsBlock : RouteState::NoRoute;
-}
-
-bool ControlFlow::AllPathsContainBlock(uint32_t from, uint32_t to, uint32_t mustInclude) const
-{
-  m_ValidRoutes.clear();
-  const rdcarray<BlockPath> &pathsNoLoops = m_PathSets[PathType::NoLoops];
-  bool validRoute = false;
-  for(uint32_t p = 0; p < pathsNoLoops.size(); ++p)
-  {
-    int32_t startIdx = pathsNoLoops[p].indexOf(from);
-    if(startIdx == -1)
-      continue;
-
-    m_CheckedPaths.clear();
-    m_CheckedPaths.resize(pathsNoLoops.size());
-    for(size_t i = 0; i < m_CheckedPaths.size(); ++i)
-      m_CheckedPaths[i] = false;
-
-    BlockPath route;
-    route.push_back(from);
-    // BlockInMultipleUniquePaths will also check all paths linked to from the end node of the path
-    ControlFlow::RouteState routeState =
-        BlockInAllPossibleRoutes(PathType::NoLoops, to, mustInclude, p, startIdx + 1, route);
-    if(routeState == RouteState::RouteDoesNotContainBlock)
-      return false;
-    validRoute |= (routeState == RouteState::RouteContainsBlock);
-  }
-
-  return validRoute;
-}
-
-ControlFlow::DirectPathState ControlFlow::ComputeDirectPathState(
-    uint32_t from, uint32_t to, const rdcarray<uint32_t> *pathIdxsToCheck) const
-{
-  m_ValidRoutes.clear();
-  const rdcarray<BlockPath> &pathsNoLoops = m_PathSets[PathType::NoLoops];
-  const uint32_t countPathsToCheck =
-      (uint32_t)(pathIdxsToCheck ? pathIdxsToCheck->size() : pathsNoLoops.size());
-  uint32_t countPaths = 0;
-  for(uint32_t p = 0; p < countPathsToCheck; ++p)
-  {
-    uint32_t pathIdx = pathIdxsToCheck ? pathIdxsToCheck->at(p) : p;
-    int32_t startIdx = pathsNoLoops[pathIdx].indexOf(from);
-    if(startIdx == -1)
-      continue;
-
-    m_CheckedPaths.clear();
-    m_CheckedPaths.resize(pathsNoLoops.size());
-    for(size_t i = 0; i < m_CheckedPaths.size(); ++i)
-      m_CheckedPaths[i] = false;
-
-    BlockPath route;
-    route.push_back(from);
-    // BlockInMultipleUniquePaths will also check all paths linked to from the end node of the path
-    countPaths =
-        BlockInMultipleUniquePaths(PathType::NoLoops, to, pathIdx, startIdx + 1, route, countPaths);
-    if(countPaths > 1)
-      return DirectPathState::Multiple;
-  }
-  if(countPaths == 0)
-    return DirectPathState::None;
-  if(countPaths == 1)
-    return DirectPathState::Single;
-
-  RDCERR("Unexpected countPaths %u should be 0 or 1", countPaths);
-  return DirectPathState::None;
-}
-
 void ControlFlow::Construct(const rdcarray<rdcpair<uint32_t, uint32_t>> &links)
 {
+  m_Nodes.clear();
+  m_BlockIDsToIDx.clear();
+  m_TracedNodes.clear();
+
   m_Blocks.clear();
-  m_BlockOutLinks.clear();
-  m_BlockInLinks.clear();
-  m_BlockPathLinks[PathType::IncLoops].clear();
-  m_BlockPathLinks[PathType::NoLoops].clear();
+  m_BlockPathLinks.clear();
   m_TracedBlocks.clear();
   m_CheckedPaths.clear();
-  m_PathSets[PathType::IncLoops].clear();
-  m_PathSets[PathType::NoLoops].clear();
+  m_Paths.clear();
 
   m_UniformBlocks.clear();
   m_LoopBlocks.clear();
@@ -512,30 +426,61 @@ void ControlFlow::Construct(const rdcarray<rdcpair<uint32_t, uint32_t>> &links)
     maxBlockIndex = RDCMAX(maxBlockIndex, from);
     maxBlockIndex = RDCMAX(maxBlockIndex, to);
   }
-  PATH_END = maxBlockIndex + 1;
-  maxBlockIndex += 2;
+  PATH_END = links.empty() ? 0 : maxBlockIndex + 1;
+  maxBlockIndex = PATH_END + 1;
   m_TracedBlocks.resize(maxBlockIndex);
-  m_BlockOutLinks.resize(maxBlockIndex);
-  m_BlockInLinks.resize(maxBlockIndex);
-  m_BlockPathLinks[PathType::IncLoops].resize(maxBlockIndex);
-  m_BlockPathLinks[PathType::NoLoops].resize(maxBlockIndex);
+  m_BlockPathLinks.resize(maxBlockIndex);
 
-  // For each block a list of "to" and "from" blocks
+  // Create Nodes to represent the blocks
+  size_t countNodes = m_Blocks.size();
+  m_Nodes.resize(countNodes);
+  m_BlockIDsToIDx.resize(maxBlockIndex);
+  memset(m_BlockIDsToIDx.data(), 0xFF, m_BlockIDsToIDx.size() * sizeof(uint32_t));
+
+  uint32_t nodeIdx = 0;
+  for(uint32_t b : m_Blocks)
+  {
+    uint32_t idx = nodeIdx;
+    m_BlockIDsToIDx[b] = idx;
+    Node &node = m_Nodes[idx];
+    node.blockId = b;
+    node.idx = idx;
+    node.parents.clear();
+    node.children.clear();
+    ++nodeIdx;
+  }
+
+  // add the PATH_END node
+  m_BlockIDsToIDx[PATH_END] = nodeIdx;
+  uint32_t pathEndIdx = m_BlockIDsToIDx[PATH_END];
+  {
+    Node node;
+    node.blockId = PATH_END;
+    node.idx = pathEndIdx;
+    node.parents.clear();
+    node.children.clear();
+    m_Nodes.push_back(node);
+  }
+
   for(const auto &link : links)
   {
     uint32_t from = link.first;
     uint32_t to = link.second;
-    m_BlockOutLinks[from].push_back(to);
-    m_BlockInLinks[to].push_back(from);
+    uint32_t fromIdx = m_BlockIDsToIDx[from];
+    uint32_t toIdx = m_BlockIDsToIDx[to];
+    m_Nodes[fromIdx].children.push_back(m_Nodes.data() + toIdx);
+    m_Nodes[toIdx].parents.push_back(m_Nodes.data() + fromIdx);
   }
 
-  // Any block without links in the input are set to link to the end sentinel (PATH_END)
-  for(uint32_t b : m_Blocks)
+  // Any node without children are set to link to the end sentinel (PATH_END)
+  for(Node &n : m_Nodes)
   {
-    if(m_BlockOutLinks[b].empty())
+    if(n.idx == pathEndIdx)
+      continue;
+    if(n.children.empty())
     {
-      m_BlockOutLinks[b].push_back(PATH_END);
-      m_BlockInLinks[PATH_END].push_back(b);
+      n.children.push_back(m_Nodes.data() + pathEndIdx);
+      m_Nodes[pathEndIdx].parents.push_back(m_Nodes.data() + n.idx);
     }
   }
 
@@ -544,74 +489,42 @@ void ControlFlow::Construct(const rdcarray<rdcpair<uint32_t, uint32_t>> &links)
   // Paths can terminate at the end block (PATH_END)
   // Paths can also terminate at a block before the end,
   // if that block has had all its possible paths already computed
+  for(size_t i = 0; i < maxBlockIndex; ++i)
+    m_TracedBlocks[i] = false;
 
-  // Compute separate sets of paths
-  // * Paths which can include loops
-  // * Paths which do not include loops
-  for(size_t pathType = 0; pathType < PathType::Count; ++pathType)
+  for(const Node &from : m_Nodes)
   {
-    for(size_t i = 0; i < maxBlockIndex; ++i)
-      m_TracedBlocks[i] = false;
-    for(size_t i = 0; i < m_BlockOutLinks.size(); ++i)
-    {
-      uint32_t from = (uint32_t)i;
-      if(m_BlockOutLinks[i].empty())
-        continue;
-      if(m_TracedBlocks[from])
-        continue;
-      BlockPath path;
-      path.push_back(from);
-      TraceBlockFlow(pathType, from, path);
-    }
+    if(from.children.empty())
+      continue;
+    if(m_TracedBlocks[from.blockId])
+      continue;
+    BlockPath path;
+    path.push_back(from.blockId);
+    TraceBlockFlow(&from, path);
   }
 
   // 3. Find DivergentBlocks
   //  * defined by blocks with more than one exit link
-  for(uint32_t block : m_Blocks)
+  for(const Node &node : m_Nodes)
   {
-    if(m_BlockOutLinks[block].size() > 1)
-      m_DivergentBlocks.push_back(block);
+    if(node.children.size() > 1)
+      m_DivergentBlocks.push_back(node.blockId);
   }
 
   // 4. Find Uniform Blocks
-  for(size_t pathType = 0; pathType < PathType::Count; ++pathType)
+  for(uint32_t b : m_Blocks)
+    m_BlockPathLinks[b].clear();
+
+  // Generate a list of path indexes for each block in the paths
+  rdcarray<BlockPath> &paths = m_Paths;
+  rdcarray<rdcarray<uint32_t>> &blockPathLinks = m_BlockPathLinks;
+  for(uint32_t pathIdx = 0; pathIdx < paths.size(); ++pathIdx)
   {
-    for(uint32_t b : m_Blocks)
+    for(uint32_t block : paths[pathIdx])
     {
-      m_BlockPathLinks[pathType][b].clear();
-    }
-
-    // Generate a list of path indexes for each block in the paths
-    rdcarray<BlockPath> &paths = m_PathSets[pathType];
-    rdcarray<rdcarray<uint32_t>> &blockPathLinks = m_BlockPathLinks[pathType];
-    for(uint32_t pathIdx = 0; pathIdx < paths.size(); ++pathIdx)
-    {
-      for(uint32_t block : paths[pathIdx])
-      {
-        if(block == PATH_END)
-          break;
-        blockPathLinks[block].push_back(pathIdx);
-      }
-    }
-
-    // For each path that does not end with PATH_END
-    // append the child path nodes which only have a single path and are not already in the path
-    // This is an optimisation to reduce the amount of recursion required when tracing paths
-    // In particular to help the speed of BlockInAnyPath()
-    for(uint32_t p = 0; p < paths.size(); ++p)
-    {
-      BlockPath &path = paths[p];
-      uint32_t endNode = path[path.size() - 1];
-      while(endNode != PATH_END)
-      {
-        const BlockArray &gotos = m_BlockOutLinks.at(endNode);
-        if(gotos.size() > 1)
-          break;
-        endNode = gotos[0];
-        if(path.contains(endNode))
-          break;
-        path.push_back(endNode);
-      }
+      if(block == PATH_END)
+        break;
+      blockPathLinks[block].push_back(pathIdx);
     }
   }
 
@@ -625,28 +538,10 @@ void ControlFlow::Construct(const rdcarray<rdcpair<uint32_t, uint32_t>> &links)
       m_Connections[from][to] = ConnectionState::Unknown;
   }
 
-  const rdcarray<BlockPath> &pathsNoLoops = m_PathSets[PathType::NoLoops];
-
-  for(uint32_t p = 0; p < pathsNoLoops.size(); ++p)
-  {
-    const BlockPath &path = pathsNoLoops[p];
-    for(size_t i = 0; i < path.size() - 1; ++i)
-    {
-      uint32_t from = path[i];
-      for(size_t j = i + 1; j < path.size(); ++j)
-      {
-        uint32_t to = path[j];
-        if(to == PATH_END)
-          break;
-        m_Connections[from][to] = ConnectionState::Connected;
-      }
-    }
-  }
-
   // A loop block is defined by any block which appears in any path (including loops) starting from the block
   for(uint32_t block : m_Blocks)
   {
-    if(IsBlockConnected(PathType::IncLoops, block, block))
+    if(IsConnected(block, block))
       m_LoopBlocks.push_back(block);
   }
 
@@ -657,43 +552,20 @@ void ControlFlow::Construct(const rdcarray<rdcpair<uint32_t, uint32_t>> &links)
   {
     m_UniformBlocks.push_back(globalDivergenceStart);
 
-    rdcarray<uint32_t> pathsToCheck;
-    for(uint32_t pathIdx = 0; pathIdx < pathsNoLoops.size(); ++pathIdx)
-    {
-      if(pathsNoLoops[pathIdx].contains(globalDivergenceStart))
-        pathsToCheck.push_back(pathIdx);
-    }
-    BlockArray potentialUniformBlocks;
     // We want all uniform blocks connected to the global start block
     // Not just the first convergence points
     for(uint32_t block : m_Blocks)
     {
       if(block == globalDivergenceStart)
         continue;
-      // Ignore blocks not connected to the divergent block
-      if(!IsForwardConnection(globalDivergenceStart, block))
-        continue;
       // Ignore loop blocks
       if(m_LoopBlocks.contains(block))
         continue;
+      // Ignore blocks not connected to the divergent block
+      if(!IsConnected(globalDivergenceStart, block))
+        continue;
 
-      bool uniform = true;
-      for(uint32_t pathIdx : pathsToCheck)
-      {
-        int32_t startIdx = pathsNoLoops[pathIdx].indexOf(globalDivergenceStart);
-        RDCASSERTNOTEQUAL(startIdx, -1);
-
-        m_CheckedPaths.clear();
-        m_CheckedPaths.resize(pathsNoLoops.size());
-        for(size_t i = 0; i < m_CheckedPaths.size(); ++i)
-          m_CheckedPaths[i] = false;
-        // BlockInAllPaths will also check all paths linked to from the end node of the path
-        if(!BlockInAllPaths(PathType::NoLoops, block, pathIdx, startIdx + 1))
-        {
-          uniform = false;
-          break;
-        }
-      }
+      bool uniform = BlockInAllPaths(globalDivergenceStart, block);
       if(uniform)
         m_UniformBlocks.push_back(block);
     }
@@ -705,16 +577,23 @@ void ControlFlow::Construct(const rdcarray<rdcpair<uint32_t, uint32_t>> &links)
   BlockArray potentialConvergentBlocks;
   for(uint32_t start : m_DivergentBlocks)
   {
-    for(uint32_t block : m_BlockOutLinks[start])
+    const Node *startNode = GetNode(start);
+    for(const Node *child : startNode->children)
     {
-      if(!potentialConvergentBlocks.contains(block))
-        potentialConvergentBlocks.push_back(block);
+      if(!potentialConvergentBlocks.contains(child->blockId))
+        potentialConvergentBlocks.push_back(child->blockId);
     }
   }
-  for(uint32_t block : m_Blocks)
+  // potential partial convergent blocks
+  // * defined to be blocks with more than one link into it
+  BlockArray potentialPartialConvergentBlocks;
+  for(const Node &node : m_Nodes)
   {
-    if(m_BlockInLinks[block].size() > 1)
+    if(node.parents.size() > 1)
     {
+      uint32_t block = node.blockId;
+      if(!potentialPartialConvergentBlocks.contains(block))
+        potentialPartialConvergentBlocks.push_back(block);
       if(!potentialConvergentBlocks.contains(block))
         potentialConvergentBlocks.push_back(block);
     }
@@ -723,8 +602,7 @@ void ControlFlow::Construct(const rdcarray<rdcpair<uint32_t, uint32_t>> &links)
   // 6. Find ConvergentBlocks
   //  * For each divergent block find its convergent block
   //  * defined to be the first block which is in all possible paths that start from the divergent block
-  //  * loops are not taken when walking the paths
-  //  * this is similar to uniform blocks find convergent blocks starting from the block zero
+  //  * this is similar to uniform blocks which find convergent blocks starting from the block zero
   //  * the convergent blocks can be thought of as a local uniform block
   //  * where local is defined by the graph/paths which contain the divergent block
 
@@ -732,44 +610,15 @@ void ControlFlow::Construct(const rdcarray<rdcpair<uint32_t, uint32_t>> &links)
   BlockArray allConvergentBlocks;
   for(uint32_t start : m_DivergentBlocks)
   {
-    rdcarray<uint32_t> pathsToCheck;
-    for(uint32_t pathIdx = 0; pathIdx < pathsNoLoops.size(); ++pathIdx)
-    {
-      if(pathsNoLoops[pathIdx].contains(start))
-        pathsToCheck.push_back(pathIdx);
-    }
-    BlockArray localPotentialConvergentBlocks;
+    BlockArray localUniformBlocks;
     for(uint32_t block : potentialConvergentBlocks)
     {
       if(block == start)
         continue;
-      // Ignore blocks not connected to the divergent block
-      if(!IsForwardConnection(start, block))
+      if(m_Connections[start][block] == ConnectionState::NotConnected)
         continue;
 
-      localPotentialConvergentBlocks.push_back(block);
-    }
-    // Find the ConvergentBlock for the divergent block
-    BlockArray localUniformBlocks;
-    for(uint32_t block : localPotentialConvergentBlocks)
-    {
-      bool uniform = true;
-      for(uint32_t pathIdx : pathsToCheck)
-      {
-        int32_t startIdx = pathsNoLoops[pathIdx].indexOf(start);
-        RDCASSERTNOTEQUAL(startIdx, -1);
-
-        m_CheckedPaths.clear();
-        m_CheckedPaths.resize(pathsNoLoops.size());
-        for(size_t i = 0; i < m_CheckedPaths.size(); ++i)
-          m_CheckedPaths[i] = false;
-        // BlockInAllPaths will also check all paths linked to from the end node of the path
-        if(!BlockInAllPaths(PathType::NoLoops, block, pathIdx, startIdx + 1))
-        {
-          uniform = false;
-          break;
-        }
-      }
+      bool uniform = BlockInAllPaths(start, block);
       if(uniform)
         localUniformBlocks.push_back(block);
     }
@@ -786,7 +635,7 @@ void ControlFlow::Construct(const rdcarray<rdcpair<uint32_t, uint32_t>> &links)
       {
         if(blockA == blockB)
           continue;
-        if(!IsForwardConnection(blockA, blockB))
+        if(!IsConnected(blockA, blockB))
         {
           first = false;
           break;
@@ -811,22 +660,9 @@ void ControlFlow::Construct(const rdcarray<rdcpair<uint32_t, uint32_t>> &links)
     }
   }
 
-  // Find potential partial convergent blocks
-  // * defined to be blocks with more than one link into it
-  BlockArray potentialPartialConvergentBlocks;
-  for(uint32_t block : m_Blocks)
-  {
-    if(m_BlockInLinks[block].size() > 1)
-    {
-      if(!potentialPartialConvergentBlocks.contains(block))
-        potentialPartialConvergentBlocks.push_back(block);
-    }
-  }
-
   // 7. Find Partial ConvergentBlock
   //  * For each divergent block find its partial convergent blocks in paths before its convergent block
   //  * defined to be blocks which are in more than one path that start from the divergent block
-  //  * loops are not taken when walking the paths
   //  * this is similar to finding convergent blocks
   //  * prune partial convergence blocks from existing divergent block entries
   //    * if an existing divergent block includes this partial convergence block
@@ -845,19 +681,13 @@ void ControlFlow::Construct(const rdcarray<rdcpair<uint32_t, uint32_t>> &links)
     }
     // Find the partial ConvergentBlock for the divergent block
     BlockArray partialConvergentBlocks;
-    rdcarray<uint32_t> pathIdxsToCheck;
-    for(uint32_t pathIdx = 0; pathIdx < pathsNoLoops.size(); ++pathIdx)
-    {
-      if(pathsNoLoops[pathIdx].contains(start))
-        pathIdxsToCheck.push_back(pathIdx);
-    }
     BlockArray localPotentialPartialConvergentBlocks;
     for(uint32_t block : potentialPartialConvergentBlocks)
     {
       if(block == start)
         continue;
       // Ignore blocks not connected to the divergent block
-      if(!IsForwardConnection(start, block))
+      if(!IsConnected(start, block))
         continue;
 
       // Ignore blocks which are already full convergent blocks
@@ -869,12 +699,11 @@ void ControlFlow::Construct(const rdcarray<rdcpair<uint32_t, uint32_t>> &links)
     for(uint32_t block : localPotentialPartialConvergentBlocks)
     {
       // Only consider blocks which are directly connected to the full convergence block
-      if(!IsForwardConnection(block, convergentBlock))
+      if(!IsConnected(block, convergentBlock))
         continue;
 
       // Looking for blocks which are in more than one path
-      DirectPathState pathState = ComputeDirectPathState(start, block, &pathIdxsToCheck);
-      if(pathState == DirectPathState::Multiple)
+      if(BlockInMultiplePaths(start, block))
       {
         partialConvergentBlocks.push_back(block);
         // This partial convergence might supercede an earlier one
@@ -917,7 +746,7 @@ void ControlFlow::Construct(const rdcarray<rdcpair<uint32_t, uint32_t>> &links)
         if(i == j)
           continue;
         uint32_t to = unsortedPartialBlocks[j];
-        if(IsForwardConnection(from, to))
+        if(IsConnected(from, to))
           sortInfos[i].second++;
       }
     }
@@ -943,27 +772,27 @@ void ControlFlow::Construct(const rdcarray<rdcpair<uint32_t, uint32_t>> &links)
   if(D3D12_DXILShaderDebugger_Logging())
   {
     RDCLOG("Block Links:");
-    for(size_t i = 0; i < m_BlockOutLinks.size(); ++i)
+    for(const Node &node : m_Nodes)
     {
-      uint32_t from = (uint32_t)i;
-      if(m_BlockOutLinks[i].empty())
+      if(node.children.empty())
         continue;
-      for(uint32_t to : m_BlockOutLinks[i])
-        RDCLOG("Block:%d->Block:%d", from, to);
+      uint32_t from = (uint32_t)node.blockId;
+      for(const Node *child : node.children)
+        RDCLOG("Block:%d->Block:%d", from, child->blockId);
     }
 
-    for(size_t i = 0; i < m_BlockInLinks.size(); ++i)
+    for(const Node &node : m_Nodes)
     {
-      uint32_t to = (uint32_t)i;
-      if(m_BlockInLinks[i].empty())
+      if(node.parents.empty())
         continue;
-      for(uint32_t from : m_BlockInLinks[i])
-        RDCLOG("Block:%d->Block:%d", from, to);
+      uint32_t to = (uint32_t)node.blockId;
+      for(const Node *parent : node.parents)
+        RDCLOG("Block:%d->Block:%d", parent->blockId, to);
     }
 
     RDCLOG("Thread Paths Including Loops:");
     rdcstr output = "";
-    const rdcarray<BlockPath> &pathsIncLoops = m_PathSets[PathType::IncLoops];
+    const rdcarray<BlockPath> &pathsIncLoops = m_Paths;
     for(uint32_t pathIdx = 0; pathIdx < pathsIncLoops.size(); ++pathIdx)
     {
       bool start = true;
@@ -1064,7 +893,7 @@ uint32_t ControlFlow::GetNextUniformBlock(uint32_t from) const
   uint32_t bestBlock = from;
   for(uint32_t uniform : m_UniformBlocks)
   {
-    const rdcarray<BlockPath> &paths = m_PathSets[PathType::IncLoops];
+    const rdcarray<BlockPath> &paths = m_Paths;
     for(uint32_t pathIdx = 0; pathIdx < paths.size(); ++pathIdx)
     {
       m_CheckedPaths.clear();
@@ -1072,10 +901,10 @@ uint32_t ControlFlow::GetNextUniformBlock(uint32_t from) const
       for(size_t i = 0; i < m_CheckedPaths.size(); ++i)
         m_CheckedPaths[i] = false;
       int32_t startIdx = paths[pathIdx].indexOf(from);
-      // BlockInAnyPath will also check all paths linked to from the end node of the path
+      // BlockInAnyPathSlow will also check all paths linked to from the end node of the path
       if(startIdx != -1)
       {
-        int32_t steps = BlockInAnyPath(PathType::IncLoops, uniform, pathIdx, startIdx + 1, 0);
+        int32_t steps = BlockInAnyPathSlow(uniform, pathIdx, startIdx + 1, 0);
         if(steps != -1)
         {
           if(steps < minSteps)
@@ -1090,12 +919,11 @@ uint32_t ControlFlow::GetNextUniformBlock(uint32_t from) const
   return bestBlock;
 }
 
-// Include loops
-bool ControlFlow::IsForwardConnection(uint32_t from, uint32_t to) const
+bool ControlFlow::IsConnected(uint32_t from, uint32_t to) const
 {
   if(m_Connections[from][to] == ConnectionState::Unknown)
   {
-    if(IsBlockConnected(PathType::IncLoops, from, to))
+    if(AnyPath(from, to))
       m_Connections[from][to] = ConnectionState::Connected;
     else
       m_Connections[from][to] = ConnectionState::NotConnected;
@@ -2089,8 +1917,8 @@ TEST_CASE("DXIL Control Flow", "[dxil][controlflow]")
 
       expectedCountDivergentBlocks = 13;
       expectedConvergentBlocks = {
-          {0, 3},   {3, 5},   {5, 11},  {7, 11},  {9, 10},  {11, 17}, {13, 17},
-          {15, 16}, {17, 19}, {19, 21}, {21, 26}, {22, 26}, {24, 26},
+          {0, 3},   {3, 5},   {5, 11},  {7, 11},  {9, 11},  {11, 17}, {13, 17},
+          {15, 17}, {17, 19}, {19, 21}, {21, 26}, {22, 26}, {24, 26},
       };
       REQUIRE(expectedConvergentBlocks.count() == expectedCountDivergentBlocks);
 

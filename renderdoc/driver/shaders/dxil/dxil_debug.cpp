@@ -1588,7 +1588,7 @@ bool ExecPointReference::IsAfter(const ExecPointReference &from,
 {
   if(block == from.block)
     return instruction > from.instruction;
-  return controlFlow.IsForwardConnection(from.block, block);
+  return controlFlow.IsConnected(from.block, block);
 }
 
 void ResourceReferenceInfo::Create(const DXIL::ResourceReference *resRef, uint32_t arrayIndex)
