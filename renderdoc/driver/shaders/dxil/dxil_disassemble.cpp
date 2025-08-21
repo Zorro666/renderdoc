@@ -30,6 +30,7 @@
 #include "strings/string_utils.h"
 #include "dxil_bytecode.h"
 #include "dxil_common.h"
+#include "dxil_controlflow.h"
 #include "dxil_debuginfo.h"
 
 #if ENABLED(DXC_COMPATIBLE_DISASM) && ENABLED(RDOC_RELEASE)
@@ -3340,6 +3341,21 @@ void Program::MakeRDDisassemblyString(const DXBC::Reflection *reflection)
                                            func.blocks[curBlock]->id);
       DisassemblyAddNewLine(1);
 
+      DXIL::ControlFlow controlFlow;
+
+      // Find the uniform control blocks in the function
+      rdcarray<rdcpair<uint32_t, uint32_t>> links;
+      for(const Block *block : func.blocks)
+      {
+        for(const Block *pred : block->preds)
+        {
+          uint32_t from = pred->id;
+          uint32_t to = block->id;
+          links.push_back({from, to});
+        }
+      }
+      controlFlow.Construct(links);
+
       for(size_t funcIdx = 0; funcIdx < func.instructions.size(); funcIdx++)
       {
         Instruction &inst = *func.instructions[funcIdx];
@@ -6374,5 +6390,4 @@ SourceMappingInfo Program::ParseDbgOpDeclare(const DXIL::Instruction &inst) cons
 
   return ret;
 }
-
 };    // namespace DXIL
