@@ -10199,6 +10199,7 @@ rdcarray<ShaderDebugState> Debugger::ContinueDebug()
       }
 
       // step all threads in the tangle
+      rdcarray<uint32_t> lanesToSimulate;
       for(const ThreadReference &ref : threadRefs)
       {
         const uint32_t threadId = ref.id;
@@ -10215,8 +10216,14 @@ rdcarray<ShaderDebugState> Debugger::ContinueDebug()
           hasDebugState = true;
 
         thread.SetActiveMask(activeMask);
-        QueueJob(lane);
+        lanesToSimulate.push_back(lane);
       }
+      while(!lanesToSimulate.empty())
+      {
+        uint32_t i = rand() % lanesToSimulate.size();
+        QueueJob(lanesToSimulate[i]);
+        lanesToSimulate.erase(i);
+      };
     }
 
     do
