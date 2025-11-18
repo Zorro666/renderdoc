@@ -967,6 +967,12 @@ void Reflector::MakeReflection(const GraphicsAPI sourceAPI, const ShaderStage st
         patchData.maxPrimitives = e.executionModes.others[idx].outputPrimitivesEXT;
     }
 
+    if(e.executionModes.others.contains(rdcspv::ExecutionMode::DerivativeGroupQuadsKHR))
+      patchData.derivativeMode = ComputeDerivativeMode::Quad;
+
+    if(e.executionModes.others.contains(rdcspv::ExecutionMode::DerivativeGroupLinearKHR))
+      patchData.derivativeMode = ComputeDerivativeMode::Linear;
+
     // vulkan spec says "If an object is decorated with the WorkgroupSize decoration, this must take
     // precedence over any execution mode set for LocalSize."
     for(auto it : constants)

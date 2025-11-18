@@ -248,7 +248,7 @@ class Debugger;
 
 struct ThreadState
 {
-  ThreadState(Debugger &debug, const GlobalState &globalState);
+  ThreadState(Debugger &debug, const GlobalState &globalState, ShaderStage stage);
   ~ThreadState();
 
   void EnterEntryPoint(bool useDebugState);
@@ -454,6 +454,7 @@ private:
     AtomicStore(&atomic_pendingResultStatus, (int32_t)status);
   }
 
+  DerivType defaultDeriveType;
   ShaderDebugState pendingDebugState;
   bool hasDebugState = false;
   uint32_t stepIndex = 0;

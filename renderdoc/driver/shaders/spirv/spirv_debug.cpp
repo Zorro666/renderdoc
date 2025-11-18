@@ -174,9 +174,13 @@ static ShaderVariable MakeIdentity(const rdcspv::DataType &type, float val, bool
 
 namespace rdcspv
 {
-ThreadState::ThreadState(Debugger &debug, const GlobalState &globalState)
+ThreadState::ThreadState(Debugger &debug, const GlobalState &globalState, ShaderStage stage)
     : debugger(debug), global(globalState)
 {
+  // Default to Coarse, choose Fine for compute shaders
+  defaultDeriveType = DerivType::Coarse;
+  if(stage == ShaderStage::Compute)
+    defaultDeriveType = DerivType::Fine;
 }
 
 ThreadState::~ThreadState()
@@ -1170,6 +1174,7 @@ void ThreadState::StepNext(bool useDebugState, const uint32_t steps,
     // spec allows the implementation to choose what DPdx means (coarse or fine), so we choose
     // coarse which seems a reasonable default. In future we could driver-detect the selection in
     // use (assuming it's not dynamic base on circumstances)
+    // Compute shaders use Fine by default
     case Op::DPdx:
     case Op::DPdy:
     case Op::DPdxCoarse:
@@ -1184,9 +1189,11 @@ void ThreadState::StepNext(bool useDebugState, const uint32_t steps,
       if(opdata.op == Op::DPdy || opdata.op == Op::DPdyCoarse || opdata.op == Op::DPdyFine)
         dir = DDY;
 
-      DerivType type = Coarse;
+      DerivType type = defaultDeriveType;
       if(opdata.op == Op::DPdxFine || opdata.op == Op::DPdyFine)
         type = Fine;
+      if(opdata.op == Op::DPdxCoarse || opdata.op == Op::DPdyCoarse)
+        type = Coarse;
 
       SetDst(deriv.result, CalcDeriv(dir, type, workgroup, deriv.p));
 

@@ -467,6 +467,7 @@ void Reflector::CheckDebuggable(bool &debuggable, rdcstr &debugStatus) const
       "SPV_KHR_subgroup_vote",
       "SPV_KHR_terminate_invocation",
       "SPV_KHR_vulkan_memory_model",
+      "SPV_KHR_compute_shader_derivatives",
 
       // EXT extensions
       "SPV_EXT_demote_to_helper_invocation",
@@ -486,6 +487,7 @@ void Reflector::CheckDebuggable(bool &debuggable, rdcstr &debugStatus) const
       "SPV_GOOGLE_decorate_string",
       "SPV_GOOGLE_hlsl_functionality1",
       "SPV_GOOGLE_user_type",
+      "SPV_NV_compute_shader_derivatives",
   };
 
   // whitelist supported extensions
@@ -616,6 +618,8 @@ void Reflector::CheckDebuggable(bool &debuggable, rdcstr &debugStatus) const
       case Capability::GroupNonUniformVote:
       case Capability::SubgroupBallotKHR:
       case Capability::SubgroupVoteKHR:
+      case Capability::ComputeDerivativeGroupQuadsKHR:
+      case Capability::ComputeDerivativeGroupLinearKHR:
       {
         supported = true;
         break;
@@ -660,14 +664,6 @@ void Reflector::CheckDebuggable(bool &debuggable, rdcstr &debugStatus) const
       // SPV_KHR_bfloat16
       case Capability::BFloat16TypeKHR:
       case Capability::BFloat16DotProductKHR:
-      {
-        supported = false;
-        break;
-      }
-
-      // SPV_KHR_compute_shader_derivatives
-      case Capability::ComputeDerivativeGroupQuadsKHR:
-      case Capability::ComputeDerivativeGroupLinearKHR:
       {
         supported = false;
         break;
@@ -1064,7 +1060,7 @@ ShaderDebugTrace *Debugger::BeginDebug(DebugAPIWrapper *api, const ShaderStage s
   queuedJobs.resize(threadsInWorkgroup);
   for(uint32_t i = 0; i < threadsInWorkgroup; i++)
   {
-    workgroup.push_back(ThreadState(*this, global));
+    workgroup.push_back(ThreadState(*this, global, stage));
     queuedDeviceThreadSteps[i] = false;
     queuedGpuMathOps[i] = false;
     queuedGpuSampleGatherOps[i] = false;
@@ -1703,6 +1699,11 @@ ShaderDebugTrace *Debugger::BeginDebug(DebugAPIWrapper *api, const ShaderStage s
     if(stage == ShaderStage::Pixel)
     {
       lane.helperInvocation = apiWrapper->GetThreadProperty(i, ThreadProperty::Helper) != 0;
+      lane.quadLaneIndex = apiWrapper->GetThreadProperty(i, ThreadProperty::QuadLane);
+      lane.quadId = apiWrapper->GetThreadProperty(i, ThreadProperty::QuadId);
+    }
+    if(stage == ShaderStage::Compute)
+    {
       lane.quadLaneIndex = apiWrapper->GetThreadProperty(i, ThreadProperty::QuadLane);
       lane.quadId = apiWrapper->GetThreadProperty(i, ThreadProperty::QuadId);
     }
