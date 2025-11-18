@@ -1924,6 +1924,164 @@ void main()
 
 )EOSHADER";
 
+  std::string computeShaderDerivs = R"EOSHADER(
+
+#version 460 core
+#extension GL_NV_compute_shader_derivatives : require
+
+#if SUBGROUP_SUPPORT
+#extension GL_KHR_shader_subgroup_basic : require
+#extension GL_KHR_shader_subgroup_ballot : require
+#extension GL_KHR_shader_subgroup_vote : require
+#extension GL_KHR_shader_subgroup_arithmetic : require
+#endif // #if SUBGROUP_SUPPORT
+
+layout(push_constant) uniform PushData
+{
+  uint test;
+} push;
+
+struct Output
+{
+  vec4 vals[1024];
+};
+
+layout(binding = 0, std430) buffer outbuftype {
+  Output data[COMP_TESTS];
+} outbuf;
+
+layout(set = 0, binding = 14) uniform sampler2D linearSampledImage;
+layout(set = 0, binding = 19) uniform sampler shadowSampler;
+layout(set = 0, binding = 32) uniform texture2D depthImage;
+
+uint GetTest() { return push.test; }
+
+#define IsTest(x) (GetTest() == x)
+
+layout(local_size_x = GROUP_SIZE_X, local_size_y = GROUP_SIZE_Y, local_size_z = GROUP_SIZE_Z) in;
+
+layout(QUAD_LAYOUT) in;
+
+uvec3 tid;
+uint flatId;
+
+#if WORKGROUP_SUPPORT
+shared uvec4 gsmUint4[1024];
+#endif // #if WORKGROUP_SUPPORT
+
+void SetOutput(vec4 val)
+{
+  outbuf.data[push.test].vals[flatId] = val;
+}
+
+void Init(vec4 val)
+{
+  tid = gl_LocalInvocationID;
+  flatId = tid.z * gl_WorkGroupSize.x * gl_WorkGroupSize.y + tid.y * gl_WorkGroupSize.x + tid.x;
+  SetOutput(val);
+}
+
+void main()
+{
+  vec4 testResult = vec4(0);
+  Init(testResult);
+  uint id = flatId;
+  uint ZERO = id / 10000;
+  vec2 inpos;
+  inpos.xy = gl_LocalInvocationID.xy / 8.0;
+
+#if WORKGROUP_SUPPORT
+  gsmUint4[flatId].xyz = tid;
+#endif // #if WORKGROUP_SUPPORT
+#if SUBGROUP_SUPPORT
+  id += gl_SubgroupInvocationID * ZERO;
+#endif // #if SUBGROUP_SUPPORT
+
+  if(IsTest(0))
+  {
+    vec4 test0;
+    test0.x = dFdx(0.5f);
+    test0.y = dFdy(0.5f);
+    test0.z = dFdxFine(0.5f);
+    test0.w = dFdyFine(0.5f);
+    testResult = test0;
+  }
+  if(IsTest(1))
+  {
+    vec3 test1 = dFdx(gl_LocalInvocationID*gl_LocalInvocationID);
+    testResult.xyz = test1;
+  }
+  if(IsTest(2))
+  {
+    vec3 test2 = dFdy(gl_LocalInvocationID*gl_LocalInvocationID);
+    testResult.xyz = test2;
+  }
+  if(IsTest(3))
+  {
+    vec3 test3 = dFdxFine(gl_LocalInvocationID*gl_LocalInvocationID);
+    testResult.xyz = test3;
+  }
+  if(IsTest(4))
+  {
+    vec3 test4 = dFdyFine(gl_LocalInvocationID*gl_LocalInvocationID);
+    testResult.xyz = test4;
+  }
+  if(IsTest(5))
+  {
+    vec3 test5 = dFdxCoarse(gl_LocalInvocationID*gl_LocalInvocationID);
+    testResult.xyz = test5;
+  }
+  if(IsTest(6))
+  {
+    vec3 test6 = dFdyCoarse(gl_LocalInvocationID*gl_LocalInvocationID);
+    testResult.xyz = test6;
+  }
+  if(IsTest(7))
+  {
+    // OpImageQueryLod
+    vec2 test7 = textureQueryLod(linearSampledImage, inpos);
+    testResult.xy = test7;
+  }
+  if(IsTest(8))
+  {
+    // OpImageSampleProjImplicitLod
+    vec4 test8 = textureProj(linearSampledImage, vec3(inpos, 0.5f));
+    testResult = test8;
+  }
+  if(IsTest(9))
+  {
+    // OpImageSampleImplicitLod
+    vec4 test9 = texture(linearSampledImage, inpos);
+    testResult = test9;
+  }
+  if(IsTest(10))
+  {
+    // OpImageSampleDrefImplicitLod
+    vec4 test10;
+    test10.x = texture(sampler2DShadow(depthImage, shadowSampler), vec3(inpos, 0.1f));
+    test10.y = texture(sampler2DShadow(depthImage, shadowSampler), vec3(inpos, 0.3f));
+    test10.z = texture(sampler2DShadow(depthImage, shadowSampler), vec3(inpos, 0.7f));
+    test10.w = texture(sampler2DShadow(depthImage, shadowSampler), vec3(inpos, 0.9f));
+    testResult = test10;
+  }
+  if(IsTest(11))
+  {
+    // OpImageSampleProjDrefImplicitLod
+    vec4 test11;
+    test11.x = textureProj(sampler2DShadow(depthImage, shadowSampler), vec4(inpos, 0.1f, 0.5f));
+    test11.y = textureProj(sampler2DShadow(depthImage, shadowSampler), vec4(inpos, 0.3f, 0.5f));
+    test11.z = textureProj(sampler2DShadow(depthImage, shadowSampler), vec4(inpos, 0.7f, 0.5f));
+    test11.w = textureProj(sampler2DShadow(depthImage, shadowSampler), vec4(inpos, 0.9f, 0.5f));
+    testResult = test11;
+  }
+
+  SetOutput(testResult);
+}
+)EOSHADER";
+
+#if 0
+#endif    // #if 0
+
   std::string capabilities = "OpCapability Shader\n";
   std::string spv_extensions;
   std::string extinstimport =
@@ -3997,6 +4155,9 @@ OpMemberDecorate %cbuffer_struct 17 Offset 216    ; double doublePackSource
   VkPhysicalDeviceBufferDeviceAddressFeaturesEXT bdaFeatures = {
       VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES_KHR,
   };
+  VkPhysicalDeviceComputeShaderDerivativesFeaturesNV csDerivFeatures = {
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COMPUTE_SHADER_DERIVATIVES_FEATURES_NV,
+  };
 
   void Prepare(int argc, char **argv)
   {
@@ -4016,6 +4177,9 @@ OpMemberDecorate %cbuffer_struct 17 Offset 216    ; double doublePackSource
 
     // add BDA extension
     optDevExts.push_back(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
+
+    // compute shader derivatives
+    optDevExts.push_back(VK_NV_COMPUTE_SHADER_DERIVATIVES_EXTENSION_NAME);
 
     // we require this to pixel shader debug anyway, so we might as well require it for all tests.
     features.fragmentStoresAndAtomics = VK_TRUE;
@@ -4038,6 +4202,9 @@ OpMemberDecorate %cbuffer_struct 17 Offset 216    ; double doublePackSource
                                        VK_KHR_SHADER_FLOAT16_INT8_EXTENSION_NAME) != devExts.end();
     const bool bda = std::find(devExts.begin(), devExts.end(),
                                VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME) != devExts.end();
+    const bool csDerivatives =
+        std::find(devExts.begin(), devExts.end(), VK_NV_COMPUTE_SHADER_DERIVATIVES_EXTENSION_NAME) !=
+        devExts.end();
 
     vk_version = 0x10;
 
@@ -4177,6 +4344,13 @@ OpMemberDecorate %cbuffer_struct 17 Offset 216    ; double doublePackSource
       bdaFeatures.pNext = (void *)devInfoNext;
       devInfoNext = &bdaFeatures;
     }
+
+    if(csDerivatives)
+    {
+      getPhysFeatures2(&csDerivFeatures);
+      csDerivFeatures.pNext = (void *)devInfoNext;
+      devInfoNext = &csDerivFeatures;
+    }
   }
 
   int main()
@@ -4197,6 +4371,51 @@ OpMemberDecorate %cbuffer_struct 17 Offset 216    ; double doublePackSource
                                        VK_KHR_SHADER_FLOAT16_INT8_EXTENSION_NAME) != devExts.end();
     const bool bda = std::find(devExts.begin(), devExts.end(),
                                VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME) != devExts.end();
+    const bool csDerivatives =
+        std::find(devExts.begin(), devExts.end(), VK_NV_COMPUTE_SHADER_DERIVATIVES_EXTENSION_NAME) !=
+        devExts.end();
+
+    bool subgroupSupport = true;
+    static VkPhysicalDeviceSubgroupProperties subProps = {
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES,
+    };
+
+    if(devVersion < VK_API_VERSION_1_1)
+    {
+      TEST_LOG("Disabled subgroup support: Vulkan device version isn't 1.1");
+      subgroupSupport = false;
+    }
+    if(subgroupSupport)
+    {
+      getPhysProperties2(&subProps);
+
+      if(subProps.subgroupSize < 16)
+      {
+        TEST_LOG("Disabled subgroup support: Subgroup size is less than 16");
+        subgroupSupport = false;
+      }
+    }
+    if(subgroupSupport)
+    {
+      // require at least a few ops so we only have a few conditional compilations
+      const VkSubgroupFeatureFlags requiredOps =
+          VK_SUBGROUP_FEATURE_BASIC_BIT | VK_SUBGROUP_FEATURE_VOTE_BIT |
+          VK_SUBGROUP_FEATURE_ARITHMETIC_BIT | VK_SUBGROUP_FEATURE_BALLOT_BIT;
+
+      if((subProps.supportedOperations & requiredOps) != requiredOps)
+      {
+        TEST_LOG("Disabled subgroup support: Missing ops support");
+        subgroupSupport = false;
+      }
+    }
+    if(subgroupSupport)
+    {
+      if((subProps.supportedStages & VK_SHADER_STAGE_COMPUTE_BIT) == 0)
+      {
+        TEST_LOG("Disabled subgroup support: Missing compute subgroup support");
+        subgroupSupport = false;
+      }
+    }
 
     if(storage16)
       TEST_LOG("Running tests on 16-bit storage");
@@ -4209,6 +4428,14 @@ OpMemberDecorate %cbuffer_struct 17 Offset 216    ; double doublePackSource
 
     if(bda)
       TEST_LOG("Running tests on buffer device address");
+
+    if(csDerivatives)
+    {
+      if(subgroupSupport)
+        TEST_LOG("Running tests on compute shader derivatives + suubgroup");
+      else
+        TEST_LOG("Running tests on compute shader derivatives");
+    }
 
     if(features.shaderFloat64)
       TEST_LOG("Running tests on doubles");
@@ -4435,6 +4662,138 @@ OpMemberDecorate %cbuffer_struct 17 Offset 216    ; double doublePackSource
 
     VkPipeline asmpipe = createGraphicsPipeline(pipeCreateInfo);
 
+    VkDescriptorSetLayout compSetlayout =
+        createDescriptorSetLayout(vkh::DescriptorSetLayoutCreateInfo({
+            {0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT},
+            {14, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT},
+            {19, VK_DESCRIPTOR_TYPE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT},
+            {32, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT},
+        }));
+
+    VkPipelineLayout compLayout = createPipelineLayout(vkh::PipelineLayoutCreateInfo(
+        {compSetlayout}, {vkh::PushConstantRange(VK_SHADER_STAGE_ALL, 0, 8)}));
+
+    std::map<std::string, std::string> macros;
+    int numCompTests = 0;
+    size_t pos = 0;
+    while(pos != std::string::npos)
+    {
+      pos = computeShaderDerivs.find("IsTest(", pos);
+      if(pos == std::string::npos)
+        break;
+      pos += sizeof("IsTest(") - 1;
+      numCompTests = std::max(numCompTests, atoi(computeShaderDerivs.c_str() + pos) + 1);
+    }
+    macros["COMP_TESTS"] = fmt::format("{}", numCompTests);
+
+    // Must be a multiple of 4 in X
+    // Must be a multiple of 2 in Y
+    macros["GROUP_SIZE_X"] = "8";
+    macros["GROUP_SIZE_Y"] = "4";
+    macros["GROUP_SIZE_Z"] = "1";
+
+    std::string comppipe_name[8];
+    VkPipeline compPipes[8];
+    uint32_t countCompPipes = 0;
+    if(csDerivatives)
+    {
+      macros["WORKGROUP_SUPPORT"] = "0";
+      macros["SUBGROUP_SUPPORT"] = "0";
+      macros["QUAD_LAYOUT"] = "derivative_group_quadsNV";
+      comppipe_name[countCompPipes] =
+          fmt::format("{}x{}x{} : {}", macros["GROUP_SIZE_X"], macros["GROUP_SIZE_Y"],
+                      macros["GROUP_SIZE_Z"], macros["QUAD_LAYOUT"]);
+
+      compPipes[countCompPipes] = createComputePipeline(vkh::ComputePipelineCreateInfo(
+          compLayout, CompileShaderModule(computeShaderDerivs, ShaderLang::glsl, ShaderStage::comp,
+                                          "main", macros, SPIRVTarget::vulkan11)));
+      ++countCompPipes;
+
+      macros["QUAD_LAYOUT"] = "derivative_group_LinearNV";
+      comppipe_name[countCompPipes] =
+          fmt::format("{}x{}x{} : {}", macros["GROUP_SIZE_X"], macros["GROUP_SIZE_Y"],
+                      macros["GROUP_SIZE_Z"], macros["QUAD_LAYOUT"]);
+      compPipes[countCompPipes] = createComputePipeline(vkh::ComputePipelineCreateInfo(
+          compLayout, CompileShaderModule(computeShaderDerivs, ShaderLang::glsl, ShaderStage::comp,
+                                          "main", macros, SPIRVTarget::vulkan11)));
+      ++countCompPipes;
+
+      // with workgroup
+      macros["WORKGROUP_SUPPORT"] = "1";
+      macros["QUAD_LAYOUT"] = "derivative_group_quadsNV";
+      comppipe_name[countCompPipes] =
+          fmt::format("{}x{}x{} : {} + Workgroup", macros["GROUP_SIZE_X"], macros["GROUP_SIZE_Y"],
+                      macros["GROUP_SIZE_Z"], macros["QUAD_LAYOUT"]);
+      compPipes[countCompPipes] = createComputePipeline(vkh::ComputePipelineCreateInfo(
+          compLayout, CompileShaderModule(computeShaderDerivs, ShaderLang::glsl, ShaderStage::comp,
+                                          "main", macros, SPIRVTarget::vulkan11)));
+      ++countCompPipes;
+
+      macros["QUAD_LAYOUT"] = "derivative_group_LinearNV";
+      comppipe_name[countCompPipes] =
+          fmt::format("{}x{}x{} : {} + Workgroup", macros["GROUP_SIZE_X"], macros["GROUP_SIZE_Y"],
+                      macros["GROUP_SIZE_Z"], macros["QUAD_LAYOUT"]);
+      compPipes[countCompPipes] = createComputePipeline(vkh::ComputePipelineCreateInfo(
+          compLayout, CompileShaderModule(computeShaderDerivs, ShaderLang::glsl, ShaderStage::comp,
+                                          "main", macros, SPIRVTarget::vulkan11)));
+      ++countCompPipes;
+
+      if(subgroupSupport)
+      {
+        // with subgroup
+        macros["WORKGROUP_SUPPORT"] = "0";
+        macros["SUBGROUP_SUPPORT"] = "1";
+        macros["QUAD_LAYOUT"] = "derivative_group_quadsNV";
+        comppipe_name[countCompPipes] =
+            fmt::format("{}x{}x{} : {} + Subgroup", macros["GROUP_SIZE_X"], macros["GROUP_SIZE_Y"],
+                        macros["GROUP_SIZE_Z"], macros["QUAD_LAYOUT"]);
+        compPipes[countCompPipes] = createComputePipeline(vkh::ComputePipelineCreateInfo(
+            compLayout, CompileShaderModule(computeShaderDerivs, ShaderLang::glsl, ShaderStage::comp,
+                                            "main", macros, SPIRVTarget::vulkan11)));
+        ++countCompPipes;
+
+        macros["QUAD_LAYOUT"] = "derivative_group_LinearNV";
+        comppipe_name[countCompPipes] =
+            fmt::format("{}x{}x{} : {} + Subgroup", macros["GROUP_SIZE_X"], macros["GROUP_SIZE_Y"],
+                        macros["GROUP_SIZE_Z"], macros["QUAD_LAYOUT"]);
+        compPipes[countCompPipes] = createComputePipeline(vkh::ComputePipelineCreateInfo(
+            compLayout, CompileShaderModule(computeShaderDerivs, ShaderLang::glsl, ShaderStage::comp,
+                                            "main", macros, SPIRVTarget::vulkan11)));
+        ++countCompPipes;
+
+        // with subgroup and workgroup
+        macros["WORKGROUP_SUPPORT"] = "1";
+        macros["SUBGROUP_SUPPORT"] = "1";
+        macros["QUAD_LAYOUT"] = "derivative_group_quadsNV";
+        comppipe_name[countCompPipes] =
+            fmt::format("{}x{}x{} : {} + Subgroup + Workgroup", macros["GROUP_SIZE_X"],
+                        macros["GROUP_SIZE_Y"], macros["GROUP_SIZE_Z"], macros["QUAD_LAYOUT"]);
+        compPipes[countCompPipes] = createComputePipeline(vkh::ComputePipelineCreateInfo(
+            compLayout, CompileShaderModule(computeShaderDerivs, ShaderLang::glsl, ShaderStage::comp,
+                                            "main", macros, SPIRVTarget::vulkan11)));
+        ++countCompPipes;
+
+        macros["QUAD_LAYOUT"] = "derivative_group_LinearNV";
+        comppipe_name[countCompPipes] =
+            fmt::format("{}x{}x{} : {} + Subgroup + Workgroup", macros["GROUP_SIZE_X"],
+                        macros["GROUP_SIZE_Y"], macros["GROUP_SIZE_Z"], macros["QUAD_LAYOUT"]);
+        compPipes[countCompPipes] = createComputePipeline(vkh::ComputePipelineCreateInfo(
+            compLayout, CompileShaderModule(computeShaderDerivs, ShaderLang::glsl, ShaderStage::comp,
+                                            "main", macros, SPIRVTarget::vulkan11)));
+        ++countCompPipes;
+      }
+    }
+
+    AllocatedBuffer bufout(
+        this,
+        vkh::BufferCreateInfo(sizeof(Vec4f) * 1024 * numCompTests,
+                              VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT),
+        VmaAllocationCreateInfo({0, VMA_MEMORY_USAGE_CPU_TO_GPU}));
+
+    setName(bufout.buffer, "bufout");
+
+    VkDescriptorSet compSet = allocateDescriptorSet(compSetlayout);
+
     float triWidth = 8.0f / float(texWidth);
     float triHeight = 8.0f / float(texHeight);
 
@@ -4635,6 +4994,23 @@ OpMemberDecorate %cbuffer_struct 17 Offset 216    ; double doublePackSource
       descset1 = allocateDescriptorSet(setlayout1);
       descset2 = allocateDescriptorSet(setlayout2);
     }
+
+    vkh::updateDescriptorSets(
+        device,
+        {
+            vkh::WriteDescriptorSet(compSet, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                                    {vkh::DescriptorBufferInfo(bufout.buffer)}),
+            vkh::WriteDescriptorSet(
+                compSet, 14, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                {vkh::DescriptorImageInfo(smileyview, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                          linearsampler)}),
+            vkh::WriteDescriptorSet(
+                compSet, 19, VK_DESCRIPTOR_TYPE_SAMPLER,
+                {vkh::DescriptorImageInfo(VK_NULL_HANDLE, VK_IMAGE_LAYOUT_UNDEFINED, shadowsampler)}),
+            vkh::WriteDescriptorSet(
+                compSet, 32, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
+                {vkh::DescriptorImageInfo(shadowview, VK_IMAGE_LAYOUT_GENERAL, VK_NULL_HANDLE)}),
+        });
 
     Vec4f cbufferdata[64] = {};
 
@@ -5189,6 +5565,37 @@ OpMemberDecorate %cbuffer_struct 17 Offset 216    ; double doublePackSource
 
       FinishUsingBackbuffer(cmd, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_GENERAL);
 
+      pushMarker(cmd, "Compute Tests");
+
+      for(size_t p = 0; p < countCompPipes; p++)
+      {
+        vkh::cmdPipelineBarrier(
+            cmd, {},
+            {vkh::BufferMemoryBarrier(VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+                                      bufout.buffer, 0, sizeof(Vec4f) * 1024 * numCompTests)});
+
+        vkCmdFillBuffer(cmd, bufout.buffer, 0, sizeof(Vec4f) * 1024 * numCompTests, 0);
+
+        vkh::cmdPipelineBarrier(
+            cmd, {},
+            {vkh::BufferMemoryBarrier(VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_WRITE_BIT,
+                                      bufout.buffer, 0, sizeof(Vec4f) * 1024 * numCompTests)});
+
+        pushMarker(cmd, comppipe_name[p]);
+
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, compPipes[p]);
+        vkh::cmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, compLayout, 0, {compSet}, {});
+
+        for(int i = 0; i < numCompTests; i++)
+        {
+          vkh::cmdPushConstants(cmd, compLayout, i);
+          vkCmdDispatch(cmd, 2, 1, 1);
+        }
+
+        popMarker(cmd);
+      }
+
+      popMarker(cmd);
       vkEndCommandBuffer(cmd);
 
       Submit(0, 1, {cmd});
