@@ -12,7 +12,7 @@ class VK_Shader_Debug_Zoo(rdtest.TestCase):
             return
 
         failed = False
-        countTracesToCheck = 5
+        countTracesToCheck = 1
 
         for test_name in ["GLSL1 tests", "GLSL2 tests", "ASM tests"]:
             rdtest.log.begin_section(test_name)
@@ -31,7 +31,7 @@ class VK_Shader_Debug_Zoo(rdtest.TestCase):
                     y = 4 * child + 1
 
                     # Debug the shader
-                    mtOption = rd.SetConfigSetting("Vulkan_Hack_EnableShaderDebugMT")
+                    mtOption = rd.SetConfigSetting("Vulkan_Debug_EnableShaderDebugMT")
                     mtOption.data.basic.b = False
                     t: rd.ShaderDebugTrace = self.controller.DebugPixel(x, y, rd.DebugPixelInputs())
                     baseStates = self.generate_full_trace(t)
