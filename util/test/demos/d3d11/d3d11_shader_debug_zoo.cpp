@@ -34,6 +34,7 @@ RD_TEST(D3D11_Shader_Debug_Zoo, D3D11GraphicsTest)
     float zero;
     float one;
     float negone;
+    float texDim;
   };
 
   std::string common = R"EOSHADER(
@@ -44,6 +45,7 @@ struct consts
   float zeroVal : ZERO;
   float oneVal : ONE;
   float negoneVal : NEGONE;
+  float texDim : TEXDIM;
 };
 
 cbuffer packed_consts : register(b1)
@@ -55,6 +57,7 @@ cbuffer packed_consts : register(b1)
 struct v2f
 {
   float4 pos : SV_POSITION;
+  float4 s : S;
   float2 zeroVal : ZERO;
   float tinyVal : TINY;
   float oneVal : ONE;
@@ -72,6 +75,19 @@ v2f main(consts IN, uint tri : SV_InstanceID)
   v2f OUT = (v2f)0;
 
   OUT.pos = float4(IN.pos.x + IN.pos.z * float(tri), IN.pos.y, 0.0f, 1);
+
+  // OUT.s.xy : 0 -> 2 : across the triangle x & y, changes per pixel
+  OUT.s.x = IN.pos.x + 1.0;
+  OUT.s.x *= IN.texDim;
+  OUT.s.x -= 1.0;
+  OUT.s.x /= 2.0;
+
+  OUT.s.y = IN.pos.y;
+  OUT.s.y *= 2.0;
+  OUT.s.y += 0.5;
+  OUT.s.y = 2.0 - OUT.s.y;
+  // OUT.s.zw : large variation in x & y
+  OUT.s.zw = (IN.pos.xy + float2(543.0, 213.0)) * (IN.pos.yx + float2(100.0, -113.0));
 
   OUT.zeroVal = IN.zeroVal.xx;
   OUT.oneVal = IN.oneVal;
@@ -115,6 +131,7 @@ Texture2DMS<float> dimtexms : register(t4);
 Texture2D<float4> smiley : register(t5);
 Texture2D<int4> smileyint : register(t6);
 Texture2D<uint4> smileyuint : register(t7);
+Texture2D<float> smileyr32 : register(t8);
 
 RWByteAddressBuffer byterwtest : register(u1);
 RWStructuredBuffer<MyStruct> structrwtest : register(u2);
@@ -131,6 +148,7 @@ RWTexture2D<float> unbounduav2 : register(u5);
 SamplerState linearclamp : register(s0);
 SamplerState linearwrap : register(s1);
 SamplerState unboundsamp : register(s2);
+SamplerComparisonState linearcompare : register(s3);
 
 float4 main(v2f IN) : SV_Target0
 {
@@ -830,10 +848,42 @@ float4 main(v2f IN) : SV_Target0
   {
     float4 Color = float4(0,0,0,1);
     float2 uv = IN.pos.xy / float2(2.0, 2.0);
-    uv.y += 0.187;
+    uv.x += 0.6042;
+    uv.y += 0.4167;
     Color.x = smiley.CalculateLevelOfDetail(linearclamp, uv);
     Color.y = smiley.CalculateLevelOfDetailUnclamped(linearclamp, uv);
     return Color;
+  }
+  if(IN.tri == 100)
+  {
+    float2 uv = IN.s.xy / float2(2.0, 2.0);
+    uv.x += 0.6042;
+    uv.y += 0.4167;
+    return smiley.Sample(linearclamp, uv);
+  }
+  if(IN.tri == 101)
+  {
+    float2 uv = IN.s.xy / float2(2.0, 2.0);
+    uv.x += 0.6042;
+    uv.y += 0.4167;
+    return smiley.SampleBias(linearclamp, uv, 4.0);
+  }
+  if(IN.tri == 102)
+  {
+    float4 Color = float4(0,0,0,0);
+    float2 uv = IN.s.xy / float2(2.0, 2.0);
+    uv.x += 0.6042;
+    uv.y += 0.4167;
+    Color.x = smileyr32.SampleCmp(linearcompare, uv, 0.0);
+    Color.y = smileyr32.SampleCmp(linearcompare, uv, 0.1);
+    Color.z = smileyr32.SampleCmp(linearcompare, uv, 0.7);
+    Color.w = smileyr32.SampleCmp(linearcompare, uv, 1.0);
+    float4 derivs = float4(0,0,0,0);
+    derivs.x = ddx(uv.x);
+    derivs.y = ddx(uv.y);
+    derivs.z = ddy(uv.x);
+    derivs.w = ddy(uv.y);
+    return Color + derivs;
   }
 
   return float4(0.4f, 0.4f, 0.4f, 0.4f);
@@ -1065,6 +1115,15 @@ float4 main(v2f IN, uint samp : SV_SampleIndex) : SV_Target0
             D3D11_INPUT_PER_VERTEX_DATA,
             0,
         },
+        {
+            "TEXDIM",
+            0,
+            DXGI_FORMAT_R32_FLOAT,
+            0,
+            D3D11_APPEND_ALIGNED_ELEMENT,
+            D3D11_INPUT_PER_VERTEX_DATA,
+            0,
+        },
     };
 
     ID3D11InputLayoutPtr layout;
@@ -1084,9 +1143,9 @@ float4 main(v2f IN, uint samp : SV_SampleIndex) : SV_Target0
     float triWidth = 8.0f / float(texDim);
 
     ConstsA2V triangle[] = {
-        {Vec3f(-1.0f, -1.0f, triWidth), 0.0f, 1.0f, -1.0f},
-        {Vec3f(-1.0f, 1.0f, triWidth), 0.0f, 1.0f, -1.0f},
-        {Vec3f(-1.0f + triWidth, 1.0f, triWidth), 0.0f, 1.0f, -1.0f},
+        {Vec3f(-1.0f, -1.0f, triWidth), 0.0f, 1.0f, -1.0f, (float)texDim},
+        {Vec3f(-1.0f, 1.0f, triWidth), 0.0f, 1.0f, -1.0f, (float)texDim},
+        {Vec3f(-1.0f + triWidth, 1.0f, triWidth), 0.0f, 1.0f, -1.0f, (float)texDim},
     };
 
     ID3D11BufferPtr vb = MakeBuffer().Vertex().Data(triangle);
@@ -1147,11 +1206,29 @@ float4 main(v2f IN, uint samp : SV_SampleIndex) : SV_Target0
     ID3D11ShaderResourceViewPtr smileysrv = MakeSRV(smiley).Format(DXGI_FORMAT_R8G8B8A8_UNORM);
     ID3D11ShaderResourceViewPtr smileyintsrv = MakeSRV(smiley).Format(DXGI_FORMAT_R8G8B8A8_SINT);
     ID3D11ShaderResourceViewPtr smileyuintsrv = MakeSRV(smiley).Format(DXGI_FORMAT_R8G8B8A8_UINT);
+    ID3D11Texture2DPtr smileyr32 =
+        MakeTexture(DXGI_FORMAT_R32_TYPELESS, rgba8.width, rgba8.height).SRV();
+    ID3D11ShaderResourceViewPtr smileyr32srv = MakeSRV(smileyr32).Format(DXGI_FORMAT_R32_FLOAT);
+
+    std::vector<float> smileyR32Data;
+    uint32_t *srcptr = rgba8.data.data();
+    for(UINT row = 0; row < rgba8.height; row++)
+    {
+      for(UINT col = 0; col < rgba8.width; col++)
+      {
+        uint32_t texValue = *srcptr;
+        uint32_t red = texValue & 0xFF;
+        smileyR32Data.push_back((float)red / 255.0f);
+        srcptr++;
+      }
+    }
 
     ctx->UpdateSubresource(smiley, 0, NULL, rgba8.data.data(), rgba8.width * sizeof(uint32_t), 0);
+    ctx->UpdateSubresource(smileyr32, 0, NULL, smileyR32Data.data(), rgba8.width * sizeof(float), 0);
 
     ID3D11ShaderResourceView *srvs[] = {
-        srv, rawsrv, structsrv, testSRV, msSRV, smileysrv, smileyintsrv, smileyuintsrv,
+        srv,       rawsrv,       structsrv,     testSRV,      msSRV,
+        smileysrv, smileyintsrv, smileyuintsrv, smileyr32srv,
     };
 
     ctx->PSSetShaderResources(0, ARRAY_COUNT(srvs), srvs);
@@ -1173,8 +1250,11 @@ float4 main(v2f IN, uint samp : SV_SampleIndex) : SV_Target0
 
     ID3D11SamplerStatePtr linearclamp = MakeSampler();
     ctx->PSSetSamplers(0, 1, &linearclamp.GetInterfacePtr());
-    ID3D11SamplerStatePtr linearwrap = MakeSampler();
+    ID3D11SamplerStatePtr linearwrap = MakeSampler().Address(D3D11_TEXTURE_ADDRESS_WRAP);
     ctx->PSSetSamplers(1, 1, &linearwrap.GetInterfacePtr());
+    ID3D11SamplerStatePtr linearcompare =
+        MakeSampler().Filter(D3D11_FILTER_COMPARISON_MIN_MAG_MIP_LINEAR).Comparison(D3D11_COMPARISON_LESS);
+    ctx->PSSetSamplers(3, 1, &linearcompare.GetInterfacePtr());
 
     ID3D11VertexShaderPtr vsmsaa = CreateVS(vsmsaablob);
     ID3D11PixelShaderPtr psmsaa = CreatePS(psmsaablob);
