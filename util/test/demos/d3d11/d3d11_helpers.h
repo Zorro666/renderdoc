@@ -229,7 +229,7 @@ public:
     return *this;
   }
 
-  D3D11SamplerCreator &Aniso(D3D11_COMPARISON_FUNC comp)
+  D3D11SamplerCreator &Comparison(D3D11_COMPARISON_FUNC comp)
   {
     m_Desc.ComparisonFunc = comp;
     return *this;
