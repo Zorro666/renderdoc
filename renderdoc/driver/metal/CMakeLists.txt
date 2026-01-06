@@ -62,6 +62,8 @@ else ()
     set (CMAKE_CXX_STANDARD_REQUIRED ON)
 endif ()
 
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-invalid-offsetof")
+
 add_library(rdoc_metal OBJECT ${sources})
 target_compile_definitions(rdoc_metal ${RDOC_DEFINITIONS})
 target_include_directories(rdoc_metal ${RDOC_INCLUDES})

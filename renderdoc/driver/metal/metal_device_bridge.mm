@@ -192,6 +192,13 @@
   return self.real.currentAllocatedSize;
 }
 
+- (id<MTLLogState>)newLogStateWithDescriptor:(MTLLogStateDescriptor *_Nonnull)descriptor
+                                       error:(NSError **)error API_AVAILABLE(macos(15.0), ios(18.0))
+{
+  METAL_NOT_HOOKED();
+  return [self.real newLogStateWithDescriptor:descriptor error:error];
+}
+
 - (nullable id<MTLCommandQueue>)newCommandQueue
 {
   return id<MTLCommandQueue>(GetWrapped(self)->newCommandQueue());
@@ -201,6 +208,13 @@
 {
   METAL_NOT_HOOKED();
   return [self.real newCommandQueueWithMaxCommandBufferCount:maxCommandBufferCount];
+}
+
+- (id<MTLCommandQueue>)newCommandQueueWithDescriptor:(MTLCommandQueueDescriptor *)descriptor
+    API_AVAILABLE(macos(15.0), ios(18.0))
+{
+  METAL_NOT_HOOKED();
+  return [self.real newCommandQueueWithDescriptor:descriptor];
 }
 
 - (MTLSizeAndAlign)heapTextureSizeAndAlignWithDescriptor:(MTLTextureDescriptor *)desc
@@ -935,10 +949,147 @@
 #endif
 
 #if __MAC_OS_X_VERSION_MAX_ALLOWED >= __MAC_13_3
-- (NSUInteger)maximumConcurrentCompilationTaskCount API_AVAILABLE(macos(13.3))API_UNAVAILABLE(ios)
+- (NSUInteger)maximumConcurrentCompilationTaskCount API_AVAILABLE(macos(13.3), ios(26.0))
 {
   return GetWrapped(self)->maximumConcurrentCompilationTaskCount();
 }
 #endif
+
+- (id<MTLResidencySet>)newResidencySetWithDescriptor:(MTLResidencySetDescriptor *)desc
+                                               error:(NSError *__nullable *)error
+    API_AVAILABLE(macos(15.0), ios(18.0))
+{
+  METAL_NOT_HOOKED();
+  return [self.real newResidencySetWithDescriptor:desc error:error];
+}
+
+- (MTLSizeAndAlign)tensorSizeAndAlignWithDescriptor:(MTLTensorDescriptor *)descriptor
+    API_AVAILABLE(macos(26.0), ios(26.0))
+{
+  METAL_NOT_HOOKED();
+  return [self.real tensorSizeAndAlignWithDescriptor:descriptor];
+}
+
+- (id<MTLTensor>)newTensorWithDescriptor:(MTLTensorDescriptor *)descriptor
+                                   error:(__autoreleasing NSError *_Nullable *_Nullable)error
+    API_AVAILABLE(macos(26.0), ios(26.0))
+{
+  METAL_NOT_HOOKED();
+  return [self.real newTensorWithDescriptor:descriptor error:error];
+}
+
+- (id<MTLFunctionHandle>)functionHandleWithFunction:(id<MTLFunction>)function
+    API_AVAILABLE(macos(26.0), ios(26.0))
+{
+  METAL_NOT_HOOKED();
+  return [self.real functionHandleWithFunction:function];
+}
+
+- (id<MTL4CommandAllocator>)newCommandAllocator API_AVAILABLE(macos(26.0), ios(26.0))
+{
+  METAL_NOT_HOOKED();
+  return [self.real newCommandAllocator];
+}
+
+- (id<MTL4CommandAllocator>)newCommandAllocatorWithDescriptor:(MTL4CommandAllocatorDescriptor *)descriptor
+                                                        error:(NSError **)error
+    API_AVAILABLE(macos(26.0), ios(26.0))
+{
+  METAL_NOT_HOOKED();
+  return [self.real newCommandAllocatorWithDescriptor:descriptor error:error];
+}
+
+- (id<MTL4CommandQueue>)newMTL4CommandQueue API_AVAILABLE(macos(26.0), ios(26.0))
+{
+  METAL_NOT_HOOKED();
+  return [self.real newMTL4CommandQueue];
+}
+
+- (id<MTL4CommandQueue>)
+    newMTL4CommandQueueWithDescriptor:(MTL4CommandQueueDescriptor *)descriptor
+                                error:(__autoreleasing NSError *_Nullable *_Nullable)error
+    API_AVAILABLE(macos(26.0), ios(26.0))
+{
+  METAL_NOT_HOOKED();
+  return [self.real newMTL4CommandQueueWithDescriptor:descriptor error:error];
+}
+
+- (id<MTL4CommandBuffer>)newCommandBuffer API_AVAILABLE(macos(26.0), ios(26.0))
+{
+  METAL_NOT_HOOKED();
+  return [self.real newCommandBuffer];
+}
+
+- (id<MTL4ArgumentTable>)newArgumentTableWithDescriptor:(MTL4ArgumentTableDescriptor *)descriptor
+                                                  error:(NSError *_Nullable *)error
+    API_AVAILABLE(macos(26.0), ios(26.0))
+{
+  METAL_NOT_HOOKED();
+  return [self.real newArgumentTableWithDescriptor:descriptor error:error];
+}
+
+- (id<MTLTextureViewPool>)newTextureViewPoolWithDescriptor:(MTLResourceViewPoolDescriptor *)descriptor
+                                                     error:(NSError *_Nullable *)error
+    API_AVAILABLE(macos(26.0), ios(26.0))
+{
+  METAL_NOT_HOOKED();
+  return [self.real newTextureViewPoolWithDescriptor:descriptor error:error];
+}
+
+- (id<MTL4Compiler>)newCompilerWithDescriptor:(MTL4CompilerDescriptor *)descriptor
+                                        error:(NSError **)error API_AVAILABLE(macos(26.0), ios(26.0))
+{
+  METAL_NOT_HOOKED();
+  return [self.real newCompilerWithDescriptor:descriptor error:error];
+}
+
+- (id<MTL4Archive>)newArchiveWithURL:(NSURL *)url
+                               error:(NSError **)error API_AVAILABLE(macos(26.0), ios(26.0))
+{
+  METAL_NOT_HOOKED();
+  return [self.real newArchiveWithURL:url error:error];
+}
+
+- (id<MTL4PipelineDataSetSerializer>)newPipelineDataSetSerializerWithDescriptor:
+    (MTL4PipelineDataSetSerializerDescriptor *)descriptor API_AVAILABLE(macos(26.0), ios(26.0))
+{
+  METAL_NOT_HOOKED();
+  return [self.real newPipelineDataSetSerializerWithDescriptor:descriptor];
+}
+
+- (id<MTLBuffer>)newBufferWithLength:(NSUInteger)length
+                             options:(MTLResourceOptions)options
+             placementSparsePageSize:(MTLSparsePageSize)placementSparsePageSize
+    API_AVAILABLE(macos(26.0), ios(26.0))
+{
+  METAL_NOT_HOOKED();
+  return [self.real newBufferWithLength:length
+                                options:options
+                placementSparsePageSize:placementSparsePageSize];
+}
+
+- (id<MTL4CounterHeap>)newCounterHeapWithDescriptor:(MTL4CounterHeapDescriptor *)descriptor
+                                              error:(NSError *__nullable *)error
+    API_AVAILABLE(macos(26.0), ios(26.0))
+{
+  METAL_NOT_HOOKED();
+  return [self.real newCounterHeapWithDescriptor:descriptor error:error];
+}
+
+- (NSUInteger)sizeOfCounterHeapEntry:(MTL4CounterHeapType)type API_AVAILABLE(macos(26.0), ios(26.0))
+{
+  METAL_NOT_HOOKED();
+}
+
+- (uint64_t)queryTimestampFrequency API_AVAILABLE(macos(26.0), ios(26.0))
+{
+  METAL_NOT_HOOKED();
+}
+
+- (id<MTLFunctionHandle>)functionHandleWithBinaryFunction:(id<MTL4BinaryFunction>)function
+    API_AVAILABLE(macos(26.0), ios(26.0))
+{
+  METAL_NOT_HOOKED();
+}
 
 @end

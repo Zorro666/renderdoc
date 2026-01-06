@@ -85,6 +85,13 @@
   GetWrapped(self)->endEncoding();
 }
 
+- (void)barrierAfterQueueStages:(MTLStages)afterQueueStages
+                   beforeStages:(MTLStages)beforeStages API_AVAILABLE(macos(26.0), ios(26.0))
+{
+  METAL_NOT_HOOKED();
+  return [self.real barrierAfterQueueStages:afterQueueStages beforeStages:beforeStages];
+}
+
 - (void)insertDebugSignpost:(NSString *)string
 {
   METAL_NOT_HOOKED();
@@ -320,6 +327,13 @@
 {
   METAL_NOT_HOOKED();
   return [self.real setDepthBias:depthBias slopeScale:slopeScale clamp:clamp];
+}
+
+- (void)setDepthTestMinBound:(float)minBound
+                    maxBound:(float)maxBound API_AVAILABLE(macos(26.0), ios(26.0))
+{
+  METAL_NOT_HOOKED();
+  return [self.real setDepthTestMinBound:minBound maxBound:maxBound];
 }
 
 - (void)setScissorRect:(MTLScissorRect)rect
@@ -1274,6 +1288,13 @@
   return [self.real sampleCountersInBuffer:sampleBuffer
                              atSampleIndex:sampleIndex
                                withBarrier:barrier];
+}
+
+- (void)setColorAttachmentMap:(nullable MTLLogicalToPhysicalColorAttachmentMap *)mapping
+    API_AVAILABLE(macos(26.0), ios(26.0))
+{
+  METAL_NOT_HOOKED();
+  return [self.real setColorAttachmentMap:mapping];
 }
 
 @end

@@ -358,6 +358,13 @@
   return [self.real newSharedTextureHandle];
 }
 
+- (nullable id<MTLTexture>)newTextureViewWithDescriptor:(MTLTextureViewDescriptor *)descriptor
+    API_AVAILABLE(macos(26.0), ios(26.0))
+{
+  METAL_NOT_HOOKED();
+  return [self.real newTextureViewWithDescriptor:descriptor];
+}
+
 - (id<MTLTexture>)remoteStorageTexture API_AVAILABLE(macos(10.15))API_UNAVAILABLE(ios)
 {
   METAL_NOT_HOOKED();
@@ -389,6 +396,11 @@
                                            levels:levelRange
                                            slices:sliceRange
                                           swizzle:swizzle];
+}
+
+- (MTLTextureSparseTier)sparseTextureTier API_AVAILABLE(macos(26.0), ios(26.0))
+{
+  return self.real.sparseTextureTier;
 }
 
 @end

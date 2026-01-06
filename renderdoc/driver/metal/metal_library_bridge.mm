@@ -106,6 +106,13 @@
                       completionHandler:completionHandler];
 }
 
+- (MTLFunctionReflection *)reflectionForFunctionWithName:(NSString *)functionName
+    API_AVAILABLE(macos(26.0), ios(26.0))
+{
+  METAL_NOT_HOOKED();
+  return [self.real reflectionForFunctionWithName:functionName];
+}
+
 - (void)newFunctionWithDescriptor:(nonnull MTLFunctionDescriptor *)descriptor
                 completionHandler:(void (^)(id<MTLFunction> __nullable function,
                                             NSError *__nullable error))completionHandler

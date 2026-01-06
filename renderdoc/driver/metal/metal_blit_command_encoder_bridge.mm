@@ -85,6 +85,13 @@
   GetWrapped(self)->endEncoding();
 }
 
+- (void)barrierAfterQueueStages:(MTLStages)afterQueueStages
+                   beforeStages:(MTLStages)beforeStages API_AVAILABLE(macos(26.0), ios(26.0))
+{
+  METAL_NOT_HOOKED();
+  return [self.real barrierAfterQueueStages:afterQueueStages beforeStages:beforeStages];
+}
+
 - (void)insertDebugSignpost:(NSString *)string
 {
   GetWrapped(self)->insertDebugSignpost((NS::String *)string);
@@ -333,6 +340,23 @@
 {
   GetWrapped(self)->resolveCounters(GetWrapped(sampleBuffer), (NS::Range &)range,
                                     GetWrapped(destinationBuffer), destinationOffset);
+}
+
+- (void)copyFromTensor:(id<MTLTensor>)sourceTensor
+             sourceOrigin:(MTLTensorExtents *)sourceOrigin
+         sourceDimensions:(MTLTensorExtents *)sourceDimensions
+                 toTensor:(id<MTLTensor>)destinationTensor
+        destinationOrigin:(MTLTensorExtents *)destinationOrigin
+    destinationDimensions:(MTLTensorExtents *)destinationDimensions
+    API_AVAILABLE(macos(26.0), ios(26.0))
+{
+  METAL_NOT_HOOKED();
+  return [self.real copyFromTensor:sourceTensor
+                      sourceOrigin:sourceOrigin
+                  sourceDimensions:sourceDimensions
+                          toTensor:destinationTensor
+                 destinationOrigin:destinationOrigin
+             destinationDimensions:destinationDimensions];
 }
 
 @end
