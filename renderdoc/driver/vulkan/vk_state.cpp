@@ -454,8 +454,14 @@ void VulkanRenderState::BindPipeline(WrappedVulkan *vk, VkCommandBuffer cmd,
     else if(binding == BindInitial)
     {
       if(vk->GetDriverInfo().NVStaticPipelineRebindStates())
-        ObjDisp(cmd)->CmdBindPipeline(Unwrap(cmd), VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                      Unwrap(vk->GetDebugManager()->GetDummyPipeline()));
+      {
+        if(graphics.pipeline != ResourceId())
+          ObjDisp(cmd)->CmdBindPipeline(Unwrap(cmd), VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                        Unwrap(vk->GetDebugManager()->GetDummyPipeline()));
+        else
+          ObjDisp(cmd)->CmdBindPipeline(Unwrap(cmd), VK_PIPELINE_BIND_POINT_COMPUTE,
+                                        Unwrap(vk->GetDebugManager()->GetDummyComputePipeline()));
+      }
 
       BindLastPushConstants(vk, cmd);
     }

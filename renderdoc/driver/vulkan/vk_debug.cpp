@@ -877,6 +877,9 @@ VulkanDebugManager::VulkanDebugManager(WrappedVulkan *driver)
 
     CREATE_OBJECT(m_DummyPipeline, dummyPipeInfo);
 
+    CREATE_OBJECT(m_DummyComputePipeline, m_DummyPipelineLayout,
+                  shaderCache->GetBuiltinModule(BuiltinShader::MeshCS));
+
     driver->vkDestroyRenderPass(driver->GetDev(), SRGBA8RP, NULL);
 
     VkDescriptorPoolSize descPoolTypes[] = {
@@ -986,6 +989,7 @@ VulkanDebugManager::~VulkanDebugManager()
 
   m_pDriver->vkDestroyPipelineLayout(dev, m_DummyPipelineLayout, NULL);
   m_pDriver->vkDestroyPipeline(dev, m_DummyPipeline, NULL);
+  m_pDriver->vkDestroyPipeline(dev, m_DummyComputePipeline, NULL);
 
   m_pDriver->vkDestroyDescriptorPool(dev, m_DiscardPool, NULL);
   m_pDriver->vkDestroyPipelineLayout(dev, m_DiscardLayout, NULL);
