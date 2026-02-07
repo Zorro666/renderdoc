@@ -768,11 +768,15 @@ void main()
 
     VkPipeline pipe2 = createGraphicsPipeline(pipeCreateInfo);
 
-    pipeCreateInfo.stages = {
-        CompileShaderModule(xfbvertex, ShaderLang::glsl, ShaderStage::vert, "main"),
-        CompileShaderModule(pixel2, ShaderLang::glsl, ShaderStage::frag, "main"),
-    };
-    VkPipeline xfbpipe = createGraphicsPipeline(pipeCreateInfo);
+    VkPipeline xfbpipe = VK_NULL_HANDLE;
+    if(EXT_transform_feedback)
+    {
+      pipeCreateInfo.stages = {
+          CompileShaderModule(xfbvertex, ShaderLang::glsl, ShaderStage::vert, "main"),
+          CompileShaderModule(pixel2, ShaderLang::glsl, ShaderStage::frag, "main"),
+      };
+      xfbpipe = createGraphicsPipeline(pipeCreateInfo);
+    }
 
     pipeCreateInfo.stages = {
         CompileShaderModule(asm_vertex, ShaderLang::spvasm, ShaderStage::vert, "main"),
