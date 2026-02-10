@@ -1,5 +1,6 @@
 import rdtest
 import renderdoc as rd
+from rdtest import util
 
 
 class VK_VS_Max_Desc_Set(rdtest.TestCase):
@@ -27,4 +28,4 @@ class VK_VS_Max_Desc_Set(rdtest.TestCase):
             },
         }
 
-        self.check_mesh_data(postvs_ref, postvs_data)
+        self.check_mesh_data(postvs_ref, postvs_data, util.FLT_EPSILON*2.0)

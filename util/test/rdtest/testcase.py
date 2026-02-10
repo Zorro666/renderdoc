@@ -437,7 +437,7 @@ class TestCase:
 
         log.success("Task data is identical to reference")
 
-    def check_mesh_data(self, mesh_ref, mesh_data):
+    def check_mesh_data(self, mesh_ref, mesh_data, eps=util.FLT_EPSILON):
         for idx in mesh_ref:
             ref = mesh_ref[idx]
             if idx >= len(mesh_data):
@@ -449,7 +449,7 @@ class TestCase:
                 if key not in data:
                     raise TestFailureException('Mesh data[{}] doesn\'t contain data {} as expected. Data is: {}'.format(idx, key, list(data.keys())))
 
-                if not util.value_compare(ref[key], data[key]):
+                if not util.value_compare(ref[key], data[key], eps):
                     raise TestFailureException('Mesh data[{}] \'{}\': {} is not as expected: {}'.format(idx, key, data[key], ref[key]))
 
         log.success("Mesh data is identical to reference")
