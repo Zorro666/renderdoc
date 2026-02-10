@@ -113,7 +113,14 @@ void main()
           VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
       };
 
-      feats.drawIndirectCount = VK_TRUE;
+      VkPhysicalDeviceVulkan12Features vk12avail = {
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
+      };
+
+      getPhysFeatures2(&vk12avail);
+
+      if(vk12avail.drawIndirectCount)
+        feats.drawIndirectCount = VK_TRUE;
 
       devInfoNext = &feats;
     }
