@@ -4388,6 +4388,11 @@ ResourceId VulkanReplay::RenderOverlay(ResourceId texid, FloatVector clearCol, D
             m_pDriver->vkDestroyShaderEXT(m_Device, shaders[i], NULL);
         }
       }
+      else
+      {
+        vkr = vt->EndCommandBuffer(Unwrap(cmd));
+        CHECK_VKR(m_pDriver, vkr);
+      }
 
       // restore back to normal
       m_pDriver->ReplayLog(0, eventId, eReplay_WithoutDraw);
