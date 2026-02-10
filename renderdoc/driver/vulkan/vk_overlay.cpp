@@ -1268,7 +1268,6 @@ ResourceId VulkanReplay::RenderOverlay(ResourceId texid, FloatVector clearCol, D
 
           if(ia)
             ia->topology = VK_PRIMITIVE_TOPOLOGY_LINE_STRIP;
-          state.primitiveTopology = VK_PRIMITIVE_TOPOLOGY_LINE_STRIP;
 
           // thankfully, primitive restart is always supported! This makes the index buffer a bit
           // more
@@ -1276,9 +1275,11 @@ ResourceId VulkanReplay::RenderOverlay(ResourceId texid, FloatVector clearCol, D
           // three lines, instead we have a single restart index after each triangle.
           if(ia)
             ia->primitiveRestartEnable = true;
-          state.primRestartEnable = true;
 
           GetDebugManager()->PatchLineStripIndexBuffer(mainDraw, patchedIB, patchedIndexCount);
+
+          state.primitiveTopology = VK_PRIMITIVE_TOPOLOGY_LINE_STRIP;
+          state.primRestartEnable = true;
 
           if(m_pDriver->ShaderObject())
             state.dynamicStates[VkDynamicLineWidth] = true;
@@ -1433,6 +1434,7 @@ ResourceId VulkanReplay::RenderOverlay(ResourceId texid, FloatVector clearCol, D
         action.numIndices = patchedIndexCount;
         action.baseVertex = 0;
         action.indexOffset = 0;
+        action.flags |= ActionFlags::Indexed;
         m_pDriver->ReplayDraw(cmd, action);
         state.EndRenderPass(cmd);
 
