@@ -578,10 +578,15 @@ public:
     return rdcspv::DeviceOpResult::Succeeded;
   }
 
+  // Can be called from any thread
   virtual void FillInputValue(ShaderVariable &var, ShaderBuiltin builtin, uint32_t threadIndex,
-                              uint32_t location, uint32_t component) override
+                              uint32_t location, uint32_t component) const override
   {
-    CHECK_DEVICE_THREAD();
+    if(!inputVarsReadOnly)
+    {
+      RDCERR("Input variables still being filled in");
+      return;
+    }
     if(builtin != ShaderBuiltin::Undefined)
     {
       if(threadIndex < thread_builtins.size())
@@ -1445,6 +1450,53 @@ public:
 
   virtual bool QueuedOpsHasSpace() override { return true; }
 
+  rdcarray<rdcfixedarray<uint32_t, arraydim<rdcspv::ThreadProperty>()>> thread_props;
+
+  uint64_t GetDeviceThreadID() const { return deviceThreadID; }
+  bool IsDeviceThread() const { return Threading::GetCurrentID() == GetDeviceThreadID(); }
+
+  // Device thread only for mutable state
+  std::unordered_map<ShaderBuiltin, ShaderVariable> &GetGlobalBuiltins()
+  {
+    CHECK_DEVICE_THREAD();
+    if(inputVarsReadOnly)
+      RDCERR("Input variables can't be modified");
+    return global_builtins;
+  }
+
+  // Device thread only for mutable state
+  rdcarray<std::unordered_map<ShaderBuiltin, ShaderVariable>> &GetThreadBuiltins()
+  {
+    CHECK_DEVICE_THREAD();
+    if(inputVarsReadOnly)
+      RDCERR("Input variables can't be modified");
+    return thread_builtins;
+  }
+
+  // Device thread only for mutable state
+  rdcarray<rdcarray<ShaderVariable>> &GetLocationInputs()
+  {
+    CHECK_DEVICE_THREAD();
+    if(inputVarsReadOnly)
+      RDCERR("Input variables can't be modified");
+    return location_inputs;
+  }
+
+  // Device thread only for mutable state
+  void SetInputVarsToReadOnly()
+  {
+    CHECK_DEVICE_THREAD();
+    inputVarsReadOnly = true;
+  }
+
+private:
+  WrappedOpenGL *m_pDriver = NULL;
+
+  bool m_ResourcesDirty = false;
+  uint32_t m_EventID;
+  ResourceId m_ShaderID;
+
+  bool inputVarsReadOnly = false;
   // global over all threads
   std::unordered_map<ShaderBuiltin, ShaderVariable> global_builtins;
 
@@ -1453,18 +1505,6 @@ public:
 
   // per-thread custom inputs by location [thread][location]
   rdcarray<rdcarray<ShaderVariable>> location_inputs;
-
-  rdcarray<rdcfixedarray<uint32_t, arraydim<rdcspv::ThreadProperty>()>> thread_props;
-
-  uint64_t GetDeviceThreadID() const { return deviceThreadID; }
-  bool IsDeviceThread() const { return Threading::GetCurrentID() == GetDeviceThreadID(); }
-
-private:
-  WrappedOpenGL *m_pDriver = NULL;
-
-  bool m_ResourcesDirty = false;
-  uint32_t m_EventID;
-  ResourceId m_ShaderID;
 
   std::map<int, int> m_UniformLocationRemap;
 
@@ -2942,13 +2982,17 @@ ShaderDebugTrace *GLReplay::DebugVertex(uint32_t eventId, uint32_t vertid, uint3
     numThreads = RDCMAX(numThreads, maxSubgroupSize);
   }
 
-  apiWrapper->location_inputs.resize(numThreads);
-  apiWrapper->thread_builtins.resize(numThreads);
+  rdcarray<rdcarray<ShaderVariable>> &location_inputs = apiWrapper->GetLocationInputs();
+  rdcarray<std::unordered_map<ShaderBuiltin, ShaderVariable>> &allthread_builtins =
+      apiWrapper->GetThreadBuiltins();
+  location_inputs.resize(numThreads);
+  allthread_builtins.resize(numThreads);
   apiWrapper->thread_props.resize(numThreads);
 
   apiWrapper->thread_props[0][(size_t)rdcspv::ThreadProperty::Active] = 1;
 
-  std::unordered_map<ShaderBuiltin, ShaderVariable> &global_builtins = apiWrapper->global_builtins;
+  std::unordered_map<ShaderBuiltin, ShaderVariable> &global_builtins =
+      apiWrapper->GetGlobalBuiltins();
   global_builtins[ShaderBuiltin::BaseInstance] =
       ShaderVariable(rdcstr(), action->instanceOffset, 0U, 0U, 0U);
   global_builtins[ShaderBuiltin::BaseVertex] = ShaderVariable(
@@ -3112,8 +3156,8 @@ ShaderDebugTrace *GLReplay::DebugVertex(uint32_t eventId, uint32_t vertid, uint3
     numThreads = RDCMAX(numThreads, winner->subgroupSize);
   }
 
-  apiWrapper->location_inputs.resize(numThreads);
-  apiWrapper->thread_builtins.resize(numThreads);
+  location_inputs.resize(numThreads);
+  allthread_builtins.resize(numThreads);
   apiWrapper->thread_props.resize(numThreads);
 
   for(uint32_t t = 0; t < numThreads; t++)
@@ -3134,9 +3178,9 @@ ShaderDebugTrace *GLReplay::DebugVertex(uint32_t eventId, uint32_t vertid, uint3
     {
       rdcspv::VertexLaneData *vertData = (rdcspv::VertexLaneData *)value;
 
-      apiWrapper->thread_builtins[t][ShaderBuiltin::InstanceIndex] =
+      allthread_builtins[t][ShaderBuiltin::InstanceIndex] =
           ShaderVariable("InstanceIndex"_lit, vertData->inst, 0U, 0U, 0U);
-      apiWrapper->thread_builtins[t][ShaderBuiltin::VertexIndex] =
+      allthread_builtins[t][ShaderBuiltin::VertexIndex] =
           ShaderVariable("VertexIndex"_lit, vertData->vert, 0U, 0U, 0U);
     }
     value += sizeof(rdcspv::VertexLaneData);
@@ -3149,12 +3193,11 @@ ShaderDebugTrace *GLReplay::DebugVertex(uint32_t eventId, uint32_t vertid, uint3
       if(param.systemValue == ShaderBuiltin::Undefined)
       {
         builtin = false;
-        apiWrapper->location_inputs[t].resize(
-            RDCMAX((uint32_t)apiWrapper->location_inputs.size(), param.regIndex + 1));
+        location_inputs[t].resize(RDCMAX((uint32_t)location_inputs.size(), param.regIndex + 1));
       }
 
-      ShaderVariable &var = builtin ? apiWrapper->thread_builtins[t][param.systemValue]
-                                    : apiWrapper->location_inputs[t][param.regIndex];
+      ShaderVariable &var =
+          builtin ? allthread_builtins[t][param.systemValue] : location_inputs[t][param.regIndex];
 
       var.rows = 1;
       var.columns = param.compCount & 0xff;
@@ -3168,9 +3211,9 @@ ShaderDebugTrace *GLReplay::DebugVertex(uint32_t eventId, uint32_t vertid, uint3
       memcpy((var.value.u8v.data()) + elemSize * comp, value + i * paramAlign, sz);
     }
   }
-  apiWrapper->global_builtins[ShaderBuiltin::SubgroupSize] =
-      ShaderVariable(rdcstr(), numThreads, 0U, 0U, 0U);
+  global_builtins[ShaderBuiltin::SubgroupSize] = ShaderVariable(rdcstr(), numThreads, 0U, 0U, 0U);
 
+  apiWrapper->SetInputVarsToReadOnly();
   ShaderDebugTrace *ret = debugger->BeginDebug(apiWrapper, ShaderStage::Vertex, entryPoint, spec,
                                                shadDetails.spirvInstructionLines, patchData,
                                                winner->laneIndex, numThreads, numThreads);
@@ -3359,7 +3402,8 @@ ShaderDebugTrace *GLReplay::DebugPixel(uint32_t eventId, uint32_t x, uint32_t y,
     numThreads = RDCMAX(numThreads, maxSubgroupSize);
   }
 
-  std::unordered_map<ShaderBuiltin, ShaderVariable> &global_builtins = apiWrapper->global_builtins;
+  std::unordered_map<ShaderBuiltin, ShaderVariable> &global_builtins =
+      apiWrapper->GetGlobalBuiltins();
   global_builtins[ShaderBuiltin::DeviceIndex] = ShaderVariable(rdcstr(), 0U, 0U, 0U, 0U);
   global_builtins[ShaderBuiltin::DrawIndex] = ShaderVariable(rdcstr(), action->drawIndex, 0U, 0U, 0U);
 
@@ -3620,8 +3664,11 @@ ShaderDebugTrace *GLReplay::DebugPixel(uint32_t eventId, uint32_t x, uint32_t y,
       numThreads = RDCMAX(numThreads, winner->subgroupSize);
     }
 
-    apiWrapper->location_inputs.resize(numThreads);
-    apiWrapper->thread_builtins.resize(numThreads);
+    rdcarray<rdcarray<ShaderVariable>> &location_inputs = apiWrapper->GetLocationInputs();
+    rdcarray<std::unordered_map<ShaderBuiltin, ShaderVariable>> &allthread_builtins =
+        apiWrapper->GetThreadBuiltins();
+    location_inputs.resize(numThreads);
+    allthread_builtins.resize(numThreads);
     apiWrapper->thread_props.resize(numThreads);
 
     for(uint32_t t = 0; t < numThreads; t++)
@@ -3643,7 +3690,7 @@ ShaderDebugTrace *GLReplay::DebugPixel(uint32_t eventId, uint32_t x, uint32_t y,
         rdcspv::PixelLaneData *pixelData = (rdcspv::PixelLaneData *)value;
 
         {
-          ShaderVariable &var = apiWrapper->thread_builtins[t][ShaderBuiltin::Position];
+          ShaderVariable &var = allthread_builtins[t][ShaderBuiltin::Position];
 
           var.rows = 1;
           var.columns = 4;
@@ -3653,7 +3700,7 @@ ShaderDebugTrace *GLReplay::DebugPixel(uint32_t eventId, uint32_t x, uint32_t y,
         }
 
         {
-          ShaderVariable &var = apiWrapper->thread_builtins[t][ShaderBuiltin::IsHelper];
+          ShaderVariable &var = allthread_builtins[t][ShaderBuiltin::IsHelper];
 
           var.rows = 1;
           var.columns = 1;
@@ -3679,12 +3726,11 @@ ShaderDebugTrace *GLReplay::DebugPixel(uint32_t eventId, uint32_t x, uint32_t y,
         if(param.systemValue == ShaderBuiltin::Undefined)
         {
           builtin = false;
-          apiWrapper->location_inputs[t].resize(
-              RDCMAX((uint32_t)apiWrapper->location_inputs.size(), param.regIndex + 1));
+          location_inputs[t].resize(RDCMAX((uint32_t)location_inputs.size(), param.regIndex + 1));
         }
 
-        ShaderVariable &var = builtin ? apiWrapper->thread_builtins[t][param.systemValue]
-                                      : apiWrapper->location_inputs[t][param.regIndex];
+        ShaderVariable &var =
+            builtin ? allthread_builtins[t][param.systemValue] : location_inputs[t][param.regIndex];
 
         var.rows = 1;
         var.columns = param.compCount & 0xff;
@@ -3721,9 +3767,9 @@ ShaderDebugTrace *GLReplay::DebugPixel(uint32_t eventId, uint32_t x, uint32_t y,
       }
     }
 
-    apiWrapper->global_builtins[ShaderBuiltin::SubgroupSize] =
-        ShaderVariable(rdcstr(), numThreads, 0U, 0U, 0U);
+    global_builtins[ShaderBuiltin::SubgroupSize] = ShaderVariable(rdcstr(), numThreads, 0U, 0U, 0U);
 
+    apiWrapper->SetInputVarsToReadOnly();
     ret = debugger->BeginDebug(apiWrapper, ShaderStage::Pixel, entryPoint, spec,
                                shadDetails.spirvInstructionLines, patchData, winner->laneIndex,
                                numThreads, numThreads);
@@ -3836,10 +3882,13 @@ ShaderDebugTrace *GLReplay::DebugThread(uint32_t eventId, const rdcfixedarray<ui
   if(patchData.threadScope & rdcspv::ThreadScope::Workgroup)
     numThreads = RDCMAX(numThreads, threadDim[0] * threadDim[1] * threadDim[2]);
 
-  apiWrapper->thread_builtins.resize(numThreads);
+  rdcarray<std::unordered_map<ShaderBuiltin, ShaderVariable>> &allthread_builtins =
+      apiWrapper->GetThreadBuiltins();
+  allthread_builtins.resize(numThreads);
   apiWrapper->thread_props.resize(numThreads);
 
-  std::unordered_map<ShaderBuiltin, ShaderVariable> &global_builtins = apiWrapper->global_builtins;
+  std::unordered_map<ShaderBuiltin, ShaderVariable> &global_builtins =
+      apiWrapper->GetGlobalBuiltins();
   global_builtins[ShaderBuiltin::DispatchSize] =
       ShaderVariable(rdcstr(), action->dispatchDimension[0], action->dispatchDimension[1],
                      action->dispatchDimension[2], 0U);
@@ -3987,11 +4036,12 @@ ShaderDebugTrace *GLReplay::DebugThread(uint32_t eventId, const rdcfixedarray<ui
       numThreads = RDCMAX(numThreads, threadDim[0] * threadDim[1] * threadDim[2]);
     }
 
-    apiWrapper->global_builtins[ShaderBuiltin::NumSubgroups] =
+    global_builtins[ShaderBuiltin::NumSubgroups] =
         ShaderVariable(rdcstr(), winner->numSubgroups, 0U, 0U, 0U);
 
-    apiWrapper->location_inputs.resize(numThreads);
-    apiWrapper->thread_builtins.resize(numThreads);
+    rdcarray<rdcarray<ShaderVariable>> &location_inputs = apiWrapper->GetLocationInputs();
+    location_inputs.resize(numThreads);
+    allthread_builtins.resize(numThreads);
     apiWrapper->thread_props.resize(numThreads);
 
     laneIndex = ~0U;
@@ -4022,20 +4072,20 @@ ShaderDebugTrace *GLReplay::DebugThread(uint32_t eventId, const rdcfixedarray<ui
       apiWrapper->thread_props[lane][(size_t)rdcspv::ThreadProperty::Elected] = subgroupData->elect;
       apiWrapper->thread_props[lane][(size_t)rdcspv::ThreadProperty::SubgroupId] = t;
 
-      apiWrapper->thread_builtins[lane][ShaderBuiltin::DispatchThreadIndex] =
+      allthread_builtins[lane][ShaderBuiltin::DispatchThreadIndex] =
           ShaderVariable(rdcstr(), groupid[0] * threadDim[0] + compData->threadid[0],
                          groupid[1] * threadDim[1] + compData->threadid[1],
                          groupid[2] * threadDim[2] + compData->threadid[2], 0U);
-      apiWrapper->thread_builtins[lane][ShaderBuiltin::GroupThreadIndex] = ShaderVariable(
+      allthread_builtins[lane][ShaderBuiltin::GroupThreadIndex] = ShaderVariable(
           rdcstr(), compData->threadid[0], compData->threadid[1], compData->threadid[2], 0U);
-      apiWrapper->thread_builtins[lane][ShaderBuiltin::GroupFlatIndex] =
+      allthread_builtins[lane][ShaderBuiltin::GroupFlatIndex] =
           ShaderVariable(rdcstr(),
                          compData->threadid[2] * threadDim[0] * threadDim[1] +
                              compData->threadid[1] * threadDim[0] + compData->threadid[0],
                          0U, 0U, 0U);
-      apiWrapper->thread_builtins[lane][ShaderBuiltin::IndexInSubgroup] =
+      allthread_builtins[lane][ShaderBuiltin::IndexInSubgroup] =
           ShaderVariable(rdcstr(), t, 0U, 0U, 0U);
-      apiWrapper->thread_builtins[lane][ShaderBuiltin::SubgroupIndexInWorkgroup] =
+      allthread_builtins[lane][ShaderBuiltin::SubgroupIndexInWorkgroup] =
           ShaderVariable(rdcstr(), compData->subIdxInGroup, 0U, 0U, 0U);
     }
 
@@ -4056,7 +4106,7 @@ ShaderDebugTrace *GLReplay::DebugThread(uint32_t eventId, const rdcfixedarray<ui
           for(uint32_t tx = 0; tx < threadDim[0]; tx++)
           {
             std::unordered_map<ShaderBuiltin, ShaderVariable> &thread_builtins =
-                apiWrapper->thread_builtins[i];
+                allthread_builtins[i];
 
             thread_builtins[ShaderBuiltin::GroupThreadIndex] =
                 ShaderVariable(rdcstr(), tx, ty, tz, 0U);
@@ -4105,11 +4155,10 @@ ShaderDebugTrace *GLReplay::DebugThread(uint32_t eventId, const rdcfixedarray<ui
     {
       uint32_t newNumThreads = numThreads + numPaddingThreads;
       apiWrapper->thread_props.resize(newNumThreads);
-      apiWrapper->thread_builtins.resize(newNumThreads);
+      allthread_builtins.resize(newNumThreads);
       for(uint32_t i = numThreads; i < newNumThreads; ++i)
       {
-        std::unordered_map<ShaderBuiltin, ShaderVariable> &thread_builtins =
-            apiWrapper->thread_builtins[i];
+        std::unordered_map<ShaderBuiltin, ShaderVariable> &thread_builtins = allthread_builtins[i];
 
         thread_builtins[ShaderBuiltin::DispatchThreadIndex] =
             ShaderVariable(rdcstr(), -1, -1, -1, -1);
@@ -4124,9 +4173,9 @@ ShaderDebugTrace *GLReplay::DebugThread(uint32_t eventId, const rdcfixedarray<ui
       }
       numThreads = newNumThreads;
     }
-    apiWrapper->global_builtins[ShaderBuiltin::SubgroupSize] =
-        ShaderVariable(rdcstr(), subgroupSize, 0U, 0U, 0U);
+    global_builtins[ShaderBuiltin::SubgroupSize] = ShaderVariable(rdcstr(), subgroupSize, 0U, 0U, 0U);
 
+    apiWrapper->SetInputVarsToReadOnly();
     ShaderDebugTrace *ret = debugger->BeginDebug(apiWrapper, ShaderStage::Compute, entryPoint, spec,
                                                  shadDetails.spirvInstructionLines, patchData,
                                                  laneIndex, numThreads, subgroupSize);
@@ -4150,7 +4199,7 @@ ShaderDebugTrace *GLReplay::DebugThread(uint32_t eventId, const rdcfixedarray<ui
           for(uint32_t tx = 0; tx < threadDim[0]; tx++)
           {
             std::unordered_map<ShaderBuiltin, ShaderVariable> &thread_builtins =
-                apiWrapper->thread_builtins[i];
+                allthread_builtins[i];
             thread_builtins[ShaderBuiltin::DispatchThreadIndex] =
                 ShaderVariable(rdcstr(), groupid[0] * threadDim[0] + tx,
                                groupid[1] * threadDim[1] + ty, groupid[2] * threadDim[2] + tz, 0U);
@@ -4176,8 +4225,7 @@ ShaderDebugTrace *GLReplay::DebugThread(uint32_t eventId, const rdcfixedarray<ui
       apiWrapper->thread_props[0][(size_t)rdcspv::ThreadProperty::Active] = 1;
       apiWrapper->thread_props[0][(size_t)rdcspv::ThreadProperty::SubgroupId] = 0;
 
-      std::unordered_map<ShaderBuiltin, ShaderVariable> &thread_builtins =
-          apiWrapper->thread_builtins[0];
+      std::unordered_map<ShaderBuiltin, ShaderVariable> &thread_builtins = allthread_builtins[0];
 
       thread_builtins[ShaderBuiltin::DispatchThreadIndex] = ShaderVariable(
           rdcstr(), groupid[0] * threadDim[0] + threadid[0],
@@ -4199,9 +4247,9 @@ ShaderDebugTrace *GLReplay::DebugThread(uint32_t eventId, const rdcfixedarray<ui
     debugger->Parse(shadDetails.convertedSPIRV ? shadDetails.convertedSpirvWords
                                                : shadDetails.spirvWords);
 
-    apiWrapper->global_builtins[ShaderBuiltin::SubgroupSize] =
-        ShaderVariable(rdcstr(), 1U, 0U, 0U, 0U);
+    global_builtins[ShaderBuiltin::SubgroupSize] = ShaderVariable(rdcstr(), 1U, 0U, 0U, 0U);
 
+    apiWrapper->SetInputVarsToReadOnly();
     ShaderDebugTrace *ret = debugger->BeginDebug(apiWrapper, ShaderStage::Compute, entryPoint, spec,
                                                  shadDetails.spirvInstructionLines, patchData,
                                                  laneIndex, numThreads, 1);

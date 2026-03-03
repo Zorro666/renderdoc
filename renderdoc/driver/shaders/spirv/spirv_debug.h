@@ -131,7 +131,7 @@ public:
                                     uint32_t sample, const ShaderVariable &value) = 0;
 
   virtual void FillInputValue(ShaderVariable &var, ShaderBuiltin builtin, uint32_t threadIndex,
-                              uint32_t location, uint32_t component) = 0;
+                              uint32_t location, uint32_t component) const = 0;
 
   virtual uint32_t GetThreadProperty(uint32_t threadIndex, ThreadProperty prop) = 0;
   virtual bool IsImageCached(const ShaderBindIndex &bind) = 0;

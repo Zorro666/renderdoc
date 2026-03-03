@@ -5352,6 +5352,7 @@ void Debugger::ProcessQueuedDeviceThreadSteps()
   }
 }
 
+// Can be called from any thread
 void Debugger::FillInputValue(ShaderVariable &var, ShaderBuiltin builtin, uint32_t threadIndex) const
 {
   apiWrapper->FillInputValue(var, builtin, threadIndex, 0, 0);
