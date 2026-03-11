@@ -210,6 +210,7 @@
     <ClInclude Include="core\bit_flag_iterator.h" />
     <ClInclude Include="core\gpu_address_range_tracker.h" />
     <ClInclude Include="core\rdcbytetrie.h" />
+    <ClInclude Include="core\resource_usage_tracker.h" />
     <ClInclude Include="core\settings.h" />
     <ClInclude Include="core\core.h" />
     <ClInclude Include="core\crash_handler.h" />
@@ -542,6 +543,7 @@
     <ClCompile Include="common\threading_tests.cpp" />
     <ClCompile Include="core\bit_flag_iterator_tests.cpp" />
     <ClCompile Include="core\gpu_address_range_tracker.cpp" />
+    <ClCompile Include="core\resource_usage_tracker.cpp" />
     <ClCompile Include="core\settings.cpp" />
     <ClCompile Include="core\core.cpp">
       <AdditionalOptions>/bigobj %(AdditionalOptions)</AdditionalOptions>
