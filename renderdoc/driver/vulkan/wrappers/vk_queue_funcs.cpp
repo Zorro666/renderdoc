@@ -369,13 +369,16 @@ void WrappedVulkan::ReplayQueueSubmit(VkQueue queue, VkSubmitInfo2 submitInfo, r
           i++;
         }
 
+        std::map<uint32_t, rdcarray<ResourceUsageEvent>> eventUsages;
         for(auto it = cmdBufInfo.resourceUsage.begin(); it != cmdBufInfo.resourceUsage.end(); ++it)
         {
           EventUsage u = it->second;
           u.eventId += m_RootEventID;
-          m_ResourceUses[it->first].push_back(u);
+          eventUsages[u.eventId].push_back(ResourceUsageEvent(it->first, u.usage));
           m_EventFlags[u.eventId] |= PipeRWUsageEventFlags(u.usage);
         }
+        for(auto it = eventUsages.begin(); it != eventUsages.end(); ++it)
+          m_ResourceUsageTracker.AddUsageAtEvent(it->first, it->second);
 
         m_RootEventID += cmdBufInfo.eventCount;
         m_RootActionID += cmdBufInfo.actionCount;
@@ -929,13 +932,16 @@ void WrappedVulkan::InsertActionsAndRefreshIDs(BakedCmdBufferInfo &cmdBufInfo)
 
     RDCASSERT(n.children.empty());
 
+    std::map<uint32_t, rdcarray<ResourceUsageEvent>> eventUsages;
     for(auto it = n.resourceUsage.begin(); it != n.resourceUsage.end(); ++it)
     {
       EventUsage u = it->second;
       u.eventId += m_RootEventID;
-      m_ResourceUses[it->first].push_back(u);
+      eventUsages[u.eventId].push_back(ResourceUsageEvent(it->first, u.usage));
       m_EventFlags[u.eventId] |= PipeRWUsageEventFlags(u.usage);
     }
+    for(auto it = eventUsages.begin(); it != eventUsages.end(); ++it)
+      m_ResourceUsageTracker.AddUsageAtEvent(it->first, it->second);
 
     GetActionStack().back()->children.push_back(n);
 
