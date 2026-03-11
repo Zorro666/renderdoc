@@ -155,6 +155,8 @@ set(sources
     core/intervals_tests.cpp
     core/bit_flag_iterator.h
     core/bit_flag_iterator_tests.cpp
+    core/resource_usage_tracker.cpp
+    core/resource_usage_tracker.h
     android/android.cpp
     android/android_tools.cpp
     android/android_utils.cpp

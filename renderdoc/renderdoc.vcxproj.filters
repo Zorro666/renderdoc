@@ -582,6 +582,9 @@
     <ClInclude Include="core\rdcbytetrie.h">
       <Filter>Core</Filter>
     </ClInclude>
+    <ClInclude Include="core\resource_usage_tracker.h">
+      <Filter>Core</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="maths\camera.cpp">
@@ -988,6 +991,9 @@
     </ClCompile>
     <ClCompile Include="shaders\controlflow.cpp">
       <Filter>Shaders</Filter>
+    </ClCompile>
+    <ClCompile Include="core\resource_usage_tracker.cpp">
+      <Filter>Core</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
