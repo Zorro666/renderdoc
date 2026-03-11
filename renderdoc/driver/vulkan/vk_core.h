@@ -28,6 +28,7 @@
 #include "common/timing.h"
 #include "core/gpu_address_range_tracker.h"
 #include "core/rdcbytetrie.h"
+#include "core/resource_usage_tracker.h"
 #include "serialise/serialiser.h"
 #include "vk_acceleration_structure.h"
 #include "vk_common.h"
@@ -1124,7 +1125,7 @@ private:
   void CopyVersionedDescriptorBuffer(VkCommandBuffer cmdBuf, VkBuffer unwrappedDstBuf,
                                      const rdcarray<rdcpair<VkDeviceAddress, uint64_t>> &copyOffsets);
 
-  std::map<ResourceId, rdcarray<EventUsage>> m_ResourceUses;
+  ResourceUsageTracker m_ResourceUsageTracker;
   std::map<uint32_t, EventFlags> m_EventFlags;
   rdcarray<ResourceId> m_FeedbackRPs;
 
@@ -1472,7 +1473,7 @@ public:
   ResourceId GetASFromAddr(VkDeviceAddress addr);
 
   EventFlags GetEventFlags(uint32_t eid) { return m_EventFlags[eid]; }
-  rdcarray<EventUsage> GetUsage(ResourceId id) { return m_ResourceUses[id]; }
+  rdcarray<EventUsage> GetUsage(ResourceId id) { return m_ResourceUsageTracker.GetUsage(id); }
   // return the pre-selected device and queue
   VkDevice GetDev()
   {
