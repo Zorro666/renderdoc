@@ -1581,6 +1581,8 @@ QString ToQStr(const ResourceUsage usage, const GraphicsAPI apitype)
       case ResourceUsage::Barrier: return lit("Barrier");
 
       case ResourceUsage::CPUWrite: return lit("CPU Write");
+
+      case ResourceUsage::Submit: return lit("Submit");
     }
   }
   else if(apitype == GraphicsAPI::OpenGL || apitype == GraphicsAPI::Vulkan)
@@ -1648,6 +1650,8 @@ QString ToQStr(const ResourceUsage usage, const GraphicsAPI apitype)
       case ResourceUsage::Barrier: return lit("Barrier");
 
       case ResourceUsage::CPUWrite: return lit("CPU Write");
+
+      case ResourceUsage::Submit: return lit("Submit");
     }
   }
 

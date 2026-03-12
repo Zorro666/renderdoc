@@ -277,6 +277,8 @@ void WrappedVulkan::ReplayQueueSubmit(VkQueue queue, VkSubmitInfo2 submitInfo, r
   if(IsLoading(m_State))
   {
     AddEvent();
+    m_ResourceUsageTracker.AddUsageAtEvent(
+        m_RootEventID, {ResourceUsageEvent(GetResID(queue), ResourceUsage::Submit)});
 
     // we're adding multiple events, need to increment ourselves
     m_RootEventID++;
