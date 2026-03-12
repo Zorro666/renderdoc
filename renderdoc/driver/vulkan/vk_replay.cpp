@@ -4034,12 +4034,6 @@ bool VulkanReplay::GetHistogram(ResourceId texid, const Subresource &sub, CompTy
 
 rdcarray<EventUsage> VulkanReplay::GetUsage(ResourceId id)
 {
-  if(m_pDriver->m_CreationInfo.m_Image.find(id) == m_pDriver->m_CreationInfo.m_Image.end() &&
-     m_pDriver->m_CreationInfo.m_Buffer.find(id) == m_pDriver->m_CreationInfo.m_Buffer.end())
-  {
-    return {EventUsage(0, ResourceUsage::Unused)};
-  }
-
   return m_pDriver->GetUsage(id);
 }
 

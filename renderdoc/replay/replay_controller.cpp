@@ -1525,6 +1525,7 @@ rdcarray<PixelModification> ReplayController::PixelHistory(ResourceId target, ui
       case ResourceUsage::ResolveSrc:
       case ResourceUsage::Barrier:
       case ResourceUsage::Indirect:
+      case ResourceUsage::Submit:
         // read-only, not a valid pixel history event
         continue;
 

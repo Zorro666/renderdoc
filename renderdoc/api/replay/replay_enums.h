@@ -3027,6 +3027,10 @@ Note that a resource may be used for more than one thing in one event, see :clas
 
   The resource is written from the CPU, either directly as mapped memory or indirectly via a
   synchronous update.
+
+.. data:: Submit
+
+  The resource is submitted to the GPU.
 )");
 enum class ResourceUsage : uint32_t
 {
@@ -3090,6 +3094,8 @@ enum class ResourceUsage : uint32_t
   Barrier,
 
   CPUWrite,
+
+  Submit,
 };
 
 DECLARE_REFLECTION_ENUM(ResourceUsage);
