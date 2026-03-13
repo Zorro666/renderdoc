@@ -199,6 +199,7 @@ WrappedVulkan::WrappedVulkan()
 
   m_CurChunkOffset = 0;
   m_AddedAction = false;
+  m_ReplayedToEnd = false;
 
   m_LastCmdBufferID = ResourceId();
 
@@ -4147,6 +4148,12 @@ RDResult WrappedVulkan::ContextReplayLog(CaptureState readType, uint32_t startEv
   m_IndirectDraw = false;
 
   m_RerecordCmds.clear();
+
+  if(IsActiveReplaying(m_State))
+  {
+    if(endEventID >= m_Actions.back()->eventId)
+      m_ReplayedToEnd = true;
+  }
 
   return ResultCode::Succeeded;
 }
