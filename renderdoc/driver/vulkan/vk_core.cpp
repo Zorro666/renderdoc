@@ -199,6 +199,7 @@ WrappedVulkan::WrappedVulkan()
 
   m_CurChunkOffset = 0;
   m_AddedAction = false;
+  m_ResourceUsageState = ResourceUsageState::Needed;
 
   m_LastCmdBufferID = ResourceId();
 
@@ -5080,6 +5081,10 @@ VkResourceRecord *WrappedVulkan::RegisterSurface(WindowingSystem system, void *h
 
 void WrappedVulkan::ReplayLog(uint32_t startEventID, uint32_t endEventID, ReplayLogType replayType)
 {
+  if((m_ResourceUsageState == ResourceUsageState::Needed) && (startEventID == 0) &&
+     (endEventID >= m_Actions.back()->eventId) && (replayType == ReplayLogType::eReplay_Full))
+    m_ResourceUsageState = ResourceUsageState::Add;
+
   bool partial = true;
 
   if(startEventID == 0 && (replayType == eReplay_WithoutDraw || replayType == eReplay_Full))
@@ -5278,6 +5283,8 @@ void WrappedVulkan::ReplayLog(uint32_t startEventID, uint32_t endEventID, Replay
       SubmitAndFlushImageStateBarriers(m_cleanupImageBarriers);
     }
   }
+  if(ShouldAddResourceUsage())
+    m_ResourceUsageState = ResourceUsageState::Added;
 
   if(!IsStructuredExporting(m_State))
   {
