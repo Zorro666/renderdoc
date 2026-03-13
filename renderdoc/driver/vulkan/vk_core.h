@@ -1249,6 +1249,7 @@ private:
 
   rdcarray<APIEvent> m_RootEvents, m_Events;
   bool m_AddedAction;
+  bool m_ReplayedToEnd = false;
 
   SDObject *m_RootAnnotation = NULL;
 
