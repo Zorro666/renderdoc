@@ -281,8 +281,6 @@ void WrappedVulkan::ReplayQueueSubmit(VkQueue queue, VkSubmitInfo2 submitInfo, r
   if(IsLoading(m_State))
   {
     AddEvent();
-    m_ResourceUsageTracker.AddUsageAtEvent(
-        m_RootEventID, {ResourceUsageEvent(GetResID(queue), ResourceUsage::Submit)});
 
     // we're adding multiple events, need to increment ourselves
     m_RootEventID++;
@@ -371,17 +369,6 @@ void WrappedVulkan::ReplayQueueSubmit(VkQueue queue, VkSubmitInfo2 submitInfo, r
           i++;
         }
 
-        std::map<uint32_t, rdcarray<ResourceUsageEvent>> eventUsages;
-        for(auto it = cmdBufInfo.resourceUsage.begin(); it != cmdBufInfo.resourceUsage.end(); ++it)
-        {
-          EventUsage u = it->second;
-          u.eventId += m_RootEventID;
-          eventUsages[u.eventId].push_back(ResourceUsageEvent(it->first, u.usage));
-          m_EventFlags[u.eventId] |= PipeRWUsageEventFlags(u.usage);
-        }
-        for(auto it = eventUsages.begin(); it != eventUsages.end(); ++it)
-          m_ResourceUsageTracker.AddUsageAtEvent(it->first, it->second);
-
         m_RootEventID += cmdBufInfo.eventCount;
         m_RootActionID += cmdBufInfo.actionCount;
 
@@ -420,15 +407,56 @@ void WrappedVulkan::ReplayQueueSubmit(VkQueue queue, VkSubmitInfo2 submitInfo, r
       // cmd is not valid when selecting a vkQueueSubmit event
       if(cmd != ResourceId())
       {
-        m_RootEventID += m_BakedCmdBufferInfo[cmd].eventCount;
-        m_RootActionID += m_BakedCmdBufferInfo[cmd].actionCount;
+        // account for the Begin virtual label
+        m_RootEventID++;
+        m_RootActionID++;
 
-        // 2 extra for the virtual labels around the command buffer
+        BakedCmdBufferInfo &cmdBufInfo = m_BakedCmdBufferInfo[cmd];
+
+        if(ShouldAddResourceUsage())
         {
-          m_RootEventID += 2;
-          m_RootActionID += 2;
+          std::map<uint32_t, rdcarray<ResourceUsageEvent>> eventUsages;
+          rdcarray<VulkanActionTreeNode> &cmdBufNodes = cmdBufInfo.action->children;
+          for(size_t i = 0; i < cmdBufNodes.size(); i++)
+          {
+            VulkanActionTreeNode n = cmdBufNodes[i];
+
+            eventUsages.clear();
+            for(auto it = n.resourceUsage.begin(); it != n.resourceUsage.end(); ++it)
+            {
+              EventUsage u = it->second;
+              u.eventId += m_RootEventID;
+              eventUsages[u.eventId].push_back(ResourceUsageEvent(it->first, u.usage));
+              m_EventFlags[u.eventId] |= PipeRWUsageEventFlags(u.usage);
+            }
+            for(auto it = eventUsages.begin(); it != eventUsages.end(); ++it)
+              m_ResourceUsageTracker.AddUsageAtEvent(it->first, it->second);
+          }
+
+          eventUsages.clear();
+          for(auto it = cmdBufInfo.resourceUsage.begin(); it != cmdBufInfo.resourceUsage.end(); ++it)
+          {
+            EventUsage u = it->second;
+            u.eventId += m_RootEventID;
+            eventUsages[u.eventId].push_back(ResourceUsageEvent(it->first, u.usage));
+            m_EventFlags[u.eventId] |= PipeRWUsageEventFlags(u.usage);
+          }
+          for(auto it = eventUsages.begin(); it != eventUsages.end(); ++it)
+            m_ResourceUsageTracker.AddUsageAtEvent(it->first, it->second);
         }
+        m_RootEventID += cmdBufInfo.eventCount;
+        m_RootActionID += cmdBufInfo.actionCount;
+
+        // account for the End virtual label
+        m_RootEventID++;
+        m_RootActionID++;
       }
+    }
+
+    if(ShouldAddResourceUsage())
+    {
+      m_ResourceUsageTracker.AddUsageAtEvent(
+          m_RootEventID - 1, {ResourceUsageEvent(GetResID(queue), ResourceUsage::Submit)});
     }
 
     if(submitInfo.commandBufferInfoCount == 0)
@@ -659,7 +687,8 @@ void WrappedVulkan::InsertActionsAndRefreshIDs(BakedCmdBufferInfo &cmdBufInfo)
         continue;
       }
 
-      AddUsageForDescriptorBuffers(n, cmdBufInfo.debugMessages, def);
+      AddUsageForDescriptorBuffers(n.action.flags, n.action.eventId, cmdBufInfo.debugMessages, def,
+                                   n.resourceUsage);
     }
 
     n.action.eventId += m_RootEventID;
@@ -934,18 +963,9 @@ void WrappedVulkan::InsertActionsAndRefreshIDs(BakedCmdBufferInfo &cmdBufInfo)
 
     RDCASSERT(n.children.empty());
 
-    std::map<uint32_t, rdcarray<ResourceUsageEvent>> eventUsages;
-    for(auto it = n.resourceUsage.begin(); it != n.resourceUsage.end(); ++it)
-    {
-      EventUsage u = it->second;
-      u.eventId += m_RootEventID;
-      eventUsages[u.eventId].push_back(ResourceUsageEvent(it->first, u.usage));
-      m_EventFlags[u.eventId] |= PipeRWUsageEventFlags(u.usage);
-    }
-    for(auto it = eventUsages.begin(); it != eventUsages.end(); ++it)
-      m_ResourceUsageTracker.AddUsageAtEvent(it->first, it->second);
-
     GetActionStack().back()->children.push_back(n);
+
+    // JAKE: !!!NODE RESOURCE USAGE!!!!
 
     // if this is a push marker too, step down the action stack
     if(cmdBufNodes[i].action.flags & ActionFlags::PushMarker)

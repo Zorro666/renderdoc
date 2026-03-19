@@ -1007,6 +1007,7 @@ private:
   // undefined/empty otherwise.
   VulkanRenderState m_RenderState;
 
+  bool ShouldAddResourceUsage() const { return IsActiveReplaying(m_State) && !m_ReplayedToEnd; }
   bool InRerecordRange(ResourceId cmdid);
   bool HasRerecordCmdBuf(ResourceId cmdid);
   bool IsRenderpassOpen(ResourceId cmdid);
@@ -1316,26 +1317,34 @@ private:
   void AddAction(const ActionDescription &a);
   void AddEvent();
 
-  void AddUsage(VulkanActionTreeNode &actionNode, rdcarray<DebugMessage> &debugMessages);
+  void AddUsage(const ActionFlags flags, const uint32_t eid, rdcarray<DebugMessage> &debugMessages,
+                rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage);
+  // void AddUsage(VulkanActionTreeNode &actionNode, rdcarray<DebugMessage> &debugMessages);
 
-  void AddUsageForDescriptorSets(VulkanActionTreeNode &actionNode,
-                                 rdcarray<DebugMessage> &debugMessages);
-  void AddUsageForDescriptorSetBind(VulkanActionTreeNode &actionNode,
+  void AddUsageForDescriptorSets(const ActionFlags flags, const uint32_t eid,
+                                 rdcarray<DebugMessage> &debugMessages,
+                                 rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage);
+  void AddUsageForDescriptorSetBind(const ActionFlags flags, const uint32_t eid,
                                     rdcarray<DebugMessage> &debugMessages, uint32_t bindset,
-                                    uint32_t bind, ResourceUsage usage);
-  void AddUsageForDescriptorBuffers(VulkanActionTreeNode &actionNode,
+                                    uint32_t bind, ResourceUsage usage,
+                                    rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage);
+  void AddUsageForDescriptorBuffers(const ActionFlags flags, const uint32_t eid,
                                     rdcarray<DebugMessage> &debugMessages,
-                                    const VulkanActionTreeNode::DeferredResourceUsage &def);
-  void AddUsageForDescriptorBufferBind(VulkanActionTreeNode &actionNode,
+                                    const VulkanActionTreeNode::DeferredResourceUsage &def,
+                                    rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage);
+  void AddUsageForDescriptorBufferBind(const ActionFlags flags, const uint32_t eid,
                                        rdcarray<DebugMessage> &debugMessages,
                                        const VulkanActionTreeNode::DeferredResourceUsage &def,
                                        byte *descriptorBytes, size_t descriptorSize,
                                        DescriptorType type, uint32_t bindset, uint32_t bind,
-                                       ResourceUsage usage);
-  void AddUsageForDescriptor(VulkanActionTreeNode &actionNode, const DescriptorSetSlot &slot,
-                             ResourceUsage usage);
+                                       ResourceUsage usage,
+                                       rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage);
+  void AddUsageForDescriptor(const ActionFlags flags, const uint32_t eid,
+                             const DescriptorSetSlot &slot, ResourceUsage usage,
+                             rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage);
 
-  void AddFramebufferUsage(VulkanActionTreeNode &actionNode, const VulkanRenderState &renderState);
+  void AddFramebufferUsage(const uint32_t eid, const VulkanRenderState &renderState,
+                           rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage);
   void AddFramebufferUsageAllChildren(VulkanActionTreeNode &actionNode,
                                       const VulkanRenderState &renderState);
 
@@ -1473,7 +1482,7 @@ public:
   ResourceId GetASFromAddr(VkDeviceAddress addr);
 
   EventFlags GetEventFlags(uint32_t eid) { return m_EventFlags[eid]; }
-  rdcarray<EventUsage> GetUsage(ResourceId id) { return m_ResourceUsageTracker.GetUsage(id); }
+  rdcarray<EventUsage> GetUsage(ResourceId id);
   // return the pre-selected device and queue
   VkDevice GetDev()
   {

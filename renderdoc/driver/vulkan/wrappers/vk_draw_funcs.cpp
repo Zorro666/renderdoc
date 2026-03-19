@@ -180,6 +180,14 @@ bool WrappedVulkan::Serialise_vkCmdDraw(SerialiserType &ser, VkCommandBuffer com
   if(IsReplayingAndReading())
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
+    if(ShouldAddResourceUsage())
+    {
+      uint32_t eid = m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID;
+      rdcarray<DebugMessage> &debugMessages = m_BakedCmdBufferInfo[m_LastCmdBufferID].debugMessages;
+      rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage =
+          m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage;
+      AddUsage(ActionFlags::Drawcall, eid, debugMessages, resourceUsage);
+    }
 
     if(IsActiveReplaying(m_State))
     {
@@ -2268,6 +2276,17 @@ bool WrappedVulkan::Serialise_vkCmdClearColorImage(SerialiserType &ser, VkComman
 
     if(IsActiveReplaying(m_State))
     {
+      if(ShouldAddResourceUsage())
+      {
+        uint32_t eid = m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID;
+        rdcarray<rdcpair<ResourceId, EventUsage>> &usage =
+            m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage;
+        usage.push_back(make_rdcpair(GetResID(image), EventUsage(eid, ResourceUsage::Clear)));
+        //  VulkanActionTreeNode &actionNode = GetActionStack().back()->children.back();
+        // VulkanActionTreeNode &actionNode = *m_BakedCmdBufferInfo[m_LastCmdBufferID].action;
+        // actionNode.resourceUsage.push_back(make_rdcpair(
+        //    GetResID(image), EventUsage(actionNode.action.eventId, ResourceUsage::Clear)));
+      }
       if(InRerecordRange(m_LastCmdBufferID))
       {
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
@@ -2310,11 +2329,6 @@ bool WrappedVulkan::Serialise_vkCmdClearColorImage(SerialiserType &ser, VkComman
               Subresource(pRanges[0].baseMipLevel, pRanges[0].baseArrayLayer);
 
         AddAction(action);
-
-        VulkanActionTreeNode &actionNode = GetActionStack().back()->children.back();
-
-        actionNode.resourceUsage.push_back(make_rdcpair(
-            GetResID(image), EventUsage(actionNode.action.eventId, ResourceUsage::Clear)));
       }
     }
   }

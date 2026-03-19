@@ -2520,12 +2520,12 @@ bool WrappedVulkan::Serialise_vkCmdNextSubpass(SerialiserType &ser, VkCommandBuf
         m_BakedCmdBufferInfo[m_LastCmdBufferID].activeSubpass++;
         m_BakedCmdBufferInfo[m_LastCmdBufferID].endBarriers.append(GetImplicitRenderPassBarriers());
       }
+      if(ShouldAddResourceUsage())
+        AddImplicitResolveResourceUsage();
     }
     else
     {
       ObjDisp(commandBuffer)->CmdNextSubpass(Unwrap(commandBuffer), contents);
-
-      AddImplicitResolveResourceUsage();
 
       // track while reading, for fetching the right set of outputs in AddAction
       m_BakedCmdBufferInfo[m_LastCmdBufferID].state.subpass++;
@@ -2584,6 +2584,8 @@ bool WrappedVulkan::Serialise_vkCmdEndRenderPass(SerialiserType &ser, VkCommandB
 
     if(IsActiveReplaying(m_State))
     {
+      if(ShouldAddResourceUsage())
+        AddImplicitResolveResourceUsage(~0U);
       if(InRerecordRange(m_LastCmdBufferID))
       {
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
@@ -2675,8 +2677,6 @@ bool WrappedVulkan::Serialise_vkCmdEndRenderPass(SerialiserType &ser, VkCommandB
       GetResourceManager()->RecordBarriers(m_BakedCmdBufferInfo[m_LastCmdBufferID].imageStates,
                                            FindCommandQueueFamily(m_LastCmdBufferID),
                                            (uint32_t)imgBarriers.size(), imgBarriers.data());
-
-      AddImplicitResolveResourceUsage(~0U);
 
       AddEvent();
       ActionDescription action;
@@ -3119,6 +3119,8 @@ bool WrappedVulkan::Serialise_vkCmdNextSubpass2(SerialiserType &ser, VkCommandBu
 
     if(IsActiveReplaying(m_State))
     {
+      if(ShouldAddResourceUsage())
+        AddImplicitResolveResourceUsage();
       // don't do anything if we're executing a single draw, NextSubpass is meaningless (and invalid
       // on a partial render pass)
       if(InRerecordRange(m_LastCmdBufferID) && m_FirstEventID != m_LastEventID)
@@ -3163,8 +3165,6 @@ bool WrappedVulkan::Serialise_vkCmdNextSubpass2(SerialiserType &ser, VkCommandBu
     {
       ObjDisp(commandBuffer)
           ->CmdNextSubpass2(Unwrap(commandBuffer), &unwrappedBeginInfo, &unwrappedEndInfo);
-
-      AddImplicitResolveResourceUsage();
 
       // track while reading, for fetching the right set of outputs in AddAction
       m_BakedCmdBufferInfo[m_LastCmdBufferID].activeSubpass++;
@@ -4615,7 +4615,7 @@ bool WrappedVulkan::Serialise_vkCmdPipelineBarrier(
         RemapQueueFamilyIndices(bufBarriers.back().srcQueueFamilyIndex,
                                 bufBarriers.back().dstQueueFamilyIndex);
 
-        if(IsLoading(m_State))
+        if(ShouldAddResourceUsage())
         {
           m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage.push_back(make_rdcpair(
               GetResID(pBufferMemoryBarriers[i].buffer),
@@ -4634,11 +4634,23 @@ bool WrappedVulkan::Serialise_vkCmdPipelineBarrier(
         RemapQueueFamilyIndices(imgBarriers.back().srcQueueFamilyIndex,
                                 imgBarriers.back().dstQueueFamilyIndex);
 
-        if(IsLoading(m_State))
+        if(ShouldAddResourceUsage())
         {
           m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage.push_back(make_rdcpair(
               GetResID(pImageMemoryBarriers[i].image),
               EventUsage(m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID, ResourceUsage::Barrier)));
+
+          const VkImageMemoryBarrier &b = pImageMemoryBarriers[i];
+          if(b.image != VK_NULL_HANDLE && b.oldLayout == VK_IMAGE_LAYOUT_UNDEFINED)
+          {
+            VulkanCreationInfo::Image &imgInfo = m_CreationInfo.m_Image[GetResID(b.image)];
+            if(!imgInfo.external)
+            {
+              m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage.push_back(make_rdcpair(
+                  GetResID(b.image), EventUsage(m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID,
+                                                ResourceUsage::Discard)));
+            }
+          }
         }
       }
     }
@@ -4649,23 +4661,6 @@ bool WrappedVulkan::Serialise_vkCmdPipelineBarrier(
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
       else
         commandBuffer = VK_NULL_HANDLE;
-    }
-    else
-    {
-      for(uint32_t i = 0; i < imageMemoryBarrierCount; i++)
-      {
-        const VkImageMemoryBarrier &b = pImageMemoryBarriers[i];
-        if(b.image != VK_NULL_HANDLE && b.oldLayout == VK_IMAGE_LAYOUT_UNDEFINED)
-        {
-          VulkanCreationInfo::Image &imgInfo = m_CreationInfo.m_Image[GetResID(b.image)];
-          if(!imgInfo.external)
-          {
-            m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage.push_back(make_rdcpair(
-                GetResID(b.image), EventUsage(m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID,
-                                              ResourceUsage::Discard)));
-          }
-        }
-      }
     }
 
     if(commandBuffer != VK_NULL_HANDLE)
@@ -4866,7 +4861,7 @@ bool WrappedVulkan::Serialise_vkCmdPipelineBarrier2(SerialiserType &ser,
         RemapQueueFamilyIndices(bufBarriers.back().srcQueueFamilyIndex,
                                 bufBarriers.back().dstQueueFamilyIndex);
 
-        if(IsLoading(m_State))
+        if(ShouldAddResourceUsage())
         {
           m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage.push_back(make_rdcpair(
               GetResID(DependencyInfo.pBufferMemoryBarriers[i].buffer),
@@ -4885,7 +4880,7 @@ bool WrappedVulkan::Serialise_vkCmdPipelineBarrier2(SerialiserType &ser,
         RemapQueueFamilyIndices(imgBarriers.back().srcQueueFamilyIndex,
                                 imgBarriers.back().dstQueueFamilyIndex);
 
-        if(IsLoading(m_State))
+        if(ShouldAddResourceUsage())
         {
           m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage.push_back(make_rdcpair(
               GetResID(DependencyInfo.pImageMemoryBarriers[i].image),
@@ -5483,7 +5478,7 @@ bool WrappedVulkan::Serialise_vkCmdExecuteCommands(SerialiserType &ser, VkComman
       parentCmdBufInfo.curEventID++;
 
       // should we add framebuffer usage to the child draws.
-      bool framebufferUsage = parentCmdBufInfo.state.ActiveRenderPass();
+      // bool framebufferUsage = parentCmdBufInfo.state.ActiveRenderPass();
 
       for(uint32_t c = 0; c < commandBufferCount; c++)
       {
@@ -5518,19 +5513,19 @@ bool WrappedVulkan::Serialise_vkCmdExecuteCommands(SerialiserType &ser, VkComman
         parentCmdBufInfo.action->InsertAndUpdateIDs(*cmdBufInfo.action, parentCmdBufInfo.curEventID,
                                                     parentCmdBufInfo.actionCount);
 
-        if(framebufferUsage)
-        {
-          size_t total = parentCmdBufInfo.action->children.size();
-          size_t numChildren = cmdBufInfo.action->children.size();
+        // if(framebufferUsage)
+        //{
+        //   size_t total = parentCmdBufInfo.action->children.size();
+        //   size_t numChildren = cmdBufInfo.action->children.size();
 
-          // iterate through the newly added draws, and recursively add usage to them using our
-          // primary command buffer's state
-          for(size_t i = 0; i < numChildren; i++)
-          {
-            AddFramebufferUsageAllChildren(
-                parentCmdBufInfo.action->children[total - numChildren + i], parentCmdBufInfo.state);
-          }
-        }
+        //  // iterate through the newly added draws, and recursively add usage to them using our
+        //  // primary command buffer's state
+        //  for(size_t i = 0; i < numChildren; i++)
+        //  {
+        //    AddFramebufferUsageAllChildren(
+        //        parentCmdBufInfo.action->children[total - numChildren + i], parentCmdBufInfo.state);
+        //  }
+        //}
 
         for(size_t i = 0; i < cmdBufInfo.debugMessages.size(); i++)
         {
@@ -5587,6 +5582,30 @@ bool WrappedVulkan::Serialise_vkCmdExecuteCommands(SerialiserType &ser, VkComman
     }
     else
     {
+      if(ShouldAddResourceUsage())
+      {
+        BakedCmdBufferInfo &parentCmdBufInfo = m_BakedCmdBufferInfo[m_LastCmdBufferID];
+        bool framebufferUsage = parentCmdBufInfo.state.ActiveRenderPass();
+        if(framebufferUsage)
+        {
+          for(uint32_t c = 0; c < commandBufferCount; c++)
+          {
+            ResourceId cmd = GetResID(pCommandBuffers[c]);
+
+            BakedCmdBufferInfo &cmdBufInfo = m_BakedCmdBufferInfo[cmd];
+            size_t total = parentCmdBufInfo.action->children.size();
+            size_t numChildren = cmdBufInfo.action->children.size();
+
+            // iterate through the newly added draws, and recursively add usage to them using our
+            // primary command buffer's state
+            for(size_t i = 0; i < numChildren; i++)
+            {
+              AddFramebufferUsageAllChildren(
+                  parentCmdBufInfo.action->children[total - numChildren + i], parentCmdBufInfo.state);
+            }
+          }
+        }
+      }
       if(InRerecordRange(m_LastCmdBufferID))
       {
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
