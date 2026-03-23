@@ -4006,8 +4006,10 @@ RDResult WrappedVulkan::ContextReplayLog(CaptureState readType, uint32_t startEv
 
   uint64_t startOffset = ser.GetReader()->GetOffset();
 
+  RDCASSERT(m_BakedCmdBufferInfo.find(ResourceId()) == m_BakedCmdBufferInfo.end());
   for(;;)
   {
+    RDCASSERT(m_BakedCmdBufferInfo.find(ResourceId()) == m_BakedCmdBufferInfo.end());
     if(IsActiveReplaying(m_State) && m_RootEventID > endEventID)
     {
       // we can just break out if we've done all the events desired.
@@ -4099,6 +4101,7 @@ RDResult WrappedVulkan::ContextReplayLog(CaptureState readType, uint32_t startEv
          chunktype != VulkanChunk::SetCommandAnnotation)
         m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID++;
     }
+    RDCASSERT(m_BakedCmdBufferInfo.find(ResourceId()) == m_BakedCmdBufferInfo.end());
   }
 
   if(!partial && !IsStructuredExporting(m_State))
@@ -4155,6 +4158,7 @@ RDResult WrappedVulkan::ContextReplayLog(CaptureState readType, uint32_t startEv
       m_ReplayedToEnd = true;
   }
 
+  RDCASSERT(m_BakedCmdBufferInfo.find(ResourceId()) == m_BakedCmdBufferInfo.end());
   return ResultCode::Succeeded;
 }
 
