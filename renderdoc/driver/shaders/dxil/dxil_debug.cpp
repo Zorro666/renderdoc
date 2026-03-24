@@ -82,7 +82,7 @@ using namespace rdcshaders;
 //   ShuffleVector: mask entries might be undef meaning "don't care"
 
 // normal is not zero, not subnormal, not infinite, not NaN
-inline bool RDCISNORMAL(float input)
+static bool RDCISNORMAL(float input)
 {
   union
   {
@@ -101,7 +101,7 @@ inline bool RDCISNORMAL(float input)
   return true;
 }
 
-inline bool RDCISNORMAL(double input)
+static bool RDCISNORMAL(double input)
 {
   union
   {
@@ -1252,57 +1252,6 @@ static size_t ComputeDXILTypeByteSize(const Type *type)
   return byteSize;
 }
 
-void ConvertTypeToViewFormat(const DXIL::Type *type, DXILDebug::ViewFmt &fmt)
-{
-  // variable should be a pointer to the underlying type
-  RDCASSERTEQUAL(type->type, Type::Pointer);
-  const Type *resType = type->inner;
-
-  // arrayed resources we want to remove the outer array-of-bindings here
-  if(resType->type == Type::Array && resType->inner->type == Type::Struct)
-    resType = resType->inner;
-
-  // textures are a struct containing the inner type and a mips type
-  if(resType->type == Type::Struct && !resType->members.empty())
-    resType = resType->members[0];
-
-  // find the inner type of any arrays
-  while(resType->type == Type::Array)
-    resType = resType->inner;
-
-  uint32_t compCount = 1;
-  // get the inner type for a vector
-  if(resType->type == Type::Vector)
-  {
-    compCount = resType->elemCount;
-    resType = resType->inner;
-  }
-
-  fmt.compType = CompType::Typeless;
-  if(resType->type == Type::Scalar)
-  {
-    fmt.numComps = compCount;
-    fmt.byteWidth = resType->bitWidth / 8;
-    fmt.stride = fmt.byteWidth * fmt.numComps;
-    if(resType->scalarType == Type::ScalarKind::Int)
-    {
-      if(resType->bitWidth == 32)
-        fmt.compType = CompType::SInt;
-    }
-    else if(resType->scalarType == Type::ScalarKind::Float)
-    {
-      if(resType->bitWidth == 32)
-        fmt.compType = CompType::Float;
-    }
-  }
-  else if(resType->type == Type::Struct)
-  {
-    fmt.numComps = 0;
-    fmt.byteWidth = 0;
-    fmt.stride = 0;
-  }
-}
-
 static void FillViewFmtFromVarType(VarType type, DXILDebug::ViewFmt &fmt)
 {
   switch(type)
@@ -1373,11 +1322,9 @@ void ResourceReferenceInfo::Create(const DXIL::ResourceReference *resRef, uint32
   {
     case DXIL::ResourceClass::SRV:
     {
-      srvData.dim = (DXDebug::ResourceDimension)ConvertResourceKindToResourceDimension(
-          resRef->resourceBase.srvData.shape);
+      srvData.dim = ConvertResourceKindToResourceDimension(resRef->resourceBase.srvData.shape);
       srvData.sampleCount = resRef->resourceBase.srvData.sampleCount;
-      srvData.compType = (DXDebug::ResourceRetType)ConvertComponentTypeToResourceRetType(
-          resRef->resourceBase.srvData.compType);
+      srvData.compType = ConvertComponentTypeToResourceRetType(resRef->resourceBase.srvData.compType);
       varType = VarType::ReadOnlyResource;
 
       switch(resRef->resourceBase.srvData.shape)
@@ -1543,7 +1490,7 @@ ThreadState::ThreadState(Debugger &debugger, const GlobalState &globalState, uin
 ThreadState::~ThreadState()
 {
   THREADSTATE_CHECK_DEBUGGER_THREAD();
-  for(auto it : m_Memory.m_Allocations)
+  for(const auto &it : m_Memory.m_Allocations)
   {
     if(it.second.localMemory)
       free(it.second.backingMemory);
@@ -1698,7 +1645,7 @@ void ThreadState::FillCallstack(ShaderDebugState &state)
   }
 }
 
-bool IsNopInstruction(const Instruction &inst)
+static bool IsNopInstruction(const Instruction &inst)
 {
   if(inst.op == Operation::Call)
   {
@@ -7217,7 +7164,7 @@ void ThreadState::ExecuteMemoryBarrier()
 
 GlobalState::~GlobalState()
 {
-  for(auto it : memory.m_Allocations)
+  for(const auto &it : memory.m_Allocations)
   {
     RDCASSERT(!it.second.localMemory);
     free(it.second.backingMemory);
