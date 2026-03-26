@@ -154,6 +154,7 @@ set(VULKAN_SRC
         vk/vk_ray_query.cpp
         vk/vk_read_before_overwrite.cpp
         vk/vk_resource_lifetimes.cpp
+        vk/vk_resource_usage.cpp
         vk/vk_robustness2.cpp
         vk/vk_sample_locations.cpp
         vk/vk_secondary_cmdbuf.cpp
