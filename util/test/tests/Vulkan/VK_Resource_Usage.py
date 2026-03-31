@@ -59,11 +59,12 @@ class VK_Resource_Usage(rdtest.TestCase):
             for res in self.controller.GetResources():
                 expectedUsage = []
                 if res.type == rd.ResourceType.Device:
-                    expectedUsage = [(0,rd.ResourceUsage.Unused)]
+                    expectedUsage = []
                 elif res.type == rd.ResourceType.Queue:
-                    expectedUsage = [(0,rd.ResourceUsage.Unused)]
+                    expectedUsage = [(163+countNested+countDescBuffer, rd.ResourceUsage.Submit)]
+                    expectedUsage = []
                 elif res.type == rd.ResourceType.Pool:
-                    expectedUsage = [(0,rd.ResourceUsage.Unused)]
+                    expectedUsage = []
                 elif res.type == rd.ResourceType.SwapchainImage:
                     # the swap chain image has usage, anything else does not
                     if res.resourceId == swapImage:
@@ -140,19 +141,19 @@ class VK_Resource_Usage(rdtest.TestCase):
                     else:
                         expectedUsage = []
                 elif res.type == rd.ResourceType.RenderPass:
-                    expectedUsage = [(0,rd.ResourceUsage.Unused)]
+                    expectedUsage = []
                 elif res.type == rd.ResourceType.Sync:
-                    expectedUsage = [(0,rd.ResourceUsage.Unused)]
+                    expectedUsage = []
                 elif res.type == rd.ResourceType.View:
-                    expectedUsage = [(0,rd.ResourceUsage.Unused)]
+                    expectedUsage = []
                 elif res.type == rd.ResourceType.Memory:
-                    expectedUsage = [(0,rd.ResourceUsage.Unused)]
+                    expectedUsage = []
                 elif res.type == rd.ResourceType.ShaderBinding:
-                    expectedUsage = [(0,rd.ResourceUsage.Unused)]
+                    expectedUsage = []
                 elif res.type == rd.ResourceType.Shader:
-                    expectedUsage = [(0,rd.ResourceUsage.Unused)]
+                    expectedUsage = []
                 elif res.type == rd.ResourceType.PipelineState:
-                    expectedUsage = [(0,rd.ResourceUsage.Unused)]
+                    expectedUsage = []
                 elif res.type == rd.ResourceType.Buffer:
                     if (res.name == "Vertex Buffer"):
                         expectedUsage = [(32,rd.ResourceUsage.VertexBuffer), 
@@ -400,11 +401,11 @@ class VK_Resource_Usage(rdtest.TestCase):
                                         (254+countDrawIndirectCount+countNested,rd.ResourceUsage.PS_Resource), 
                                         (257+countDrawIndirectCount+countNested,rd.ResourceUsage.PS_Resource)]
                 elif res.type == rd.ResourceType.CommandBuffer:
-                    expectedUsage = [(0,rd.ResourceUsage.Unused)]
+                    expectedUsage = []
                 elif res.type == rd.ResourceType.DescriptorStore:
-                    expectedUsage = [(0,rd.ResourceUsage.Unused)]
+                    expectedUsage = []
                 elif res.type == rd.ResourceType.Sampler:
-                    expectedUsage = [(0,rd.ResourceUsage.Unused)]
+                    expectedUsage = []
                 else:
                     raise rdtest.TestFailureException(f"'{res.name}' {res.resourceId} Unexpected resource type {res.type.name}")
                 rdtest.log.print(f"Resource '{res.name}' type:{res.type.name} {res.resourceId} usages:{len(self.controller.GetUsage(res.resourceId))} expectedUsages:{len(expectedUsage)}")
