@@ -1097,32 +1097,6 @@ float4 main(v2f IN) : SV_Target0
     Color.y = smileyr32.CalculateLevelOfDetailUnclamped(linearclamp, uv);
     return Color;
   }
-  if(IN.tri == 110)
-  {
-    float2 uv = IN.s.xy / float2(2.0, 2.0);
-    uv.x += 0.6042;
-    uv.y += 0.4167;
-    return smiley.Sample(linearclamp, uv);
-  }
-  if(IN.tri == 111)
-  {
-    float2 uv = IN.s.xy / float2(2.0, 2.0);
-    uv.x += 0.6042;
-    uv.y += 0.4167;
-    return smiley.SampleBias(linearclamp, uv, 4.0);
-  }
-  if(IN.tri == 112)
-  {
-    float4 Color = float4(0,0,0,0);
-    float2 uv = IN.s.xy / float2(2.0, 2.0);
-    uv.x += 0.6042;
-    uv.y += 0.4167;
-    Color.x = smileyr32.SampleCmp(linearcompare, uv, 0.0);
-    Color.y = smileyr32.SampleCmp(linearcompare, uv, 0.1);
-    Color.z = smileyr32.SampleCmp(linearcompare, uv, 0.7);
-    Color.w = smileyr32.SampleCmp(linearcompare, uv, 1.0);
-    return Color;
-  }
 #if (SM_6_0 || SM_6_2 || SM_6_6)
   enum TestEnum
   {
@@ -1182,6 +1156,33 @@ float4 main(v2f IN) : SV_Target0
 
     return float4(asfloat(rootbytesrv.Load(z+0).x), asfloat(rootbytesrv.Load(z+4).x),
                   asfloat(rootbytesrv.Load(z+8).x), float(rootbytesrv.Load(z+12).x));
+)EOSHADER"
+                                    R"EOSHADER(
+  if(IN.tri == 113)
+  {
+    float2 uv = IN.s.xy / float2(2.0, 2.0);
+    uv.x += 0.6042;
+    uv.y += 0.4167;
+    return smiley.Sample(linearclamp, uv);
+  }
+  if(IN.tri == 114)
+  {
+    float2 uv = IN.s.xy / float2(2.0, 2.0);
+    uv.x += 0.6042;
+    uv.y += 0.4167;
+    return smiley.SampleBias(linearclamp, uv, 4.0);
+  }
+  if(IN.tri == 115)
+  {
+    float4 Color = float4(0,0,0,0);
+    float2 uv = IN.s.xy / float2(2.0, 2.0);
+    uv.x += 0.6042;
+    uv.y += 0.4167;
+    Color.x = smileyr32.SampleCmp(linearcompare, uv, 0.0);
+    Color.y = smileyr32.SampleCmp(linearcompare, uv, 0.1);
+    Color.z = smileyr32.SampleCmp(linearcompare, uv, 0.7);
+    Color.w = smileyr32.SampleCmp(linearcompare, uv, 1.0);
+    return Color;
   }
   return float4(0.4f, 0.4f, 0.4f, 0.4f);
 }
