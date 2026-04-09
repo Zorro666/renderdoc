@@ -1472,8 +1472,8 @@ public:
 
   ResourceId GetASFromAddr(VkDeviceAddress addr);
 
-  EventFlags GetEventFlags(uint32_t eid) { return m_EventFlags[eid]; }
-  rdcarray<EventUsage> GetUsage(ResourceId id) { return m_ResourceUsageTracker.GetUsage(id); }
+  EventFlags GetEventFlags(uint32_t eid);
+  rdcarray<EventUsage> GetUsage(ResourceId id);
   // return the pre-selected device and queue
   VkDevice GetDev()
   {

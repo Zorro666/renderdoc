@@ -5848,6 +5848,22 @@ WrappedVulkan::CommandBufferNode *WrappedVulkan::GetCommandBufferPartialSubmissi
   return NULL;
 }
 
+EventFlags WrappedVulkan::GetEventFlags(uint32_t eid)
+{
+  if(!m_ReplayedToEnd)
+    ReplayLog(0, ~0U, ReplayLogType::eReplay_Full);
+
+  return m_EventFlags[eid];
+}
+
+rdcarray<EventUsage> WrappedVulkan::GetUsage(ResourceId id)
+{
+  if(!m_ReplayedToEnd)
+    ReplayLog(0, ~0U, ReplayLogType::eReplay_Full);
+
+  return m_ResourceUsageTracker.GetUsage(id);
+}
+
 ResourceId WrappedVulkan::GetASFromAddr(VkDeviceAddress addr)
 {
   SCOPED_LOCK(m_ASLookupByAddrLock);
