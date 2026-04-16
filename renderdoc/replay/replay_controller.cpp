@@ -529,8 +529,8 @@ rdcarray<EventUsage> ReplayController::GetUsage(ResourceId id)
 {
   CHECK_REPLAY_THREAD();
 
-  if(id == ResourceId())
-    return {EventUsage(0, ResourceUsage::Unused)};
+  // if(id == ResourceId())
+  //   return {EventUsage(0, ResourceUsage::Unused)};
   return m_pDevice->GetUsage(id);
 }
 
