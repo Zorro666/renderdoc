@@ -5865,7 +5865,42 @@ rdcarray<EventUsage> WrappedVulkan::GetUsage(ResourceId id)
   if(!m_ReplayedToEnd)
     ReplayLog(0, ~0U, ReplayLogType::eReplay_Full);
 
-  return m_ResourceUsageTracker.GetUsage(id);
+  rdcarray<EventUsage> newUsages = m_ResourceUsageTracker.GetUsage(id);
+  rdcarray<EventUsage> oldUsages = m_OLD_ResourceUses[id];
+
+  if(newUsages.count() != oldUsages.count())
+    RDCFATAL("Resource %s Size mismatch New:%i Old:%i", ToStr(id).c_str(), newUsages.count(),
+             oldUsages.count());
+
+  for(uint32_t i = 0; i < newUsages.size(); ++i)
+  {
+    EventUsage newUsage = newUsages[i];
+    EventUsage oldUsage = oldUsages[i];
+    if(newUsage.eventId != oldUsage.eventId)
+      RDCFATAL("%s EventUsage.eventId mismatch New:%i %s Old:%i %s", ToStr(id).c_str(),
+               newUsage.eventId, ToStr(newUsage.usage).c_str(), oldUsage.eventId,
+               ToStr(oldUsage.usage).c_str());
+    if(newUsage.usage != oldUsage.usage)
+      RDCFATAL("%s EventUsage.usage mismatch New:%s %i Old:%s %i", ToStr(id).c_str(),
+               ToStr(newUsage.usage).c_str(), newUsage.eventId, ToStr(oldUsage.usage).c_str(),
+               oldUsage.eventId);
+  }
+
+  if(id == ResourceId())
+  {
+    if(m_EventFlags.size() != m_OLD_EventFlags.size())
+      RDCFATAL("EventFlags Size mismatch New:%u Old:%u", (uint32_t)m_EventFlags.size(),
+               (uint32_t)m_OLD_EventFlags.size());
+
+    for(auto it = m_EventFlags.begin(); it != m_EventFlags.end(); ++it)
+    {
+      uint32_t eid = it->first;
+      if(m_OLD_EventFlags[eid] != it->second)
+        RDCFATAL("EventFlags mismatch New:0x%04X Old:0x%04X", it->second, m_OLD_EventFlags[eid]);
+    }
+  }
+
+  return newUsages;
 }
 
 ResourceId WrappedVulkan::GetASFromAddr(VkDeviceAddress addr)
