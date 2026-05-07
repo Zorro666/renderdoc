@@ -5853,7 +5853,7 @@ EventFlags WrappedVulkan::GetEventFlags(uint32_t eid)
   if(!m_ReplayedToEnd)
     ReplayLog(0, ~0U, ReplayLogType::eReplay_Full);
 
-  return EventFlags::NoFlags;
+  return m_EventFlags[eid];
 }
 
 rdcarray<EventUsage> WrappedVulkan::GetUsage(ResourceId id)
