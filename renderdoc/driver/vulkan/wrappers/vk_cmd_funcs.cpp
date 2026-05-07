@@ -327,6 +327,62 @@ void MarkReferencesForWrites(VkResourceRecord *record, const VkWriteDescriptorSe
   }
 }
 
+void WrappedVulkan::VersionDescriptorBuffers(VkCommandBuffer cmd)
+{
+  VulkanRenderState &renderstate = m_BakedCmdBufferInfo[m_LastCmdBufferID].state;
+  uint32_t &version = m_BakedCmdBufferInfo[m_LastCmdBufferID].descBufVersionIdx;
+  rdcarray<uint64_t> &offsets = m_BakedCmdBufferInfo[m_LastCmdBufferID].descBufOffsets;
+
+  if(renderstate.descBufs.empty())
+    return;
+
+  uint64_t neededBytes = 0;
+
+  offsets.clear();
+  for(uint32_t i = 0; i < renderstate.descBufs.size(); i++)
+  {
+    offsets.push_back(neededBytes);
+
+    ResourceId id;
+    uint64_t offs;
+    GetResIDFromAddr(renderstate.descBufs[i].address, id, offs);
+
+    neededBytes += m_CreationInfo.m_Buffer[id].size - offs;
+  }
+
+  uint32_t nextUnusedVersion = (version == ~0U ? 0 : version + 1);
+  version = ~0U;
+  for(uint32_t ver = nextUnusedVersion; ver < m_DescriptorBufferVersions.size(); ver++)
+  {
+    if(m_DescriptorBufferVersions[ver].TotalSize() >= neededBytes)
+    {
+      // use this version and copy into it
+      version = ver;
+      break;
+    }
+  }
+
+  if(version == ~0U)
+  {
+    version = (uint32_t)m_DescriptorBufferVersions.size();
+    m_DescriptorBufferVersions.push_back(GPUBuffer());
+    m_DescriptorBufferVersions.back().Create(this, m_Device, neededBytes, 1,
+                                             GPUBuffer::eGPUBufferReadback);
+  }
+
+  rdcarray<rdcpair<VkDeviceAddress, uint64_t>> copyOffsets;
+
+  for(uint32_t i = 0; i < renderstate.descBufs.size(); i++)
+    copyOffsets.push_back({renderstate.descBufs[i].address, offsets[i]});
+
+  if(!renderstate.ActiveRenderPass())
+    CopyVersionedDescriptorBuffer(cmd, m_DescriptorBufferVersions[version].UnwrappedBuffer(),
+                                  copyOffsets);
+  else
+    m_BakedCmdBufferInfo[m_LastCmdBufferID].descBufDeferredCopies.push_back(
+        {m_DescriptorBufferVersions[version].UnwrappedBuffer(), copyOffsets});
+}
+
 void WrappedVulkan::CopyVersionedDescriptorBuffer(
     VkCommandBuffer cmdBuf, VkBuffer unwrappedDstBuf,
     const rdcarray<rdcpair<VkDeviceAddress, uint64_t>> &copyOffsets)
@@ -345,6 +401,52 @@ void WrappedVulkan::CopyVersionedDescriptorBuffer(
     ObjDisp(cmdBuf)->CmdCopyBuffer(Unwrap(cmdBuf),
                                    Unwrap(GetResourceManager()->GetHandle<VkBuffer>(id)),
                                    unwrappedDstBuf, 1, &region);
+  }
+}
+
+void WrappedVulkan::AddImplicitResolveResourceUsage(uint32_t subpass)
+{
+  ResourceId rp = m_BakedCmdBufferInfo[m_LastCmdBufferID].state.GetRenderPass();
+  const VulkanCreationInfo::RenderPass &rpinfo = m_CreationInfo.m_RenderPass[rp];
+
+  // Ending a render pass instance performs any multisample operations
+  // on the final subpass. ~0U is the end of a RenderPass.
+  if(subpass == ~0U)
+    subpass = (uint32_t)rpinfo.subpasses.size() - 1;
+  else
+    subpass = m_BakedCmdBufferInfo[m_LastCmdBufferID].state.subpass;
+
+  const rdcarray<ResourceId> &fbattachments =
+      m_BakedCmdBufferInfo[m_LastCmdBufferID].state.GetFramebufferAttachments();
+  uint32_t eid = m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID;
+  rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage =
+      m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage;
+  for(size_t i = 0; i < rpinfo.subpasses[subpass].resolveAttachments.size(); i++)
+  {
+    uint32_t attIdx = rpinfo.subpasses[subpass].resolveAttachments[i];
+    if(attIdx == VK_ATTACHMENT_UNUSED)
+      continue;
+    ResourceId image = m_CreationInfo.m_ImageView[fbattachments[attIdx]].image;
+    resourceUsage.push_back(make_rdcpair(image, EventUsage(eid, ResourceUsage::ResolveDst)));
+
+    attIdx = rpinfo.subpasses[subpass].colorAttachments[i];
+    if(attIdx == VK_ATTACHMENT_UNUSED)
+      continue;
+    image = m_CreationInfo.m_ImageView[fbattachments[attIdx]].image;
+    resourceUsage.push_back(make_rdcpair(image, EventUsage(eid, ResourceUsage::ResolveSrc)));
+  }
+
+  // also add any discards on the final subpass
+  if(subpass + 1 == rpinfo.subpasses.size())
+  {
+    for(size_t i = 0; i < rpinfo.attachments.size(); i++)
+    {
+      if(rpinfo.attachments[i].storeOp == VK_ATTACHMENT_STORE_OP_DONT_CARE)
+      {
+        ResourceId image = m_CreationInfo.m_ImageView[fbattachments[i]].image;
+        resourceUsage.push_back(make_rdcpair(image, EventUsage(eid, ResourceUsage::Discard)));
+      }
+    }
   }
 }
 
@@ -2073,6 +2175,28 @@ bool WrappedVulkan::Serialise_vkCmdBeginRenderPass(SerialiserType &ser, VkComman
         const VulkanCreationInfo::RenderPass &rpinfo =
             m_CreationInfo.m_RenderPass[GetCmdRenderState().GetRenderPass()];
 
+        if(ShouldAddResourceUsage())
+        {
+          // Record image usage for images cleared in the beginning of the render pass.
+          const rdcarray<ResourceId> &fbattachments =
+              m_BakedCmdBufferInfo[m_LastCmdBufferID].state.GetFramebufferAttachments();
+          uint32_t eid = m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID;
+          rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage =
+              m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage;
+          for(size_t i = 0; i < rpinfo.attachments.size(); i++)
+          {
+            if(rpinfo.attachments[i].loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR ||
+               rpinfo.attachments[i].loadOp == VK_ATTACHMENT_LOAD_OP_DONT_CARE)
+            {
+              ResourceId image = m_CreationInfo.m_ImageView[fbattachments[i]].image;
+              resourceUsage.push_back(make_rdcpair(
+                  image, EventUsage(eid, rpinfo.attachments[i].loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR
+                                             ? ResourceUsage::Clear
+                                             : ResourceUsage::Discard)));
+            }
+          }
+        }
+
         rdcarray<VkImageMemoryBarrier> imgBarriers = GetImplicitRenderPassBarriers();
 
         ApplyRPLoadDiscards(commandBuffer, RenderPassBegin.renderArea);
@@ -2359,6 +2483,9 @@ bool WrappedVulkan::Serialise_vkCmdNextSubpass(SerialiserType &ser, VkCommandBuf
 
     if(IsActiveReplaying(m_State))
     {
+      if(ShouldAddResourceUsage())
+        AddImplicitResolveResourceUsage();
+
       // don't do anything if we're executing a single draw, NextSubpass is meaningless (and invalid
       // on a partial render pass)
       if(InRerecordRange(m_LastCmdBufferID) && m_FirstEventID != m_LastEventID)
@@ -2458,6 +2585,9 @@ bool WrappedVulkan::Serialise_vkCmdEndRenderPass(SerialiserType &ser, VkCommandB
 
     if(IsActiveReplaying(m_State))
     {
+      if(ShouldAddResourceUsage())
+        AddImplicitResolveResourceUsage(~0U);
+
       if(InRerecordRange(m_LastCmdBufferID))
       {
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
@@ -2492,6 +2622,17 @@ bool WrappedVulkan::Serialise_vkCmdEndRenderPass(SerialiserType &ser, VkCommandB
         uint32_t eventId = HandlePreCallback(commandBuffer, drawFlags);
 
         ObjDisp(commandBuffer)->CmdEndRenderPass(Unwrap(commandBuffer));
+
+        if(ShouldAddResourceUsage())
+        {
+          // and deferred descriptor buffer versions here
+          for(const BakedCmdBufferInfo::DeferredDescBufCopy &descVersion :
+              m_BakedCmdBufferInfo[m_LastCmdBufferID].descBufDeferredCopies)
+            CopyVersionedDescriptorBuffer(commandBuffer, descVersion.unwrappedDstBuffer,
+                                          descVersion.copyOffsets);
+
+          m_BakedCmdBufferInfo[m_LastCmdBufferID].descBufDeferredCopies.clear();
+        }
 
         if(eventId && m_ActionCallback->PostMisc(eventId, drawFlags, commandBuffer))
         {
@@ -2767,6 +2908,29 @@ bool WrappedVulkan::Serialise_vkCmdBeginRenderPass2(SerialiserType &ser,
                                              FindCommandQueueFamily(m_LastCmdBufferID),
                                              (uint32_t)imgBarriers.size(), imgBarriers.data());
       }
+      if(ShouldAddResourceUsage())
+      {
+        // Record image usage for images cleared in the beginning of the render pass.
+        const VulkanCreationInfo::RenderPass &rpinfo =
+            m_CreationInfo.m_RenderPass[GetResID(RenderPassBegin.renderPass)];
+        const rdcarray<ResourceId> &fbattachments =
+            m_BakedCmdBufferInfo[m_LastCmdBufferID].state.GetFramebufferAttachments();
+        uint32_t eid = m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID;
+        rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage =
+            m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage;
+        for(size_t i = 0; i < rpinfo.attachments.size(); i++)
+        {
+          if(rpinfo.attachments[i].loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR ||
+             rpinfo.attachments[i].loadOp == VK_ATTACHMENT_LOAD_OP_DONT_CARE)
+          {
+            ResourceId image = m_CreationInfo.m_ImageView[fbattachments[i]].image;
+            resourceUsage.push_back(make_rdcpair(
+                image, EventUsage(eid, rpinfo.attachments[i].loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR
+                                           ? ResourceUsage::Clear
+                                           : ResourceUsage::Discard)));
+          }
+        }
+      }
     }
     else
     {
@@ -2965,6 +3129,9 @@ bool WrappedVulkan::Serialise_vkCmdNextSubpass2(SerialiserType &ser, VkCommandBu
 
     if(IsActiveReplaying(m_State))
     {
+      if(ShouldAddResourceUsage())
+        AddImplicitResolveResourceUsage();
+
       // don't do anything if we're executing a single draw, NextSubpass is meaningless (and invalid
       // on a partial render pass)
       if(InRerecordRange(m_LastCmdBufferID) && m_FirstEventID != m_LastEventID)
@@ -3120,6 +3287,17 @@ bool WrappedVulkan::Serialise_vkCmdEndRenderPass2(SerialiserType &ser, VkCommand
         ActionFlags drawFlags = ActionFlags::PassBoundary | ActionFlags::EndPass;
         uint32_t eventId = HandlePreCallback(commandBuffer, drawFlags);
         ObjDisp(commandBuffer)->CmdEndRenderPass2(Unwrap(commandBuffer), &unwrappedEndInfo);
+
+        if(ShouldAddResourceUsage())
+        {
+          // and deferred descriptor buffer versions here
+          for(const BakedCmdBufferInfo::DeferredDescBufCopy &descVersion :
+              m_BakedCmdBufferInfo[m_LastCmdBufferID].descBufDeferredCopies)
+            CopyVersionedDescriptorBuffer(commandBuffer, descVersion.unwrappedDstBuffer,
+                                          descVersion.copyOffsets);
+
+          m_BakedCmdBufferInfo[m_LastCmdBufferID].descBufDeferredCopies.clear();
+        }
 
         if(eventId && m_ActionCallback->PostMisc(eventId, drawFlags, commandBuffer))
         {
@@ -4442,6 +4620,9 @@ bool WrappedVulkan::Serialise_vkCmdPipelineBarrier(
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
+    uint32_t eid = m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID;
+    rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage =
+        m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage;
     for(uint32_t i = 0; i < bufferMemoryBarrierCount; i++)
     {
       if(pBufferMemoryBarriers[i].buffer != VK_NULL_HANDLE)
@@ -4451,6 +4632,12 @@ bool WrappedVulkan::Serialise_vkCmdPipelineBarrier(
 
         RemapQueueFamilyIndices(bufBarriers.back().srcQueueFamilyIndex,
                                 bufBarriers.back().dstQueueFamilyIndex);
+
+        if(ShouldAddResourceUsage())
+        {
+          resourceUsage.push_back(make_rdcpair(GetResID(pBufferMemoryBarriers[i].buffer),
+                                               EventUsage(eid, ResourceUsage::Barrier)));
+        }
       }
     }
 
@@ -4463,6 +4650,28 @@ bool WrappedVulkan::Serialise_vkCmdPipelineBarrier(
 
         RemapQueueFamilyIndices(imgBarriers.back().srcQueueFamilyIndex,
                                 imgBarriers.back().dstQueueFamilyIndex);
+
+        if(ShouldAddResourceUsage())
+        {
+          resourceUsage.push_back(make_rdcpair(GetResID(pImageMemoryBarriers[i].image),
+                                               EventUsage(eid, ResourceUsage::Barrier)));
+        }
+      }
+    }
+    if(ShouldAddResourceUsage())
+    {
+      for(uint32_t i = 0; i < imageMemoryBarrierCount; i++)
+      {
+        const VkImageMemoryBarrier &b = pImageMemoryBarriers[i];
+        if(b.image != VK_NULL_HANDLE && b.oldLayout == VK_IMAGE_LAYOUT_UNDEFINED)
+        {
+          VulkanCreationInfo::Image &imgInfo = m_CreationInfo.m_Image[GetResID(b.image)];
+          if(!imgInfo.external)
+          {
+            resourceUsage.push_back(
+                make_rdcpair(GetResID(b.image), EventUsage(eid, ResourceUsage::Discard)));
+          }
+        }
       }
     }
 
@@ -4661,6 +4870,9 @@ bool WrappedVulkan::Serialise_vkCmdPipelineBarrier2(SerialiserType &ser,
   if(IsReplayingAndReading())
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
+    uint32_t eid = m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID;
+    rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage =
+        m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage;
 
     for(uint32_t i = 0; i < DependencyInfo.bufferMemoryBarrierCount; i++)
     {
@@ -4671,6 +4883,13 @@ bool WrappedVulkan::Serialise_vkCmdPipelineBarrier2(SerialiserType &ser,
 
         RemapQueueFamilyIndices(bufBarriers.back().srcQueueFamilyIndex,
                                 bufBarriers.back().dstQueueFamilyIndex);
+
+        if(ShouldAddResourceUsage())
+        {
+          resourceUsage.push_back(
+              make_rdcpair(GetResID(DependencyInfo.pBufferMemoryBarriers[i].buffer),
+                           EventUsage(eid, ResourceUsage::Barrier)));
+        }
       }
     }
 
@@ -4683,6 +4902,29 @@ bool WrappedVulkan::Serialise_vkCmdPipelineBarrier2(SerialiserType &ser,
 
         RemapQueueFamilyIndices(imgBarriers.back().srcQueueFamilyIndex,
                                 imgBarriers.back().dstQueueFamilyIndex);
+
+        if(ShouldAddResourceUsage())
+        {
+          resourceUsage.push_back(make_rdcpair(GetResID(DependencyInfo.pImageMemoryBarriers[i].image),
+                                               EventUsage(eid, ResourceUsage::Barrier)));
+        }
+      }
+    }
+    if(ShouldAddResourceUsage())
+    {
+      for(uint32_t i = 0; i < DependencyInfo.imageMemoryBarrierCount; i++)
+      {
+        const VkImageMemoryBarrier2 &b = DependencyInfo.pImageMemoryBarriers[i];
+        if(b.image != VK_NULL_HANDLE && b.oldLayout == VK_IMAGE_LAYOUT_UNDEFINED &&
+           b.newLayout != VK_IMAGE_LAYOUT_UNDEFINED)
+        {
+          VulkanCreationInfo::Image &imgInfo = m_CreationInfo.m_Image[GetResID(b.image)];
+          if(!imgInfo.external)
+          {
+            resourceUsage.push_back(
+                make_rdcpair(GetResID(b.image), EventUsage(eid, ResourceUsage::Discard)));
+          }
+        }
       }
     }
 
@@ -4703,6 +4945,24 @@ bool WrappedVulkan::Serialise_vkCmdPipelineBarrier2(SerialiserType &ser,
 
     if(commandBuffer != VK_NULL_HANDLE)
     {
+      if(ShouldAddResourceUsage())
+      {
+        bool descBarrier = false;
+
+        for(uint32_t i = 0; !descBarrier && (i < DependencyInfo.bufferMemoryBarrierCount); i++)
+          if(DependencyInfo.pBufferMemoryBarriers[i].dstAccessMask &
+             VK_ACCESS_2_DESCRIPTOR_BUFFER_READ_BIT_EXT)
+            descBarrier = true;
+
+        for(uint32_t i = 0; !descBarrier && (i < DependencyInfo.memoryBarrierCount); i++)
+          if(DependencyInfo.pMemoryBarriers[i].dstAccessMask &
+             VK_ACCESS_2_DESCRIPTOR_BUFFER_READ_BIT_EXT)
+            descBarrier = true;
+
+        if(descBarrier)
+          VersionDescriptorBuffers(commandBuffer);
+      }
+
       GetResourceManager()->RecordBarriers(m_BakedCmdBufferInfo[m_LastCmdBufferID].imageStates,
                                            FindCommandQueueFamily(m_LastCmdBufferID),
                                            (uint32_t)imgBarriers.size(), imgBarriers.data());
@@ -5203,6 +5463,14 @@ bool WrappedVulkan::Serialise_vkCmdExecuteCommands(SerialiserType &ser, VkComman
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
+    BakedCmdBufferInfo &parentCmdBufInfo = m_BakedCmdBufferInfo[m_LastCmdBufferID];
+    bool parentActiveRenderPass = parentCmdBufInfo.state.ActiveRenderPass();
+    parentActiveRenderPass |=
+        ((parentCmdBufInfo.beginFlags & VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT) != 0);
+
+    // should we add framebuffer usage to the child draws.
+    const bool framebufferUsage = parentActiveRenderPass;
+
     if(IsLoading(m_State))
     {
       // execute the commands
@@ -5212,17 +5480,15 @@ bool WrappedVulkan::Serialise_vkCmdExecuteCommands(SerialiserType &ser, VkComman
 
       // append deferred indirect copies and merge barriers into parent command buffer
       {
-        BakedCmdBufferInfo &dst = m_BakedCmdBufferInfo[m_LastCmdBufferID];
-
         for(uint32_t i = 0; i < commandBufferCount; i++)
         {
           // indirectCopies are stored in m_BakedCmdBufferInfo[m_LastCmdBufferID]
           ResourceId secondaryId = GetResID(pCommandBuffers[i]);
           BakedCmdBufferInfo &src = m_BakedCmdBufferInfo[secondaryId];
 
-          dst.indirectCopies.append(src.indirectCopies);
+          parentCmdBufInfo.indirectCopies.append(src.indirectCopies);
 
-          ImageState::Merge(dst.imageStates, src.imageStates, GetImageTransitionInfo());
+          ImageState::Merge(parentCmdBufInfo.imageStates, src.imageStates, GetImageTransitionInfo());
         }
       }
 
@@ -5234,13 +5500,7 @@ bool WrappedVulkan::Serialise_vkCmdExecuteCommands(SerialiserType &ser, VkComman
 
       AddAction(action);
 
-      BakedCmdBufferInfo &parentCmdBufInfo = m_BakedCmdBufferInfo[m_LastCmdBufferID];
-
       parentCmdBufInfo.curEventID++;
-
-      bool parentActiveRenderPass = parentCmdBufInfo.state.ActiveRenderPass();
-      parentActiveRenderPass |=
-          ((parentCmdBufInfo.beginFlags & VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT) != 0);
 
       for(uint32_t c = 0; c < commandBufferCount; c++)
       {
@@ -5326,11 +5586,40 @@ bool WrappedVulkan::Serialise_vkCmdExecuteCommands(SerialiserType &ser, VkComman
     }
     else
     {
+      if(ShouldAddResourceUsage())
+      {
+        // two extra : virtual label vkBeginCommandBuffer and execute commands event
+        uint32_t eidShift = parentCmdBufInfo.curEventID + 2;
+        for(uint32_t c = 0; c < commandBufferCount; c++)
+        {
+          ResourceId cmd = GetResID(pCommandBuffers[c]);
+
+          BakedCmdBufferInfo &cmdBufInfo = m_BakedCmdBufferInfo[cmd];
+          size_t numChildren = cmdBufInfo.action->children.size();
+
+          // iterate through the newly added draws, and recursively add usage to them using our
+          // primary command buffer's state
+          if(framebufferUsage)
+          {
+            for(size_t i = 0; i < numChildren; i++)
+            {
+              AddFramebufferUsageAllChildren(cmdBufInfo.action->children[i], parentCmdBufInfo.state,
+                                             cmdBufInfo.resourceUsage);
+            }
+          }
+          for(const rdcpair<ResourceId, EventUsage> &use : cmdBufInfo.resourceUsage)
+          {
+            EventUsage u = use.second;
+            u.eventId += eidShift;
+            parentCmdBufInfo.resourceUsage.push_back(
+                make_rdcpair<ResourceId, EventUsage>(use.first, u));
+          }
+          eidShift += (2 + cmdBufInfo.eventCount);
+        }
+      }
       if(InRerecordRange(m_LastCmdBufferID))
       {
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
-
-        BakedCmdBufferInfo &parentCmdBufInfo = m_BakedCmdBufferInfo[m_LastCmdBufferID];
 
         // if we're replaying a range but not from the start, we are guaranteed to only be replaying
         // one of our executed command buffers and doing it to an outside command buffer. The outer
@@ -7455,6 +7744,36 @@ bool WrappedVulkan::Serialise_vkCmdBeginRendering(SerialiserType &ser, VkCommand
           renderstate.SetFramebuffer(ResourceId(), attachments);
         }
 
+        if(ShouldAddResourceUsage())
+        {
+          for(size_t i = 0; i < renderstate.dynamicRendering.color.size() + 2; i++)
+          {
+            const VkRenderingAttachmentInfo *att =
+                (const VkRenderingAttachmentInfo *)&renderstate.dynamicRendering.color[i];
+
+            if(i == renderstate.dynamicRendering.color.size())
+              att = (const VkRenderingAttachmentInfo *)&renderstate.dynamicRendering.depth;
+            else if(i == renderstate.dynamicRendering.color.size() + 1)
+              att = (const VkRenderingAttachmentInfo *)&renderstate.dynamicRendering.stencil;
+
+            if(!att || att->imageView == VK_NULL_HANDLE)
+              continue;
+
+            if(att->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR ||
+               att->loadOp == VK_ATTACHMENT_LOAD_OP_DONT_CARE)
+            {
+              uint32_t eid = m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID;
+              rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage =
+                  m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage;
+              ResourceId image = m_CreationInfo.m_ImageView[GetResID(att->imageView)].image;
+              resourceUsage.push_back(
+                  make_rdcpair(image, EventUsage(eid, att->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR
+                                                          ? ResourceUsage::Clear
+                                                          : ResourceUsage::Discard)));
+            }
+          }
+        }
+
         // only do discards when not resuming!
         if(m_ReplayOptions.optimisation != ReplayOptimisationLevel::Fastest &&
            (RenderingInfo.flags & VK_RENDERING_RESUMING_BIT) == 0)
@@ -7780,6 +8099,45 @@ bool WrappedVulkan::Serialise_vkCmdEndRendering(SerialiserType &ser, VkCommandBu
   if(IsReplayingAndReading())
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
+    if(ShouldAddResourceUsage())
+    {
+      const VulkanRenderState &renderstate = GetCmdRenderState();
+      uint32_t eid = m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID;
+      rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage =
+          m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage;
+
+      const VulkanRenderState::DynamicRendering &dyn = renderstate.dynamicRendering;
+      rdcarray<VkRenderingAttachmentInfo> dynAtts = dyn.color;
+      dynAtts.push_back(dyn.depth);
+      // if stencil attachment is different, or only one is resolving, add the stencil attachment.
+      // Otherwise depth will cover both (at most)
+      if((dyn.depth.imageView != dyn.stencil.imageView) ||
+         (dyn.depth.resolveMode != 0) != (dyn.stencil.resolveMode != 0))
+        dynAtts.push_back(dyn.stencil);
+
+      for(size_t i = 0; i < dynAtts.size(); i++)
+      {
+        if((dynAtts[i].resolveMode && !(dynAtts[i].resolveMode & VK_RESOLVE_MODE_CUSTOM_BIT_EXT)) &&
+           dynAtts[i].imageView != VK_NULL_HANDLE && dynAtts[i].resolveImageView != VK_NULL_HANDLE)
+        {
+          resourceUsage.push_back(
+              make_rdcpair(m_CreationInfo.m_ImageView[GetResID(dynAtts[i].imageView)].image,
+                           EventUsage(eid, ResourceUsage::ResolveSrc)));
+
+          resourceUsage.push_back(
+              make_rdcpair(m_CreationInfo.m_ImageView[GetResID(dynAtts[i].resolveImageView)].image,
+                           EventUsage(eid, ResourceUsage::ResolveDst)));
+        }
+
+        // also add any discards
+        if(dynAtts[i].storeOp == VK_ATTACHMENT_STORE_OP_DONT_CARE)
+        {
+          resourceUsage.push_back(
+              make_rdcpair(m_CreationInfo.m_ImageView[GetResID(dynAtts[i].imageView)].image,
+                           EventUsage(eid, ResourceUsage::Discard)));
+        }
+      }
+    }
 
     if(IsActiveReplaying(m_State))
     {
@@ -7808,6 +8166,17 @@ bool WrappedVulkan::Serialise_vkCmdEndRendering(SerialiserType &ser, VkCommandBu
         uint32_t eventId = HandlePreCallback(commandBuffer, drawFlags);
 
         ObjDisp(commandBuffer)->CmdEndRendering(Unwrap(commandBuffer));
+
+        if(ShouldAddResourceUsage())
+        {
+          // and deferred descriptor buffer versions here
+          for(const BakedCmdBufferInfo::DeferredDescBufCopy &descVersion :
+              m_BakedCmdBufferInfo[m_LastCmdBufferID].descBufDeferredCopies)
+            CopyVersionedDescriptorBuffer(commandBuffer, descVersion.unwrappedDstBuffer,
+                                          descVersion.copyOffsets);
+
+          m_BakedCmdBufferInfo[m_LastCmdBufferID].descBufDeferredCopies.clear();
+        }
 
         if(eventId && m_ActionCallback->PostMisc(eventId, drawFlags, commandBuffer))
         {
@@ -8022,6 +8391,45 @@ bool WrappedVulkan::Serialise_vkCmdEndRendering2EXT(SerialiserType &ser,
         UnwrapStructAndChain(m_State, tempMem, pRenderingEndInfo);
     m_LastCmdBufferID = GetResID(commandBuffer);
 
+    if(ShouldAddResourceUsage())
+    {
+      const VulkanRenderState &renderstate = GetCmdRenderState();
+      uint32_t eid = m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID;
+      rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage =
+          m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage;
+
+      const VulkanRenderState::DynamicRendering &dyn = renderstate.dynamicRendering;
+      rdcarray<VkRenderingAttachmentInfo> dynAtts = dyn.color;
+      dynAtts.push_back(dyn.depth);
+      // if stencil attachment is different, or only one is resolving, add the stencil attachment.
+      // Otherwise depth will cover both (at most)
+      if((dyn.depth.imageView != dyn.stencil.imageView) ||
+         (dyn.depth.resolveMode != 0) != (dyn.stencil.resolveMode != 0))
+        dynAtts.push_back(dyn.stencil);
+
+      for(size_t i = 0; i < dynAtts.size(); i++)
+      {
+        if((dynAtts[i].resolveMode && !(dynAtts[i].resolveMode & VK_RESOLVE_MODE_CUSTOM_BIT_EXT)) &&
+           dynAtts[i].imageView != VK_NULL_HANDLE && dynAtts[i].resolveImageView != VK_NULL_HANDLE)
+        {
+          resourceUsage.push_back(
+              make_rdcpair(m_CreationInfo.m_ImageView[GetResID(dynAtts[i].imageView)].image,
+                           EventUsage(eid, ResourceUsage::ResolveSrc)));
+
+          resourceUsage.push_back(
+              make_rdcpair(m_CreationInfo.m_ImageView[GetResID(dynAtts[i].resolveImageView)].image,
+                           EventUsage(eid, ResourceUsage::ResolveDst)));
+        }
+
+        // also add any discards
+        if(dynAtts[i].storeOp == VK_ATTACHMENT_STORE_OP_DONT_CARE)
+        {
+          resourceUsage.push_back(
+              make_rdcpair(m_CreationInfo.m_ImageView[GetResID(dynAtts[i].imageView)].image,
+                           EventUsage(eid, ResourceUsage::Discard)));
+        }
+      }
+    }
     if(IsActiveReplaying(m_State))
     {
       VulkanRenderState &renderstate = GetCmdRenderState();
@@ -8049,6 +8457,17 @@ bool WrappedVulkan::Serialise_vkCmdEndRendering2EXT(SerialiserType &ser,
         uint32_t eventId = HandlePreCallback(commandBuffer, drawFlags);
 
         ObjDisp(commandBuffer)->CmdEndRendering2EXT(Unwrap(commandBuffer), unwrappedEndInfo);
+
+        if(ShouldAddResourceUsage())
+        {
+          // and deferred descriptor buffer versions here
+          for(const BakedCmdBufferInfo::DeferredDescBufCopy &descVersion :
+              m_BakedCmdBufferInfo[m_LastCmdBufferID].descBufDeferredCopies)
+            CopyVersionedDescriptorBuffer(commandBuffer, descVersion.unwrappedDstBuffer,
+                                          descVersion.copyOffsets);
+
+          m_BakedCmdBufferInfo[m_LastCmdBufferID].descBufDeferredCopies.clear();
+        }
 
         if(eventId && m_ActionCallback->PostMisc(eventId, drawFlags, commandBuffer))
         {
@@ -9103,6 +9522,8 @@ bool WrappedVulkan::Serialise_vkCmdBindDescriptorBuffersEXT(
               if(pipe.descSets[i].descSet == ResourceId())
                 pipe.descSets[i] = {};
           }
+          if(ShouldAddResourceUsage())
+            VersionDescriptorBuffers(commandBuffer);
         }
       }
     }
@@ -10019,6 +10440,24 @@ bool WrappedVulkan::Serialise_vkCmdBeginCustomResolveEXT(
   if(IsReplayingAndReading())
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
+    if(ShouldAddResourceUsage())
+    {
+      const VulkanRenderState &renderstate = GetCmdRenderState();
+      uint32_t eid = m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID;
+      rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage =
+          m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage;
+
+      for(size_t i = 0; i < renderstate.dynamicRendering.color.size(); i++)
+      {
+        const VkRenderingAttachmentInfo &attInfo = renderstate.dynamicRendering.color[i];
+        if(attInfo.resolveMode & VK_RESOLVE_MODE_CUSTOM_BIT_EXT)
+        {
+          ResourceId resolveImageView = GetResID(attInfo.resolveImageView);
+          ResourceId image = m_CreationInfo.m_ImageView[resolveImageView].image;
+          resourceUsage.push_back(make_rdcpair(image, EventUsage(eid, ResourceUsage::Discard)));
+        }
+      }
+    }
 
     if(IsActiveReplaying(m_State))
     {

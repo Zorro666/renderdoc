@@ -272,6 +272,8 @@ WrappedVulkan::CommandBufferNode *WrappedVulkan::BuildSubmitTree(ResourceId cmdI
 
 void WrappedVulkan::ReplayQueueSubmit(VkQueue queue, VkSubmitInfo2 submitInfo, rdcstr basename)
 {
+  const uint32_t numCmds = submitInfo.commandBufferInfoCount;
+  const VkCommandBufferSubmitInfo *pCmds = submitInfo.pCommandBufferInfos;
   if(IsLoading(m_State))
   {
     AddEvent();
@@ -279,7 +281,6 @@ void WrappedVulkan::ReplayQueueSubmit(VkQueue queue, VkSubmitInfo2 submitInfo, r
     // we're adding multiple events, need to increment ourselves
     m_RootEventID++;
 
-    uint32_t numCmds = submitInfo.commandBufferInfoCount;
     if(numCmds == 0)
     {
       DoSubmit(queue, submitInfo);
@@ -343,6 +344,7 @@ void WrappedVulkan::ReplayQueueSubmit(VkQueue queue, VkSubmitInfo2 submitInfo, r
       // and drawIDs
       InsertActionsAndRefreshIDs(cmdBufInfo);
 
+      // JAKE TODO: RESOURCE USAGE
       for(size_t i = 0; i < cmdBufInfo.debugMessages.size(); i++)
       {
         m_DebugMessages.push_back(cmdBufInfo.debugMessages[i]);
@@ -393,21 +395,72 @@ void WrappedVulkan::ReplayQueueSubmit(VkQueue queue, VkSubmitInfo2 submitInfo, r
 
     uint32_t startEID = m_RootEventID;
     // advance m_CurEventID to match the events added when reading
-    for(uint32_t c = 0; c < submitInfo.commandBufferInfoCount; c++)
+    for(uint32_t c = 0; c < numCmds; c++)
     {
-      ResourceId cmd = GetResID(submitInfo.pCommandBufferInfos[c].commandBuffer);
+      ResourceId cmd = GetResID(pCmds[c].commandBuffer);
       // cmd is not valid when selecting a vkQueueSubmit event
       if(cmd != ResourceId())
       {
-        m_RootEventID += m_BakedCmdBufferInfo[cmd].eventCount;
-        m_RootActionID += m_BakedCmdBufferInfo[cmd].actionCount;
+        // account for the Begin virtual label
+        m_RootEventID++;
+        m_RootActionID++;
 
-        // 2 extra for the virtual labels around the command buffer
+        BakedCmdBufferInfo &cmdBufInfo = m_BakedCmdBufferInfo[cmd];
+
+        if(ShouldAddResourceUsage())
         {
-          m_RootEventID += 2;
-          m_RootActionID += 2;
+          // Submit commands one at time to get correct resource usage from descriptor buffers
+          submitInfo.commandBufferInfoCount = 1;
+          submitInfo.pCommandBufferInfos = pCmds + c;
+          DoSubmit(queue, submitInfo);
+          FlushQ();
+
+          std::map<uint32_t, rdcarray<ResourceUsageEvent>> eventUsages;
+          for(BakedCmdBufferInfo::DeferredResourceUsage &def : cmdBufInfo.deferredResourceUsage)
+          {
+            if(def.descBufVersionIdx >= m_DescriptorBufferVersions.size())
+            {
+              RDCERR("Invalid deferred resource usage buffer reference");
+              continue;
+            }
+            rdcarray<rdcpair<ResourceId, EventUsage>> resourceUsage;
+            AddUsageForDescriptorBuffers(def.flags, def.eid, cmdBufInfo.debugMessages, def,
+                                         resourceUsage);
+
+            for(auto it = resourceUsage.begin(); it != resourceUsage.end(); ++it)
+            {
+              EventUsage u = it->second;
+              u.eventId += m_RootEventID;
+              eventUsages[u.eventId].push_back(ResourceUsageEvent(it->first, u.usage));
+              m_EventFlags[u.eventId] |= PipeRWUsageEventFlags(u.usage);
+            }
+          }
+
+          for(auto it = cmdBufInfo.resourceUsage.begin(); it != cmdBufInfo.resourceUsage.end(); ++it)
+          {
+            EventUsage u = it->second;
+            u.eventId += m_RootEventID;
+            eventUsages[u.eventId].push_back(ResourceUsageEvent(it->first, u.usage));
+            m_EventFlags[u.eventId] |= PipeRWUsageEventFlags(u.usage);
+          }
+          for(auto it = eventUsages.begin(); it != eventUsages.end(); ++it)
+            m_ResourceUsageTracker.AddUsageAtEvent(it->first, it->second);
         }
+        m_RootEventID += cmdBufInfo.eventCount;
+        m_RootActionID += cmdBufInfo.actionCount;
+
+        // account for the End virtual label
+        m_RootEventID++;
+        m_RootActionID++;
       }
+    }
+
+    if(ShouldAddResourceUsage())
+    {
+      // m_NEW_ResourceUsageTracker.AddUsageAtEvent(
+      //     m_RootEventID - 1, {ResourceUsageEvent(GetResID(queue), ResourceUsage::Submit)});
+      submitInfo.commandBufferInfoCount = numCmds;
+      submitInfo.pCommandBufferInfos = pCmds;
     }
 
     if(submitInfo.commandBufferInfoCount == 0)
@@ -472,24 +525,28 @@ void WrappedVulkan::ReplayQueueSubmit(VkQueue queue, VkSubmitInfo2 submitInfo, r
         eid++;
       }
 
-      submitInfo.pCommandBufferInfos = rerecordedCmds.data();
-
-      if(Vulkan_Debug_SingleSubmitFlushing())
+      // Resource usage has already submitted the commands (one by one)
+      if(!ShouldAddResourceUsage())
       {
-        submitInfo.commandBufferInfoCount = 1;
-        for(size_t i = 0; i < rerecordedCmds.size(); i++)
+        submitInfo.pCommandBufferInfos = rerecordedCmds.data();
+
+        if(Vulkan_Debug_SingleSubmitFlushing())
         {
-          DoSubmit(queue, submitInfo);
-          submitInfo.pCommandBufferInfos++;
+          submitInfo.commandBufferInfoCount = 1;
+          for(size_t i = 0; i < rerecordedCmds.size(); i++)
+          {
+            DoSubmit(queue, submitInfo);
+            submitInfo.pCommandBufferInfos++;
 
-          FlushQ();
+            FlushQ();
+          }
         }
-      }
-      else
-      {
-        submitInfo.commandBufferInfoCount = (uint32_t)rerecordedCmds.size();
+        else
+        {
+          submitInfo.commandBufferInfoCount = (uint32_t)rerecordedCmds.size();
 
-        DoSubmit(queue, submitInfo);
+          DoSubmit(queue, submitInfo);
+        }
       }
     }
   }

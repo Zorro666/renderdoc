@@ -1200,6 +1200,7 @@ private:
                                VkDeviceSize memoryOffset, const VkMemoryRequirements &mrq,
                                bool external, const VkMemoryRequirements &origMrq);
 
+  void AddImplicitResolveResourceUsage(uint32_t subpass = 0);
   rdcarray<VkImageMemoryBarrier> GetImplicitRenderPassBarriers(uint32_t subpass = 0);
   rdcstr MakeRenderPassOpString(bool store);
   void ApplyRPStoreDiscards(VkCommandBuffer commandBuffer, VkRect2D renderArea,
@@ -1316,6 +1317,38 @@ private:
   bool ContextProcessChunk(ReadSerialiser &ser, VulkanChunk chunk);
   void AddAction(const ActionDescription &a);
   void AddEvent();
+
+  void AddUsage(const ActionFlags flags, const uint32_t eid, rdcarray<DebugMessage> &debugMessages,
+                rdcarray<BakedCmdBufferInfo::DeferredResourceUsage> &deferredResourceUsage,
+                rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage);
+
+  void AddUsageForDescriptorSets(const ActionFlags flags, const uint32_t eid,
+                                 rdcarray<DebugMessage> &debugMessages,
+                                 rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage);
+  void AddUsageForDescriptorSetBind(const ActionFlags flags, const uint32_t eid,
+                                    rdcarray<DebugMessage> &debugMessages, uint32_t bindset,
+                                    uint32_t bind, ResourceUsage usage,
+                                    rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage);
+  void AddUsageForDescriptorBuffers(const ActionFlags flags, const uint32_t eid,
+                                    rdcarray<DebugMessage> &debugMessages,
+                                    const BakedCmdBufferInfo::DeferredResourceUsage &def,
+                                    rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage);
+  void AddUsageForDescriptorBufferBind(const ActionFlags flags, const uint32_t eid,
+                                       rdcarray<DebugMessage> &debugMessages,
+                                       const BakedCmdBufferInfo::DeferredResourceUsage &def,
+                                       byte *descriptorBytes, size_t descriptorSize,
+                                       DescriptorType type, uint32_t bindset, uint32_t bind,
+                                       ResourceUsage usage,
+                                       rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage);
+  void AddUsageForDescriptor(const ActionFlags flags, const uint32_t eid,
+                             const DescriptorSetSlot &slot, ResourceUsage usage,
+                             rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage);
+
+  void AddFramebufferUsage(const uint32_t eid, const VulkanRenderState &renderState,
+                           rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage);
+  void AddFramebufferUsageAllChildren(VulkanActionTreeNode &actionNode,
+                                      const VulkanRenderState &renderState,
+                                      rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage);
 
   // no copy semantics
   WrappedVulkan(const WrappedVulkan &) = delete;

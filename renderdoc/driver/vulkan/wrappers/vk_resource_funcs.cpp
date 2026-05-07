@@ -1081,7 +1081,7 @@ bool WrappedVulkan::SerialiseUnmap(SerialiserType &ser, VkDeviceMemory memory, u
       return false;
     }
 
-    if(IsLoading(m_State))
+    if(ShouldAddResourceUsage())
       m_ResourceUsageTracker.AddUsageAtEvent(
           m_RootEventID, {ResourceUsageEvent(GetResID(memory), ResourceUsage::CPUWrite)});
 
@@ -1438,7 +1438,7 @@ bool WrappedVulkan::Serialise_vkFlushMappedMemoryRanges(SerialiserType &ser, VkD
 
   if(IsReplayingAndReading() && MemRange.memory != VK_NULL_HANDLE && MemRange.size > 0)
   {
-    if(IsLoading(m_State))
+    if(ShouldAddResourceUsage())
       m_ResourceUsageTracker.AddUsageAtEvent(
           m_RootEventID, {ResourceUsageEvent(GetResID(MemRange.memory), ResourceUsage::CPUWrite)});
 
