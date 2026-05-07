@@ -803,19 +803,6 @@ bool WrappedVulkan::Serialise_vkCmdWaitEvents(
       else
         commandBuffer = VK_NULL_HANDLE;
     }
-    else
-    {
-      for(uint32_t i = 0; i < imageMemoryBarrierCount; i++)
-      {
-        const VkImageMemoryBarrier &b = pImageMemoryBarriers[i];
-        if(b.image != VK_NULL_HANDLE && b.oldLayout == VK_IMAGE_LAYOUT_UNDEFINED)
-        {
-          m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage.push_back(make_rdcpair(
-              GetResID(b.image), EventUsage(m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID,
-                                            ResourceUsage::Discard)));
-        }
-      }
-    }
 
     if(commandBuffer != VK_NULL_HANDLE)
     {
@@ -1315,44 +1302,9 @@ bool WrappedVulkan::Serialise_vkCmdWaitEvents2(SerialiserType &ser, VkCommandBuf
         else
           commandBuffer = VK_NULL_HANDLE;
       }
-      else
-      {
-        for(uint32_t i = 0; i < depInfo.imageMemoryBarrierCount; i++)
-        {
-          const VkImageMemoryBarrier2 &b = depInfo.pImageMemoryBarriers[i];
-          if(b.image != VK_NULL_HANDLE && b.oldLayout == VK_IMAGE_LAYOUT_UNDEFINED &&
-             b.newLayout != VK_IMAGE_LAYOUT_UNDEFINED)
-          {
-            m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage.push_back(make_rdcpair(
-                GetResID(b.image), EventUsage(m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID,
-                                              ResourceUsage::Discard)));
-          }
-        }
-      }
 
       if(commandBuffer != VK_NULL_HANDLE)
       {
-        if(IsLoading(m_State) && evIdx == 0)
-        {
-          bool descBarrier = false;
-
-          for(uint32_t ev = 0; ev < eventCount; ev++)
-          {
-            for(uint32_t i = 0; i < pDependencyInfos[ev].bufferMemoryBarrierCount; i++)
-              if(pDependencyInfos[ev].pBufferMemoryBarriers[i].dstAccessMask &
-                 VK_ACCESS_2_DESCRIPTOR_BUFFER_READ_BIT_EXT)
-                descBarrier = true;
-
-            for(uint32_t i = 0; i < pDependencyInfos[ev].memoryBarrierCount; i++)
-              if(pDependencyInfos[ev].pMemoryBarriers[i].dstAccessMask &
-                 VK_ACCESS_2_DESCRIPTOR_BUFFER_READ_BIT_EXT)
-                descBarrier = true;
-          }
-
-          if(descBarrier)
-            VersionDescriptorBuffers(commandBuffer);
-        }
-
         VkEventCreateInfo evInfo = {
             VK_STRUCTURE_TYPE_EVENT_CREATE_INFO,
             NULL,
