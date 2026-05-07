@@ -140,7 +140,18 @@ struct VulkanActionTreeNode
 
   VkIndirectPatchData indirectPatch;
 
+  rdcarray<rdcpair<ResourceId, EventUsage>> OLD_resourceUsage;
+
   rdcarray<ResourceId> executedCmds;
+
+  struct OLD_DeferredResourceUsage
+  {
+    uint32_t descBufVersionIdx;
+    ResourceId pipeline;
+    ResourceId shaderObjects[NumShaderStages];
+    rdcarray<VulkanStatePipeline::DescriptorAndOffsets> descSets;
+  };
+  rdcarray<OLD_DeferredResourceUsage> OLD_deferredResourceUsage;
 
   VulkanActionTreeNode &operator=(const ActionDescription &a)
   {
@@ -150,6 +161,13 @@ struct VulkanActionTreeNode
 
   void InsertAndUpdateIDs(const VulkanActionTreeNode &child, uint32_t baseEventID, uint32_t baseDrawID)
   {
+    OLD_resourceUsage.reserve(child.OLD_resourceUsage.size());
+    for(size_t i = 0; i < child.OLD_resourceUsage.size(); i++)
+    {
+      OLD_resourceUsage.push_back(child.OLD_resourceUsage[i]);
+      OLD_resourceUsage.back().second.eventId += baseEventID;
+    }
+
     children.reserve(child.children.size());
     for(size_t i = 0; i < child.children.size(); i++)
     {
@@ -165,6 +183,9 @@ struct VulkanActionTreeNode
 
     for(APIEvent &ev : action.events)
       ev.eventId += baseEventID;
+
+    for(size_t i = 0; i < OLD_resourceUsage.size(); i++)
+      OLD_resourceUsage[i].second.eventId += baseEventID;
 
     for(size_t i = 0; i < children.size(); i++)
       children[i].UpdateIDs(baseEventID, baseDrawID);
@@ -862,9 +883,19 @@ private:
 
     // the index in m_DescriptorBufferVersions for the current GPUBuffer containing the descriptor buffer snapshot
     uint32_t descBufVersionIdx = ~0U;
+    uint32_t OLD_descBufVersionIdx = ~0U;
 
     // when multiple buffers are bound, the offsets of each in the single GPUBuffer where they are
     rdcarray<uint64_t> descBufOffsets;
+    rdcarray<uint64_t> OLD_descBufOffsets;
+
+    struct OLD_DeferredDescBufCopy
+    {
+      VkBuffer unwrappedDstBuffer;
+      rdcarray<rdcpair<VkDeviceAddress, uint64_t>> copyOffsets;
+    };
+    rdcarray<OLD_DeferredDescBufCopy> OLD_descBufDeferredCopies;
+
     struct DeferredDescBufCopy
     {
       VkBuffer unwrappedDstBuffer;
@@ -1115,9 +1146,14 @@ private:
   rdcarray<GPUBuffer> m_DescriptorBufferVersions;
   void VersionDescriptorBuffers(VkCommandBuffer cmd);
 
+  rdcarray<GPUBuffer> m_OLD_DescriptorBufferVersions;
+  void OLD_VersionDescriptorBuffers(VkCommandBuffer cmd);
+
   void CopyVersionedDescriptorBuffer(VkCommandBuffer cmdBuf, VkBuffer unwrappedDstBuf,
                                      const rdcarray<rdcpair<VkDeviceAddress, uint64_t>> &copyOffsets);
 
+  std::map<ResourceId, rdcarray<EventUsage>> m_OLD_ResourceUses;
+  std::map<uint32_t, EventFlags> m_OLD_EventFlags;
   ResourceUsageTracker m_ResourceUsageTracker;
   std::map<uint32_t, EventFlags> m_EventFlags;
   rdcarray<ResourceId> m_FeedbackRPs;
@@ -1198,6 +1234,7 @@ private:
                                bool external, const VkMemoryRequirements &origMrq);
 
   void AddImplicitResolveResourceUsage(uint32_t subpass = 0);
+  void OLD_AddImplicitResolveResourceUsage(uint32_t subpass = 0);
   rdcarray<VkImageMemoryBarrier> GetImplicitRenderPassBarriers(uint32_t subpass = 0);
   rdcstr MakeRenderPassOpString(bool store);
   void ApplyRPStoreDiscards(VkCommandBuffer commandBuffer, VkRect2D renderArea,
@@ -1308,6 +1345,30 @@ private:
   bool ContextProcessChunk(ReadSerialiser &ser, VulkanChunk chunk);
   void AddAction(const ActionDescription &a);
   void AddEvent();
+
+  void OLD_AddUsage(VulkanActionTreeNode &actionNode, rdcarray<DebugMessage> &debugMessages);
+
+  void OLD_AddUsageForDescriptorSets(VulkanActionTreeNode &actionNode,
+                                     rdcarray<DebugMessage> &debugMessages);
+  void OLD_AddUsageForDescriptorSetBind(VulkanActionTreeNode &actionNode,
+                                        rdcarray<DebugMessage> &debugMessages, uint32_t bindset,
+                                        uint32_t bind, ResourceUsage usage);
+  void OLD_AddUsageForDescriptorBuffers(VulkanActionTreeNode &actionNode,
+                                        rdcarray<DebugMessage> &debugMessages,
+                                        const VulkanActionTreeNode::OLD_DeferredResourceUsage &def);
+  void OLD_AddUsageForDescriptorBufferBind(VulkanActionTreeNode &actionNode,
+                                           rdcarray<DebugMessage> &debugMessages,
+                                           const VulkanActionTreeNode::OLD_DeferredResourceUsage &def,
+                                           byte *descriptorBytes, size_t descriptorSize,
+                                           DescriptorType type, uint32_t bindset, uint32_t bind,
+                                           ResourceUsage usage);
+  void OLD_AddUsageForDescriptor(VulkanActionTreeNode &actionNode, const DescriptorSetSlot &slot,
+                                 ResourceUsage usage);
+
+  void OLD_AddFramebufferUsage(VulkanActionTreeNode &actionNode,
+                               const VulkanRenderState &renderState);
+  void OLD_AddFramebufferUsageAllChildren(VulkanActionTreeNode &actionNode,
+                                          const VulkanRenderState &renderState);
 
   void AddUsage(const ActionFlags flags, const uint32_t eid, rdcarray<DebugMessage> &debugMessages,
                 rdcarray<BakedCmdBufferInfo::DeferredResourceUsage> &deferredResourceUsage,

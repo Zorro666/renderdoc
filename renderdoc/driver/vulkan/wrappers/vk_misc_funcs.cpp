@@ -1946,6 +1946,24 @@ bool WrappedVulkan::Serialise_vkCopyImageToImage(SerialiserType &ser, VkDevice d
       }
 
       AddAction(action);
+
+      VulkanActionTreeNode &actionNode = GetActionStack().back()->children.back();
+
+      if(CopyImageToImageInfo.srcImage == CopyImageToImageInfo.dstImage)
+      {
+        actionNode.OLD_resourceUsage.push_back(
+            make_rdcpair(GetResID(CopyImageToImageInfo.srcImage),
+                         EventUsage(actionNode.action.eventId, ResourceUsage::Copy)));
+      }
+      else
+      {
+        actionNode.OLD_resourceUsage.push_back(
+            make_rdcpair(GetResID(CopyImageToImageInfo.srcImage),
+                         EventUsage(actionNode.action.eventId, ResourceUsage::CopySrc)));
+        actionNode.OLD_resourceUsage.push_back(
+            make_rdcpair(GetResID(CopyImageToImageInfo.dstImage),
+                         EventUsage(actionNode.action.eventId, ResourceUsage::CopyDst)));
+      }
     }
   }
 
@@ -2030,6 +2048,11 @@ bool WrappedVulkan::Serialise_vkCopyImageToMemory(SerialiserType &ser, VkDevice 
       }
 
       AddAction(action);
+
+      VulkanActionTreeNode &actionNode = GetActionStack().back()->children.back();
+
+      actionNode.OLD_resourceUsage.push_back(make_rdcpair(
+          GetResID(srcImage), EventUsage(actionNode.action.eventId, ResourceUsage::CopySrc)));
     }
   }
 
@@ -2116,6 +2139,11 @@ bool WrappedVulkan::Serialise_vkCopyMemoryToImage(SerialiserType &ser, VkDevice 
       }
 
       AddAction(action);
+
+      VulkanActionTreeNode &actionNode = GetActionStack().back()->children.back();
+
+      actionNode.OLD_resourceUsage.push_back(make_rdcpair(
+          GetResID(dstImage), EventUsage(actionNode.action.eventId, ResourceUsage::CopyDst)));
     }
   }
 

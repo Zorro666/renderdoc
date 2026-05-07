@@ -363,6 +363,15 @@ void WrappedVulkan::ReplayQueueSubmit(VkQueue queue, VkSubmitInfo2 submitInfo, r
           m_Events[apievent.eventId] = apievent;
         }
 
+        for(auto it = cmdBufInfo.OLD_resourceUsage.begin();
+            it != cmdBufInfo.OLD_resourceUsage.end(); ++it)
+        {
+          EventUsage u = it->second;
+          u.eventId += m_RootEventID;
+          m_OLD_ResourceUses[it->first].push_back(u);
+          m_OLD_EventFlags[u.eventId] |= PipeRWUsageEventFlags(u.usage);
+        }
+
         m_RootEventID += cmdBufInfo.eventCount;
         m_RootActionID += cmdBufInfo.actionCount;
 
@@ -688,6 +697,18 @@ void WrappedVulkan::InsertActionsAndRefreshIDs(BakedCmdBufferInfo &cmdBufInfo)
   {
     VulkanActionTreeNode n = cmdBufNodes[i];
 
+    for(VulkanActionTreeNode::OLD_DeferredResourceUsage &def : n.OLD_deferredResourceUsage)
+    {
+      if(def.descBufVersionIdx >= m_OLD_DescriptorBufferVersions.size())
+      {
+        RDCERR("Invalid deferred resource usage buffer reference");
+        continue;
+      }
+
+      RDCASSERT(!ShouldAddResourceUsage());
+      OLD_AddUsageForDescriptorBuffers(n, cmdBufInfo.debugMessages, def);
+    }
+
     n.action.eventId += m_RootEventID;
     n.action.actionId += m_RootActionID;
 
@@ -772,6 +793,9 @@ void WrappedVulkan::InsertActionsAndRefreshIDs(BakedCmdBufferInfo &cmdBufInfo)
 
             for(APIEvent &ev : cmdBufNodes[j].action.events)
               ev.eventId += eidShift;
+
+            for(rdcpair<ResourceId, EventUsage> &use : cmdBufNodes[j].OLD_resourceUsage)
+              use.second.eventId += eidShift;
           }
 
           for(size_t j = 0; j < cmdBufInfo.debugMessages.size(); j++)
@@ -786,6 +810,13 @@ void WrappedVulkan::InsertActionsAndRefreshIDs(BakedCmdBufferInfo &cmdBufInfo)
           // everything afterwards is adjusted. Now see if we need to remove the subdraw or clone it
           if(indirectCount == 0)
           {
+            // Copy the resource usage from the subdraw to the indirect action (push marker)
+            n.OLD_resourceUsage.swap(cmdBufNodes[i + 1].OLD_resourceUsage);
+            for(rdcpair<ResourceId, EventUsage> &use : n.OLD_resourceUsage)
+              use.second.eventId += eidShift;
+            for(const rdcpair<ResourceId, EventUsage> &use : cmdBufNodes[i + 1].OLD_resourceUsage)
+              n.OLD_resourceUsage.push_back(use);
+
             // i is the pushmarker, which we leave. i+1 is the subdraw
             cmdBufNodes.erase(i + 1);
           }
@@ -817,6 +848,9 @@ void WrappedVulkan::InsertActionsAndRefreshIDs(BakedCmdBufferInfo &cmdBufInfo)
                 ev.eventId++;
                 ev.chunkIndex = baseAddedChunk + e;
               }
+
+              for(rdcpair<ResourceId, EventUsage> &use : node.OLD_resourceUsage)
+                use.second.eventId++;
 
               cmdBufNodes[i + 2 + e] = node;
             }
@@ -955,6 +989,14 @@ void WrappedVulkan::InsertActionsAndRefreshIDs(BakedCmdBufferInfo &cmdBufInfo)
 
     RDCASSERT(n.children.empty());
 
+    for(auto it = n.OLD_resourceUsage.begin(); it != n.OLD_resourceUsage.end(); ++it)
+    {
+      EventUsage u = it->second;
+      u.eventId += m_RootEventID;
+      m_OLD_ResourceUses[it->first].push_back(u);
+      m_OLD_EventFlags[u.eventId] |= PipeRWUsageEventFlags(u.usage);
+    }
+
     GetActionStack().back()->children.push_back(n);
 
     // if this is a push marker too, step down the action stack
@@ -968,9 +1010,11 @@ void WrappedVulkan::InsertActionsAndRefreshIDs(BakedCmdBufferInfo &cmdBufInfo)
 
   if(totalEIDShift != 0)
   {
-    // Move the loose events by the total EID shift
+    // Move the loose events and resource usage by the total EID shift
     for(auto it = cmdBufInfo.curEvents.begin(); it != cmdBufInfo.curEvents.end(); ++it)
       it->eventId += totalEIDShift;
+    for(auto it = cmdBufInfo.OLD_resourceUsage.begin(); it != cmdBufInfo.OLD_resourceUsage.end(); ++it)
+      it->second.eventId += totalEIDShift;
   }
 
   delete localAnnotations;

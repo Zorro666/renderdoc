@@ -1085,6 +1085,10 @@ bool WrappedVulkan::SerialiseUnmap(SerialiserType &ser, VkDeviceMemory memory, u
       m_ResourceUsageTracker.AddUsageAtEvent(
           m_RootEventID, {ResourceUsageEvent(GetResID(memory), ResourceUsage::CPUWrite)});
 
+    if(IsLoading(m_State))
+      m_OLD_ResourceUses[GetResID(memory)].push_back(
+          EventUsage(m_RootEventID, ResourceUsage::CPUWrite));
+
     const Intervals<VulkanCreationInfo::Memory::MemoryBinding> &bindings =
         m_CreationInfo.m_Memory[GetResID(memory)].bindings;
 
@@ -1441,6 +1445,10 @@ bool WrappedVulkan::Serialise_vkFlushMappedMemoryRanges(SerialiserType &ser, VkD
     if(ShouldAddResourceUsage())
       m_ResourceUsageTracker.AddUsageAtEvent(
           m_RootEventID, {ResourceUsageEvent(GetResID(MemRange.memory), ResourceUsage::CPUWrite)});
+
+    if(IsLoading(m_State))
+      m_OLD_ResourceUses[GetResID(MemRange.memory)].push_back(
+          EventUsage(m_RootEventID, ResourceUsage::CPUWrite));
 
     VkResult ret =
         ObjDisp(device)->MapMemory(Unwrap(device), Unwrap(MemRange.memory), MemRange.offset,
