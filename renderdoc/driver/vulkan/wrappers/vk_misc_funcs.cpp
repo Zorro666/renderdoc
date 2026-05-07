@@ -1904,6 +1904,23 @@ bool WrappedVulkan::Serialise_vkCopyImageToImage(SerialiserType &ser, VkDevice d
 
     ObjDisp(device)->CopyImageToImage(Unwrap(device), &CopyImageToImageInfo);
 
+    if(ShouldAddResourceUsage())
+    {
+      ResourceId srcid = GetResID(CopyImageToImageInfo.srcImage);
+      ResourceId dstid = GetResID(CopyImageToImageInfo.dstImage);
+      if(srcid == dstid)
+      {
+        m_ResourceUsageTracker.AddUsageAtEvent(m_RootEventID,
+                                               {ResourceUsageEvent(srcid, ResourceUsage::Copy)});
+      }
+      else
+      {
+        m_ResourceUsageTracker.AddUsageAtEvent(m_RootEventID,
+                                               {ResourceUsageEvent(srcid, ResourceUsage::CopySrc)});
+        m_ResourceUsageTracker.AddUsageAtEvent(m_RootEventID,
+                                               {ResourceUsageEvent(dstid, ResourceUsage::CopyDst)});
+      }
+    }
     if(!IsActiveReplaying(m_State))
     {
       AddEvent();
@@ -1987,6 +2004,13 @@ bool WrappedVulkan::Serialise_vkCopyImageToMemory(SerialiserType &ser, VkDevice 
 
     ObjDisp(device)->CopyImageToMemory(Unwrap(device), &CopyImageToMemoryInfo);
 
+    if(ShouldAddResourceUsage())
+    {
+      ResourceId srcid = GetResID(srcImage);
+      m_ResourceUsageTracker.AddUsageAtEvent(m_RootEventID,
+                                             {ResourceUsageEvent(srcid, ResourceUsage::CopySrc)});
+    }
+
     if(!IsActiveReplaying(m_State))
     {
       AddEvent();
@@ -2068,6 +2092,10 @@ bool WrappedVulkan::Serialise_vkCopyMemoryToImage(SerialiserType &ser, VkDevice 
     CopyMemoryToImageInfo.dstImage = Unwrap(dstImage);
 
     ObjDisp(device)->CopyMemoryToImage(Unwrap(device), &CopyMemoryToImageInfo);
+
+    if(ShouldAddResourceUsage())
+      m_ResourceUsageTracker.AddUsageAtEvent(
+          m_RootEventID, {ResourceUsageEvent(GetResID(dstImage), ResourceUsage::CopyDst)});
 
     if(!IsActiveReplaying(m_State))
     {

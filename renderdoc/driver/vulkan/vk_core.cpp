@@ -6123,6 +6123,579 @@ void WrappedVulkan::AddAction(const ActionDescription &a)
     RDCERR("Somehow lost action stack!");
 }
 
+void WrappedVulkan::AddUsage(const ActionFlags flags, const uint32_t eid,
+                             rdcarray<DebugMessage> &debugMessages,
+                             rdcarray<BakedCmdBufferInfo::DeferredResourceUsage> &deferredResourceUsage,
+                             rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage)
+{
+  if(!ShouldAddResourceUsage())
+    return;
+
+  const VulkanRenderState &state = m_BakedCmdBufferInfo[m_LastCmdBufferID].state;
+
+  ActionFlags DrawMask = ActionFlags::MeshDispatch | ActionFlags::Drawcall | ActionFlags::Dispatch;
+  if(!(flags & DrawMask))
+    return;
+
+  //////////////////////////////
+  // Vertex input
+
+  if(flags & ActionFlags::Drawcall)
+  {
+    if(flags & ActionFlags::Indexed && state.ibuffer.buf != ResourceId())
+      resourceUsage.push_back(
+          make_rdcpair(state.ibuffer.buf, EventUsage(eid, ResourceUsage::IndexBuffer)));
+
+    for(size_t i = 0; i < state.vbuffers.size(); i++)
+    {
+      if(state.vbuffers[i].buf != ResourceId())
+      {
+        resourceUsage.push_back(
+            make_rdcpair(state.vbuffers[i].buf, EventUsage(eid, ResourceUsage::VertexBuffer)));
+      }
+    }
+
+    for(uint32_t i = state.firstxfbcounter;
+        i < state.firstxfbcounter + state.xfbcounters.size() && i < state.xfbbuffers.size(); i++)
+    {
+      if(state.xfbbuffers[i].buf != ResourceId())
+      {
+        resourceUsage.push_back(
+            make_rdcpair(state.xfbbuffers[i].buf, EventUsage(eid, ResourceUsage::StreamOut)));
+      }
+    }
+  }
+
+  //////////////////////////////
+  // Framebuffer/renderpass
+
+  bool compute = bool(flags & ActionFlags::Dispatch);
+
+  if(!compute)
+    AddFramebufferUsage(eid, state, resourceUsage);
+
+  const VulkanStatePipeline &pipeState = (compute ? state.compute : state.graphics);
+
+  //////////////////////////////
+  // Shaders
+
+  if(pipeState.UsingDescBufs())
+  {
+    deferredResourceUsage.push_back({});
+
+    BakedCmdBufferInfo::DeferredResourceUsage &def = deferredResourceUsage.back();
+
+    def.descBufVersionIdx = m_BakedCmdBufferInfo[m_LastCmdBufferID].descBufVersionIdx;
+    def.pipeline = pipeState.shaderObject ? ResourceId() : pipeState.pipeline;
+    if(pipeState.shaderObject)
+      memcpy(def.shaderObjects, state.shaderObjects, sizeof(state.shaderObjects));
+    def.descSets = pipeState.descSets;
+    def.flags = flags;
+    def.eid = eid;
+
+    bool usesPush = false;
+
+    // bake the recorded descriptor buffer offsets in so we don't have to track them separately
+    for(VulkanStatePipeline::DescriptorAndOffsets &desc : def.descSets)
+    {
+      if(desc.push)
+      {
+        usesPush = true;
+        continue;
+      }
+
+      // gaps in descriptor sets are possible
+      if(desc.descBufferIdx == ~0U)
+        continue;
+
+      desc.descBufferOffset +=
+          m_BakedCmdBufferInfo[m_LastCmdBufferID].descBufOffsets[desc.descBufferIdx];
+    }
+
+    if(!usesPush)
+      return;
+  }
+
+  AddUsageForDescriptorSets(flags, eid, debugMessages, resourceUsage);
+}
+
+static rdcarray<int> ShaderStagesForAction(const ActionFlags flags)
+{
+  if(flags & ActionFlags::Dispatch)
+    return {5};
+  else if(flags & ActionFlags::Drawcall)
+    return {0, 1, 2, 3, 4};
+  else if(flags & ActionFlags::MeshDispatch)
+    return {4, 6, 7};
+  return {};
+}
+
+void WrappedVulkan::AddUsageForDescriptorBuffers(
+    const ActionFlags flags, const uint32_t eid, rdcarray<DebugMessage> &debugMessages,
+    const BakedCmdBufferInfo::DeferredResourceUsage &def,
+    rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage)
+{
+  if(def.descBufVersionIdx >= m_DescriptorBufferVersions.size())
+  {
+    RDCERR("Invalid deferred resource usage buffer reference");
+    return;
+  }
+
+  VulkanCreationInfo &c = m_CreationInfo;
+
+  rdcarray<int> shaderStages = ShaderStagesForAction(flags);
+
+  GPUBuffer &buf = m_DescriptorBufferVersions[def.descBufVersionIdx];
+
+  byte *descriptorBytes = (byte *)buf.Map();
+
+  for(int shad : shaderStages)
+  {
+    ResourceId pipe = def.pipeline;
+    bool shaderObject = pipe == ResourceId();
+
+    VulkanCreationInfo::ShaderEntry &sh = shaderObject
+                                              ? c.m_ShaderObject[def.shaderObjects[shad]].shad
+                                              : c.m_Pipeline[pipe].shaders[shad];
+    if(sh.module == ResourceId())
+      continue;
+
+    ResourceId origPipe = pipe;
+    ResourceId origShad = sh.module;
+
+    for(const ConstantBlock &constantBlock : sh.refl->constantBlocks)
+    {
+      // ignore push constants
+      if(!constantBlock.bufferBacked)
+        continue;
+
+      AddUsageForDescriptorBufferBind(
+          flags, eid, debugMessages, def, descriptorBytes,
+          DescriptorDataSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER), DescriptorType::ConstantBuffer,
+          constantBlock.fixedBindSetOrSpace, constantBlock.fixedBindNumber,
+          ResourceUsage(uint32_t(ResourceUsage::VS_Constants) + shad), resourceUsage);
+    }
+
+    for(const ShaderResource &res : sh.refl->readOnlyResources)
+    {
+      AddUsageForDescriptorBufferBind(
+          flags, eid, debugMessages, def, descriptorBytes,
+          DescriptorDataSize(MakeVkDescriptorType(res.descriptorType, res.isInputAttachment)),
+          res.descriptorType, res.fixedBindSetOrSpace, res.fixedBindNumber,
+          ResourceUsage(uint32_t(ResourceUsage::VS_Resource) + shad), resourceUsage);
+    }
+
+    for(const ShaderResource &res : sh.refl->readWriteResources)
+    {
+      AddUsageForDescriptorBufferBind(
+          flags, eid, debugMessages, def, descriptorBytes,
+          DescriptorDataSize(MakeVkDescriptorType(res.descriptorType, false)), res.descriptorType,
+          res.fixedBindSetOrSpace, res.fixedBindNumber,
+          ResourceUsage(uint32_t(ResourceUsage::VS_RWResource) + shad), resourceUsage);
+    }
+  }
+
+  buf.Unmap();
+}
+
+void WrappedVulkan::AddUsageForDescriptorBufferBind(
+    const ActionFlags flags, const uint32_t eid, rdcarray<DebugMessage> &debugMessages,
+    const BakedCmdBufferInfo::DeferredResourceUsage &def, byte *descriptorBytes,
+    size_t descriptorSize, DescriptorType type, uint32_t bindset, uint32_t bind,
+    ResourceUsage usage, rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage)
+{
+  static bool hugeRangeWarned = false;
+
+  const rdcarray<VulkanStatePipeline::DescriptorAndOffsets> &descSets = def.descSets;
+
+  VulkanCreationInfo &c = m_CreationInfo;
+
+  DebugMessage msg;
+  msg.eventId = eid;
+  msg.category = MessageCategory::Execution;
+  msg.messageID = 0;
+  msg.source = MessageSource::IncorrectAPIUse;
+  msg.severity = MessageSeverity::High;
+
+  if(bindset >= descSets.size() || !descSets[bindset].IsBound())
+  {
+    msg.description =
+        StringFormat::Fmt("Shader referenced a descriptor set %i that was not bound", bindset);
+    debugMessages.push_back(msg);
+    return;
+  }
+
+  // ignore push sets, these were handled normally
+  if(descSets[bindset].push)
+    return;
+
+  const VulkanCreationInfo::PipelineLayout &pipeLayout =
+      c.m_PipelineLayout[descSets[bindset].pipeLayout];
+  const DescSetLayout &layout = c.m_DescSetLayout[pipeLayout.descSetLayouts[bindset]];
+
+  if(layout.bindings.empty())
+  {
+    msg.description =
+        StringFormat::Fmt("Shader referenced a descriptor set %i that was not bound", bindset);
+    debugMessages.push_back(msg);
+    return;
+  }
+
+  if(bind >= layout.bindings.size())
+  {
+    msg.description = StringFormat::Fmt(
+        "Shader referenced a bind %i in descriptor set %i that does not exist. Mismatched "
+        "descriptor set?",
+        bind, bindset);
+    debugMessages.push_back(msg);
+    return;
+  }
+
+  // no object to mark for usage with inline blocks
+  if(layout.bindings[bind].layoutDescType == VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK)
+    return;
+
+  uint32_t descriptorCount = layout.bindings[bind].descriptorCount;
+  // completely skip variable size or arrayed bindings as it is too spammy to look up uninitialised
+  // descriptors and there is a chance of false positives
+  if(layout.bindings[bind].variableSize || descriptorCount > 1)
+    return;
+
+  for(uint32_t a = 0; a < descriptorCount; a++)
+  {
+    DescriptorSetSlot tmp = {};
+    LookupDescriptor(descriptorBytes + descSets[bindset].descBufferOffset +
+                         layout.bindings[bind].elemOffset + descriptorSize * a,
+                     descriptorSize, type, tmp);
+
+    AddUsageForDescriptor(flags, eid, tmp, usage, resourceUsage);
+  }
+}
+
+void WrappedVulkan::AddUsageForDescriptorSets(const ActionFlags flags, const uint32_t eid,
+                                              rdcarray<DebugMessage> &debugMessages,
+                                              rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage)
+{
+  const VulkanRenderState &state = m_BakedCmdBufferInfo[m_LastCmdBufferID].state;
+  const VulkanStatePipeline &pipeState =
+      (flags & ActionFlags::Dispatch ? state.compute : state.graphics);
+  VulkanCreationInfo &c = m_CreationInfo;
+
+  rdcarray<int> shaderStages = ShaderStagesForAction(flags);
+
+  for(int shad : shaderStages)
+  {
+    ResourceId pipe = pipeState.pipeline;
+    bool shaderObject = pipeState.shaderObject;
+
+    VulkanCreationInfo::ShaderEntry &sh = shaderObject
+                                              ? c.m_ShaderObject[state.shaderObjects[shad]].shad
+                                              : c.m_Pipeline[pipe].shaders[shad];
+    if(sh.module == ResourceId())
+      continue;
+
+    ResourceId origPipe = pipe;
+    ResourceId origShad = sh.module;
+
+    for(const ConstantBlock &constantBlock : sh.refl->constantBlocks)
+    {
+      // ignore push constants
+      if(!constantBlock.bufferBacked)
+        continue;
+
+      AddUsageForDescriptorSetBind(flags, eid, debugMessages, constantBlock.fixedBindSetOrSpace,
+                                   constantBlock.fixedBindNumber,
+                                   ResourceUsage(uint32_t(ResourceUsage::VS_Constants) + shad),
+                                   resourceUsage);
+    }
+
+    for(const ShaderResource &res : sh.refl->readOnlyResources)
+    {
+      AddUsageForDescriptorSetBind(
+          flags, eid, debugMessages, res.fixedBindSetOrSpace, res.fixedBindNumber,
+          ResourceUsage(uint32_t(ResourceUsage::VS_Resource) + shad), resourceUsage);
+    }
+
+    for(const ShaderResource &res : sh.refl->readWriteResources)
+    {
+      AddUsageForDescriptorSetBind(
+          flags, eid, debugMessages, res.fixedBindSetOrSpace, res.fixedBindNumber,
+          ResourceUsage(uint32_t(ResourceUsage::VS_RWResource) + shad), resourceUsage);
+    }
+  }
+}
+
+void WrappedVulkan::AddUsageForDescriptorSetBind(
+    const ActionFlags flags, const uint32_t eid, rdcarray<DebugMessage> &debugMessages,
+    uint32_t bindset, uint32_t bind, ResourceUsage usage,
+    rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage)
+{
+  static bool hugeRangeWarned = false;
+
+  const VulkanRenderState &state = m_BakedCmdBufferInfo[m_LastCmdBufferID].state;
+  const rdcarray<VulkanStatePipeline::DescriptorAndOffsets> &descSets =
+      ((flags & ActionFlags::Dispatch) ? state.compute.descSets : state.graphics.descSets);
+
+  VulkanCreationInfo &c = m_CreationInfo;
+
+  DebugMessage msg;
+  msg.eventId = eid;
+  msg.category = MessageCategory::Execution;
+  msg.messageID = 0;
+  msg.source = MessageSource::IncorrectAPIUse;
+  msg.severity = MessageSeverity::High;
+
+  if(bindset >= descSets.size() || !descSets[bindset].IsBound())
+  {
+    msg.description =
+        StringFormat::Fmt("Shader referenced a descriptor set %i that was not bound", bindset);
+    debugMessages.push_back(msg);
+    return;
+  }
+
+  // can't generate usage for descriptor buffers
+  if(descSets[bindset].descBufferIdx != ~0U)
+    return;
+
+  const DescriptorSetInfo &descset = m_DescriptorSetState[descSets[bindset].descSet];
+  const DescSetLayout &layout = c.m_DescSetLayout[descset.layout];
+
+  if(layout.bindings.empty())
+  {
+    msg.description =
+        StringFormat::Fmt("Shader referenced a descriptor set %i that was not bound", bindset);
+    debugMessages.push_back(msg);
+    return;
+  }
+
+  if(bind >= layout.bindings.size())
+  {
+    msg.description = StringFormat::Fmt(
+        "Shader referenced a bind %i in descriptor set %i that does not exist. Mismatched "
+        "descriptor set?",
+        bind, bindset);
+    debugMessages.push_back(msg);
+    return;
+  }
+
+  // no object to mark for usage with inline blocks
+  if(layout.bindings[bind].layoutDescType == VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK)
+    return;
+
+  if(bind >= descset.data.binds.size())
+  {
+    msg.description = StringFormat::Fmt(
+        "Shader referenced a bind %i in descriptor set %i that does not exist. Mismatched "
+        "descriptor set?",
+        bind, bindset);
+    debugMessages.push_back(msg);
+    return;
+  }
+
+  uint32_t descriptorCount = layout.bindings[bind].descriptorCount;
+  if(layout.bindings[bind].variableSize)
+    descriptorCount = descset.data.variableDescriptorCount;
+
+  if(descriptorCount > 1000)
+  {
+    if(!hugeRangeWarned)
+      RDCWARN("Skipping large, most likely 'bindless', descriptor range");
+    hugeRangeWarned = true;
+    return;
+  }
+
+  for(uint32_t a = 0; a < descriptorCount; a++)
+  {
+    if(!descset.data.binds[bind])
+      return;
+
+    AddUsageForDescriptor(flags, eid, descset.data.binds[bind][a], usage, resourceUsage);
+  }
+}
+
+void WrappedVulkan::AddUsageForDescriptor(const ActionFlags flags, const uint32_t eid,
+                                          const DescriptorSetSlot &slot, ResourceUsage usage,
+                                          rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage)
+{
+  VulkanCreationInfo &c = m_CreationInfo;
+
+  // handled as part of the framebuffer attachments
+  if(slot.type == DescriptorSlotType::InputAttachment)
+    return;
+
+  // ignore unwritten descriptors
+  if(slot.type == DescriptorSlotType::Unwritten)
+    return;
+
+  // we don't mark samplers with usage
+  if(slot.type == DescriptorSlotType::Sampler)
+    return;
+
+  ResourceId id;
+
+  switch(slot.type)
+  {
+    case DescriptorSlotType::CombinedImageSampler:
+    case DescriptorSlotType::SampledImage:
+    case DescriptorSlotType::StorageImage:
+      if(slot.resource != ResourceId())
+        id = c.m_ImageView[slot.resource].image;
+      break;
+    case DescriptorSlotType::UniformTexelBuffer:
+    case DescriptorSlotType::StorageTexelBuffer:
+      id = slot.resource;
+      if(c.m_BufferView.find(slot.resource) != c.m_BufferView.end())
+        id = c.m_BufferView[slot.resource].buffer;
+      break;
+    case DescriptorSlotType::UniformBuffer:
+    case DescriptorSlotType::UniformBufferDynamic:
+    case DescriptorSlotType::StorageBuffer:
+    case DescriptorSlotType::StorageBufferDynamic:
+    case DescriptorSlotType::AccelerationStructure:
+      if(slot.resource != ResourceId())
+        id = slot.resource;
+      break;
+    default: RDCERR("Unexpected type %d", slot.type); break;
+  }
+
+  if(id != ResourceId())
+    resourceUsage.push_back(make_rdcpair(id, EventUsage(eid, usage)));
+}
+
+void WrappedVulkan::AddFramebufferUsage(const uint32_t eid, const VulkanRenderState &renderState,
+                                        rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage)
+{
+  ResourceId renderPass = renderState.GetRenderPass();
+  ResourceId framebuffer = renderState.GetFramebuffer();
+
+  uint32_t subpass = renderState.subpass;
+  const rdcarray<ResourceId> &fbattachments = renderState.GetFramebufferAttachments();
+
+  VulkanCreationInfo &c = m_CreationInfo;
+
+  if(renderPass != ResourceId() && framebuffer != ResourceId())
+  {
+    const VulkanCreationInfo::RenderPass &rp = c.m_RenderPass[renderPass];
+
+    if(subpass >= rp.subpasses.size())
+    {
+      RDCERR("Invalid subpass index %u, only %u subpasses exist in this renderpass", subpass,
+             (uint32_t)rp.subpasses.size());
+    }
+    else
+    {
+      const VulkanCreationInfo::RenderPass::Subpass &sub = rp.subpasses[subpass];
+
+      for(size_t i = 0; i < sub.inputAttachments.size(); i++)
+      {
+        uint32_t att = sub.inputAttachments[i];
+        if(att == VK_ATTACHMENT_UNUSED)
+          continue;
+        resourceUsage.push_back(make_rdcpair(c.m_ImageView[fbattachments[att]].image,
+                                             EventUsage(eid, ResourceUsage::InputTarget)));
+      }
+
+      for(size_t i = 0; i < sub.colorAttachments.size(); i++)
+      {
+        uint32_t att = sub.colorAttachments[i];
+        if(att == VK_ATTACHMENT_UNUSED)
+          continue;
+        resourceUsage.push_back(
+            make_rdcpair(c.m_ImageView[fbattachments[att]].image,
+                         EventUsage(eid, sub.customResolve ? ResourceUsage::ResolveDst
+                                                           : ResourceUsage::ColorTarget)));
+      }
+
+      if(sub.depthstencilAttachment >= 0)
+      {
+        int32_t att = sub.depthstencilAttachment;
+        resourceUsage.push_back(make_rdcpair(c.m_ImageView[fbattachments[att]].image,
+                                             EventUsage(eid, ResourceUsage::DepthStencilTarget)));
+      }
+    }
+  }
+  else if(renderState.dynamicRendering.active)
+  {
+    const VulkanRenderState::DynamicRendering &dyn = renderState.dynamicRendering;
+
+    for(size_t i = 0; i < dyn.color.size(); i++)
+    {
+      if(dyn.color[i].imageView == VK_NULL_HANDLE)
+        continue;
+
+      bool isCustomResolve = renderState.dynamicRendering.beginCustomResolve &&
+                             (dyn.color[i].resolveMode & VK_RESOLVE_MODE_CUSTOM_BIT_EXT);
+      if(!isCustomResolve)
+      {
+        resourceUsage.push_back(make_rdcpair(c.m_ImageView[GetResID(dyn.color[i].imageView)].image,
+                                             EventUsage(eid, ResourceUsage::ColorTarget)));
+      }
+      else
+      {
+        resourceUsage.push_back(make_rdcpair(c.m_ImageView[GetResID(dyn.color[i].imageView)].image,
+                                             EventUsage(eid, ResourceUsage::InputTarget)));
+        resourceUsage.push_back(
+            make_rdcpair(c.m_ImageView[GetResID(dyn.color[i].resolveImageView)].image,
+                         EventUsage(eid, ResourceUsage::ResolveDst)));
+      }
+    }
+
+    if(dyn.depth.imageView != VK_NULL_HANDLE)
+    {
+      bool isCustomResolve = renderState.dynamicRendering.beginCustomResolve &&
+                             (dyn.depth.resolveMode & VK_RESOLVE_MODE_CUSTOM_BIT_EXT);
+      if(!isCustomResolve)
+      {
+        resourceUsage.push_back(make_rdcpair(c.m_ImageView[GetResID(dyn.depth.imageView)].image,
+                                             EventUsage(eid, ResourceUsage::DepthStencilTarget)));
+      }
+      else
+      {
+        resourceUsage.push_back(make_rdcpair(c.m_ImageView[GetResID(dyn.depth.imageView)].image,
+                                             EventUsage(eid, ResourceUsage::InputTarget)));
+        resourceUsage.push_back(make_rdcpair(c.m_ImageView[GetResID(dyn.depth.resolveImageView)].image,
+                                             EventUsage(eid, ResourceUsage::ResolveDst)));
+      }
+    }
+
+    if(dyn.stencil.imageView != VK_NULL_HANDLE && dyn.depth.imageView != dyn.stencil.imageView)
+    {
+      bool isCustomResolve = renderState.dynamicRendering.beginCustomResolve &&
+                             (dyn.stencil.resolveMode & VK_RESOLVE_MODE_CUSTOM_BIT_EXT);
+      if(!isCustomResolve)
+
+      {
+        resourceUsage.push_back(make_rdcpair(c.m_ImageView[GetResID(dyn.stencil.imageView)].image,
+                                             EventUsage(eid, ResourceUsage::DepthStencilTarget)));
+      }
+      else
+      {
+        resourceUsage.push_back(make_rdcpair(c.m_ImageView[GetResID(dyn.stencil.imageView)].image,
+                                             EventUsage(eid, ResourceUsage::InputTarget)));
+        resourceUsage.push_back(
+            make_rdcpair(c.m_ImageView[GetResID(dyn.stencil.resolveImageView)].image,
+                         EventUsage(eid, ResourceUsage::ResolveDst)));
+      }
+    }
+  }
+}
+
+void WrappedVulkan::AddFramebufferUsageAllChildren(
+    VulkanActionTreeNode &actionNode, const VulkanRenderState &renderState,
+    rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage)
+{
+  if(!ShouldAddResourceUsage())
+    return;
+
+  for(VulkanActionTreeNode &c : actionNode.children)
+    AddFramebufferUsageAllChildren(c, renderState, resourceUsage);
+
+  ActionDescription &action = actionNode.action;
+  ActionFlags DrawMask = ActionFlags::MeshDispatch | ActionFlags::Drawcall;
+  if(action.flags & DrawMask)
+    AddFramebufferUsage(action.eventId, renderState, resourceUsage);
+}
+
 void WrappedVulkan::AddEvent()
 {
   APIEvent apievent;

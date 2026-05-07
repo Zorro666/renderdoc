@@ -180,6 +180,17 @@ bool WrappedVulkan::Serialise_vkCmdDraw(SerialiserType &ser, VkCommandBuffer com
   if(IsReplayingAndReading())
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
+    if(ShouldAddResourceUsage())
+    {
+      uint32_t eid = m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID;
+      rdcarray<DebugMessage> &debugMessages = m_BakedCmdBufferInfo[m_LastCmdBufferID].debugMessages;
+      rdcarray<BakedCmdBufferInfo::DeferredResourceUsage> &deferredResourceUsage =
+          m_BakedCmdBufferInfo[m_LastCmdBufferID].deferredResourceUsage;
+      rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage =
+          m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage;
+      AddUsage(ActionFlags::Drawcall | ActionFlags::Instanced, eid, debugMessages,
+               deferredResourceUsage, resourceUsage);
+    }
 
     if(IsActiveReplaying(m_State))
     {
@@ -269,6 +280,17 @@ bool WrappedVulkan::Serialise_vkCmdDrawIndexed(SerialiserType &ser, VkCommandBuf
   if(IsReplayingAndReading())
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
+    if(ShouldAddResourceUsage())
+    {
+      uint32_t eid = m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID;
+      rdcarray<DebugMessage> &debugMessages = m_BakedCmdBufferInfo[m_LastCmdBufferID].debugMessages;
+      rdcarray<BakedCmdBufferInfo::DeferredResourceUsage> &deferredResourceUsage =
+          m_BakedCmdBufferInfo[m_LastCmdBufferID].deferredResourceUsage;
+      rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage =
+          m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage;
+      AddUsage(ActionFlags::Drawcall | ActionFlags::Indexed | ActionFlags::Instanced, eid,
+               debugMessages, deferredResourceUsage, resourceUsage);
+    }
 
     if(IsActiveReplaying(m_State))
     {
@@ -361,6 +383,38 @@ bool WrappedVulkan::Serialise_vkCmdDrawIndirect(SerialiserType &ser, VkCommandBu
   if(IsReplayingAndReading())
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
+
+    if(ShouldAddResourceUsage())
+    {
+      uint32_t eid = m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID;
+      rdcarray<DebugMessage> &debugMessages = m_BakedCmdBufferInfo[m_LastCmdBufferID].debugMessages;
+      rdcarray<BakedCmdBufferInfo::DeferredResourceUsage> &deferredResourceUsage =
+          m_BakedCmdBufferInfo[m_LastCmdBufferID].deferredResourceUsage;
+      rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage =
+          m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage;
+
+      // account for the fake indirect subcommand
+      if(count == 1)
+        ++eid;
+
+      const uint32_t indirectEID = eid;
+
+      if(multidraw)
+        ++eid;
+
+      for(uint32_t i = 0; i < count; ++i)
+      {
+        AddUsage(ActionFlags::Drawcall | ActionFlags::Instanced | ActionFlags::Indirect, eid,
+                 debugMessages, deferredResourceUsage, resourceUsage);
+        ++eid;
+      }
+      if(count == 0)
+        AddUsage(ActionFlags::Drawcall | ActionFlags::Instanced | ActionFlags::Indirect,
+                 indirectEID, debugMessages, deferredResourceUsage, resourceUsage);
+
+      resourceUsage.push_back(
+          make_rdcpair(GetResID(buffer), EventUsage(indirectEID, ResourceUsage::Indirect)));
+    }
 
     // do execution (possibly partial)
     if(IsActiveReplaying(m_State))
@@ -764,6 +818,39 @@ bool WrappedVulkan::Serialise_vkCmdDrawIndexedIndirect(SerialiserType &ser,
   if(IsReplayingAndReading())
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
+    if(ShouldAddResourceUsage())
+    {
+      uint32_t eid = m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID;
+      rdcarray<DebugMessage> &debugMessages = m_BakedCmdBufferInfo[m_LastCmdBufferID].debugMessages;
+      rdcarray<BakedCmdBufferInfo::DeferredResourceUsage> &deferredResourceUsage =
+          m_BakedCmdBufferInfo[m_LastCmdBufferID].deferredResourceUsage;
+      rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage =
+          m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage;
+
+      // account for the fake indirect subcommand
+      if(count == 1)
+        ++eid;
+
+      const uint32_t indirectEID = eid;
+
+      if(multidraw)
+        ++eid;
+
+      for(uint32_t i = 0; i < count; ++i)
+      {
+        AddUsage(ActionFlags::Drawcall | ActionFlags::Indexed | ActionFlags::Instanced |
+                     ActionFlags::Indirect,
+                 eid, debugMessages, deferredResourceUsage, resourceUsage);
+        ++eid;
+      }
+      if(count == 0)
+        AddUsage(ActionFlags::Drawcall | ActionFlags::Indexed | ActionFlags::Instanced |
+                     ActionFlags::Indirect,
+                 indirectEID, debugMessages, deferredResourceUsage, resourceUsage);
+
+      resourceUsage.push_back(
+          make_rdcpair(GetResID(buffer), EventUsage(indirectEID, ResourceUsage::Indirect)));
+    }
 
     // do execution (possibly partial)
     if(IsActiveReplaying(m_State))
@@ -1134,6 +1221,16 @@ bool WrappedVulkan::Serialise_vkCmdDispatch(SerialiserType &ser, VkCommandBuffer
   if(IsReplayingAndReading())
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
+    if(ShouldAddResourceUsage())
+    {
+      uint32_t eid = m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID;
+      rdcarray<DebugMessage> &debugMessages = m_BakedCmdBufferInfo[m_LastCmdBufferID].debugMessages;
+      rdcarray<BakedCmdBufferInfo::DeferredResourceUsage> &deferredResourceUsage =
+          m_BakedCmdBufferInfo[m_LastCmdBufferID].deferredResourceUsage;
+      rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage =
+          m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage;
+      AddUsage(ActionFlags::Dispatch, eid, debugMessages, deferredResourceUsage, resourceUsage);
+    }
 
     if(IsActiveReplaying(m_State))
     {
@@ -1210,6 +1307,20 @@ bool WrappedVulkan::Serialise_vkCmdDispatchIndirect(SerialiserType &ser,
   if(IsReplayingAndReading())
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
+    if(ShouldAddResourceUsage())
+    {
+      uint32_t eid = m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID;
+      rdcarray<DebugMessage> &debugMessages = m_BakedCmdBufferInfo[m_LastCmdBufferID].debugMessages;
+      rdcarray<BakedCmdBufferInfo::DeferredResourceUsage> &deferredResourceUsage =
+          m_BakedCmdBufferInfo[m_LastCmdBufferID].deferredResourceUsage;
+      rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage =
+          m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage;
+      AddUsage(ActionFlags::Dispatch | ActionFlags::Indirect, eid, debugMessages,
+               deferredResourceUsage, resourceUsage);
+
+      resourceUsage.push_back(
+          make_rdcpair(GetResID(buffer), EventUsage(eid, ResourceUsage::Indirect)));
+    }
 
     if(IsActiveReplaying(m_State))
     {
@@ -1306,6 +1417,24 @@ bool WrappedVulkan::Serialise_vkCmdBlitImage(SerialiserType &ser, VkCommandBuffe
   if(IsReplayingAndReading())
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
+    if(ShouldAddResourceUsage())
+    {
+      uint32_t eid = m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID;
+      rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage =
+          m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage;
+      if(srcImage == destImage)
+      {
+        resourceUsage.push_back(
+            make_rdcpair(GetResID(srcImage), EventUsage(eid, ResourceUsage::Resolve)));
+      }
+      else
+      {
+        resourceUsage.push_back(
+            make_rdcpair(GetResID(srcImage), EventUsage(eid, ResourceUsage::ResolveSrc)));
+        resourceUsage.push_back(
+            make_rdcpair(GetResID(destImage), EventUsage(eid, ResourceUsage::ResolveDst)));
+      }
+    }
 
     if(IsActiveReplaying(m_State))
     {
@@ -1438,6 +1567,24 @@ bool WrappedVulkan::Serialise_vkCmdResolveImage(SerialiserType &ser, VkCommandBu
   if(IsReplayingAndReading())
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
+    if(ShouldAddResourceUsage())
+    {
+      uint32_t eid = m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID;
+      rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage =
+          m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage;
+      if(srcImage == destImage)
+      {
+        resourceUsage.push_back(
+            make_rdcpair(GetResID(srcImage), EventUsage(eid, ResourceUsage::Resolve)));
+      }
+      else
+      {
+        resourceUsage.push_back(
+            make_rdcpair(GetResID(srcImage), EventUsage(eid, ResourceUsage::ResolveSrc)));
+        resourceUsage.push_back(
+            make_rdcpair(GetResID(destImage), EventUsage(eid, ResourceUsage::ResolveDst)));
+      }
+    }
 
     if(IsActiveReplaying(m_State))
     {
@@ -1560,6 +1707,24 @@ bool WrappedVulkan::Serialise_vkCmdCopyImage(SerialiserType &ser, VkCommandBuffe
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
+    if(ShouldAddResourceUsage())
+    {
+      uint32_t eid = m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID;
+      rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage =
+          m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage;
+      if(srcImage == destImage)
+      {
+        resourceUsage.push_back(
+            make_rdcpair(GetResID(srcImage), EventUsage(eid, ResourceUsage::Copy)));
+      }
+      else
+      {
+        resourceUsage.push_back(
+            make_rdcpair(GetResID(srcImage), EventUsage(eid, ResourceUsage::CopySrc)));
+        resourceUsage.push_back(
+            make_rdcpair(GetResID(destImage), EventUsage(eid, ResourceUsage::CopyDst)));
+      }
+    }
     if(IsActiveReplaying(m_State))
     {
       if(InRerecordRange(m_LastCmdBufferID))
@@ -1677,6 +1842,16 @@ bool WrappedVulkan::Serialise_vkCmdCopyBufferToImage(
   if(IsReplayingAndReading())
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
+    if(ShouldAddResourceUsage())
+    {
+      uint32_t eid = m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID;
+      rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage =
+          m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage;
+      resourceUsage.push_back(
+          make_rdcpair(GetResID(srcBuffer), EventUsage(eid, ResourceUsage::CopySrc)));
+      resourceUsage.push_back(
+          make_rdcpair(GetResID(destImage), EventUsage(eid, ResourceUsage::CopyDst)));
+    }
 
     if(IsActiveReplaying(m_State))
     {
@@ -1781,6 +1956,16 @@ bool WrappedVulkan::Serialise_vkCmdCopyImageToBuffer(SerialiserType &ser,
   if(IsReplayingAndReading())
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
+    if(ShouldAddResourceUsage())
+    {
+      uint32_t eid = m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID;
+      rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage =
+          m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage;
+      resourceUsage.push_back(
+          make_rdcpair(GetResID(srcImage), EventUsage(eid, ResourceUsage::CopySrc)));
+      resourceUsage.push_back(
+          make_rdcpair(GetResID(destBuffer), EventUsage(eid, ResourceUsage::CopyDst)));
+    }
 
     if(IsActiveReplaying(m_State))
     {
@@ -1882,6 +2067,24 @@ bool WrappedVulkan::Serialise_vkCmdCopyBuffer(SerialiserType &ser, VkCommandBuff
   if(IsReplayingAndReading())
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
+    if(ShouldAddResourceUsage())
+    {
+      uint32_t eid = m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID;
+      rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage =
+          m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage;
+      if(srcBuffer == destBuffer)
+      {
+        resourceUsage.push_back(
+            make_rdcpair(GetResID(srcBuffer), EventUsage(eid, ResourceUsage::Copy)));
+      }
+      else
+      {
+        resourceUsage.push_back(
+            make_rdcpair(GetResID(srcBuffer), EventUsage(eid, ResourceUsage::CopySrc)));
+        resourceUsage.push_back(
+            make_rdcpair(GetResID(destBuffer), EventUsage(eid, ResourceUsage::CopyDst)));
+      }
+    }
 
     if(IsActiveReplaying(m_State))
     {
@@ -1986,6 +2189,15 @@ bool WrappedVulkan::Serialise_vkCmdUpdateBuffer(SerialiserType &ser, VkCommandBu
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
+    if(ShouldAddResourceUsage())
+    {
+      uint32_t eid = m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID;
+      rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage =
+          m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage;
+      resourceUsage.push_back(
+          make_rdcpair(GetResID(destBuffer), EventUsage(eid, ResourceUsage::CopyDst)));
+    }
+
     if(IsActiveReplaying(m_State))
     {
       if(InRerecordRange(m_LastCmdBufferID))
@@ -2075,6 +2287,15 @@ bool WrappedVulkan::Serialise_vkCmdFillBuffer(SerialiserType &ser, VkCommandBuff
   if(IsReplayingAndReading())
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
+
+    if(ShouldAddResourceUsage())
+    {
+      uint32_t eid = m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID;
+      rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage =
+          m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage;
+      resourceUsage.push_back(
+          make_rdcpair(GetResID(destBuffer), EventUsage(eid, ResourceUsage::Clear)));
+    }
 
     if(IsActiveReplaying(m_State))
     {
@@ -2166,7 +2387,13 @@ bool WrappedVulkan::Serialise_vkCmdClearColorImage(SerialiserType &ser, VkComman
   if(IsReplayingAndReading())
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
-
+    if(ShouldAddResourceUsage())
+    {
+      uint32_t eid = m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID;
+      rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage =
+          m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage;
+      resourceUsage.push_back(make_rdcpair(GetResID(image), EventUsage(eid, ResourceUsage::Clear)));
+    }
     if(IsActiveReplaying(m_State))
     {
       if(InRerecordRange(m_LastCmdBufferID))
@@ -2272,6 +2499,13 @@ bool WrappedVulkan::Serialise_vkCmdClearDepthStencilImage(
   if(IsReplayingAndReading())
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
+    if(ShouldAddResourceUsage())
+    {
+      uint32_t eid = m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID;
+      rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage =
+          m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage;
+      resourceUsage.push_back(make_rdcpair(GetResID(image), EventUsage(eid, ResourceUsage::Clear)));
+    }
 
     if(IsActiveReplaying(m_State))
     {
@@ -2383,6 +2617,75 @@ bool WrappedVulkan::Serialise_vkCmdClearAttachments(SerialiserType &ser,
   if(IsReplayingAndReading())
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
+    if(ShouldAddResourceUsage())
+    {
+      const VulkanRenderState &state = m_BakedCmdBufferInfo[m_LastCmdBufferID].state;
+      uint32_t eid = m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID;
+      rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage =
+          m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage;
+
+      if(state.GetRenderPass() != ResourceId() && state.GetFramebuffer() != ResourceId())
+      {
+        VulkanCreationInfo::RenderPass &rp = m_CreationInfo.m_RenderPass[state.GetRenderPass()];
+
+        RDCASSERT(state.subpass < rp.subpasses.size());
+
+        for(uint32_t a = 0; a < attachmentCount; a++)
+        {
+          uint32_t att = pAttachments[a].colorAttachment;
+
+          if(pAttachments[a].aspectMask & VK_IMAGE_ASPECT_COLOR_BIT)
+          {
+            if(att < (uint32_t)rp.subpasses[state.subpass].colorAttachments.size())
+            {
+              att = rp.subpasses[state.subpass].colorAttachments[att];
+              if(att < (uint32_t)state.GetFramebufferAttachments().size())
+              {
+                resourceUsage.push_back(make_rdcpair(
+                    m_CreationInfo.m_ImageView[state.GetFramebufferAttachments()[att]].image,
+                    EventUsage(eid, ResourceUsage::Clear)));
+              }
+            }
+          }
+          else if(pAttachments[a].aspectMask &
+                  (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT))
+          {
+            if(rp.subpasses[state.subpass].depthstencilAttachment >= 0)
+            {
+              att = (uint32_t)rp.subpasses[state.subpass].depthstencilAttachment;
+              resourceUsage.push_back(make_rdcpair(
+                  m_CreationInfo.m_ImageView[state.GetFramebufferAttachments()[att]].image,
+                  EventUsage(eid, ResourceUsage::Clear)));
+            }
+          }
+        }
+      }
+      else if(state.dynamicRendering.active)
+      {
+        const VulkanRenderState::DynamicRendering &dyn = state.dynamicRendering;
+
+        for(size_t a = 0; a < dyn.color.size(); a++)
+        {
+          resourceUsage.push_back(
+              make_rdcpair(m_CreationInfo.m_ImageView[GetResID(dyn.color[a].imageView)].image,
+                           EventUsage(eid, ResourceUsage::Clear)));
+        }
+
+        if(dyn.depth.imageView != VK_NULL_HANDLE)
+        {
+          resourceUsage.push_back(
+              make_rdcpair(m_CreationInfo.m_ImageView[GetResID(dyn.depth.imageView)].image,
+                           EventUsage(eid, ResourceUsage::Clear)));
+        }
+
+        if(dyn.stencil.imageView != VK_NULL_HANDLE && dyn.depth.imageView != dyn.stencil.imageView)
+        {
+          resourceUsage.push_back(
+              make_rdcpair(m_CreationInfo.m_ImageView[GetResID(dyn.stencil.imageView)].image,
+                           EventUsage(eid, ResourceUsage::Clear)));
+        }
+      }
+    }
 
     if(IsActiveReplaying(m_State))
     {
@@ -2492,6 +2795,17 @@ bool WrappedVulkan::Serialise_vkCmdDispatchBase(SerialiserType &ser, VkCommandBu
   if(IsReplayingAndReading())
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
+
+    if(ShouldAddResourceUsage())
+    {
+      uint32_t eid = m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID;
+      rdcarray<DebugMessage> &debugMessages = m_BakedCmdBufferInfo[m_LastCmdBufferID].debugMessages;
+      rdcarray<BakedCmdBufferInfo::DeferredResourceUsage> &deferredResourceUsage =
+          m_BakedCmdBufferInfo[m_LastCmdBufferID].deferredResourceUsage;
+      rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage =
+          m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage;
+      AddUsage(ActionFlags::Dispatch, eid, debugMessages, deferredResourceUsage, resourceUsage);
+    }
 
     if(IsActiveReplaying(m_State))
     {
@@ -2631,6 +2945,36 @@ bool WrappedVulkan::Serialise_vkCmdDrawIndirectCount(SerialiserType &ser,
           // don't count the popmarker child
           if(!children.empty() && children.back().flags & ActionFlags::PopMarker)
             count--;
+
+          if(ShouldAddResourceUsage())
+          {
+            uint32_t eid = m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID;
+            rdcarray<DebugMessage> &debugMessages =
+                m_BakedCmdBufferInfo[m_LastCmdBufferID].debugMessages;
+            rdcarray<BakedCmdBufferInfo::DeferredResourceUsage> &deferredResourceUsage =
+                m_BakedCmdBufferInfo[m_LastCmdBufferID].deferredResourceUsage;
+            rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage =
+                m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage;
+
+            const uint32_t indirectEID = eid;
+
+            // account for the fake indirect subcommand
+            ++eid;
+            for(uint32_t i = 0; i < count; ++i)
+            {
+              AddUsage(ActionFlags::Drawcall | ActionFlags::Instanced | ActionFlags::Indirect, eid,
+                       debugMessages, deferredResourceUsage, resourceUsage);
+              ++eid;
+            }
+            if(count == 0)
+              AddUsage(ActionFlags::Drawcall | ActionFlags::Instanced | ActionFlags::Indirect,
+                       indirectEID, debugMessages, deferredResourceUsage, resourceUsage);
+
+            resourceUsage.push_back(
+                make_rdcpair(GetResID(buffer), EventUsage(indirectEID, ResourceUsage::Indirect)));
+            resourceUsage.push_back(make_rdcpair(GetResID(countBuffer),
+                                                 EventUsage(indirectEID, ResourceUsage::Indirect)));
+          }
 
           // when we have a callback, submit every action individually to the callback
           if(m_ActionCallback)
@@ -2976,6 +3320,38 @@ bool WrappedVulkan::Serialise_vkCmdDrawIndexedIndirectCount(
           if(!children.empty() && children.back().flags & ActionFlags::PopMarker)
             count--;
 
+          if(ShouldAddResourceUsage())
+          {
+            uint32_t eid = m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID;
+            rdcarray<DebugMessage> &debugMessages =
+                m_BakedCmdBufferInfo[m_LastCmdBufferID].debugMessages;
+            rdcarray<BakedCmdBufferInfo::DeferredResourceUsage> &deferredResourceUsage =
+                m_BakedCmdBufferInfo[m_LastCmdBufferID].deferredResourceUsage;
+            rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage =
+                m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage;
+
+            const uint32_t indirectEID = eid;
+
+            // account for the fake indirect subcommand
+            ++eid;
+            for(uint32_t i = 0; i < count; ++i)
+            {
+              AddUsage(ActionFlags::Drawcall | ActionFlags::Indexed | ActionFlags::Instanced |
+                           ActionFlags::Indirect,
+                       eid, debugMessages, deferredResourceUsage, resourceUsage);
+              ++eid;
+            }
+            if(count == 0)
+              AddUsage(ActionFlags::Drawcall | ActionFlags::Indexed | ActionFlags::Instanced |
+                           ActionFlags::Indirect,
+                       indirectEID, debugMessages, deferredResourceUsage, resourceUsage);
+
+            resourceUsage.push_back(
+                make_rdcpair(GetResID(buffer), EventUsage(indirectEID, ResourceUsage::Indirect)));
+            resourceUsage.push_back(make_rdcpair(GetResID(countBuffer),
+                                                 EventUsage(indirectEID, ResourceUsage::Indirect)));
+          }
+
           // when we have a callback, submit every action individually to the callback
           if(m_ActionCallback)
           {
@@ -3283,6 +3659,22 @@ bool WrappedVulkan::Serialise_vkCmdDrawIndirectByteCountEXT(
     // do execution (possibly partial)
     if(IsActiveReplaying(m_State))
     {
+      if(ShouldAddResourceUsage())
+      {
+        uint32_t eid = m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID;
+        rdcarray<DebugMessage> &debugMessages = m_BakedCmdBufferInfo[m_LastCmdBufferID].debugMessages;
+        rdcarray<BakedCmdBufferInfo::DeferredResourceUsage> &deferredResourceUsage =
+            m_BakedCmdBufferInfo[m_LastCmdBufferID].deferredResourceUsage;
+        rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage =
+            m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage;
+
+        AddUsage(ActionFlags::Drawcall | ActionFlags::Instanced | ActionFlags::Indirect, eid,
+                 debugMessages, deferredResourceUsage, resourceUsage);
+
+        resourceUsage.push_back(
+            make_rdcpair(GetResID(counterBuffer), EventUsage(eid, ResourceUsage::Indirect)));
+      }
+
       if(InRerecordRange(m_LastCmdBufferID))
       {
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
@@ -3383,6 +3775,28 @@ bool WrappedVulkan::Serialise_vkCmdCopyBuffer2(SerialiserType &ser, VkCommandBuf
 
   if(IsReplayingAndReading())
   {
+    m_LastCmdBufferID = GetResID(commandBuffer);
+
+    if(ShouldAddResourceUsage())
+    {
+      uint32_t eid = m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID;
+      rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage =
+          m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage;
+
+      if(CopyInfo.srcBuffer == CopyInfo.dstBuffer)
+      {
+        resourceUsage.push_back(
+            make_rdcpair(GetResID(CopyInfo.srcBuffer), EventUsage(eid, ResourceUsage::Copy)));
+      }
+      else
+      {
+        resourceUsage.push_back(
+            make_rdcpair(GetResID(CopyInfo.srcBuffer), EventUsage(eid, ResourceUsage::CopySrc)));
+        resourceUsage.push_back(
+            make_rdcpair(GetResID(CopyInfo.dstBuffer), EventUsage(eid, ResourceUsage::CopyDst)));
+      }
+    }
+
     VkCopyBufferInfo2 unwrappedInfo = CopyInfo;
     unwrappedInfo.srcBuffer = Unwrap(unwrappedInfo.srcBuffer);
     unwrappedInfo.dstBuffer = Unwrap(unwrappedInfo.dstBuffer);
@@ -3390,8 +3804,6 @@ bool WrappedVulkan::Serialise_vkCmdCopyBuffer2(SerialiserType &ser, VkCommandBuf
     byte *tempMem = GetTempMemory(GetNextPatchSize(unwrappedInfo.pNext));
 
     UnwrapNextChain(m_State, "VkCopyBufferInfo2", tempMem, (VkBaseInStructure *)&unwrappedInfo);
-
-    m_LastCmdBufferID = GetResID(commandBuffer);
 
     if(IsActiveReplaying(m_State))
     {
@@ -3489,6 +3901,28 @@ bool WrappedVulkan::Serialise_vkCmdCopyImage2(SerialiserType &ser, VkCommandBuff
 
   if(IsReplayingAndReading())
   {
+    m_LastCmdBufferID = GetResID(commandBuffer);
+
+    if(ShouldAddResourceUsage())
+    {
+      uint32_t eid = m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID;
+      rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage =
+          m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage;
+
+      if(CopyInfo.srcImage == CopyInfo.dstImage)
+      {
+        resourceUsage.push_back(
+            make_rdcpair(GetResID(CopyInfo.srcImage), EventUsage(eid, ResourceUsage::Copy)));
+      }
+      else
+      {
+        resourceUsage.push_back(
+            make_rdcpair(GetResID(CopyInfo.srcImage), EventUsage(eid, ResourceUsage::CopySrc)));
+        resourceUsage.push_back(
+            make_rdcpair(GetResID(CopyInfo.dstImage), EventUsage(eid, ResourceUsage::CopyDst)));
+      }
+    }
+
     VkCopyImageInfo2 unwrappedInfo = CopyInfo;
     unwrappedInfo.srcImage = Unwrap(unwrappedInfo.srcImage);
     unwrappedInfo.dstImage = Unwrap(unwrappedInfo.dstImage);
@@ -3496,8 +3930,6 @@ bool WrappedVulkan::Serialise_vkCmdCopyImage2(SerialiserType &ser, VkCommandBuff
     byte *tempMem = GetTempMemory(GetNextPatchSize(unwrappedInfo.pNext));
 
     UnwrapNextChain(m_State, "VkCopyImageInfo2", tempMem, (VkBaseInStructure *)&unwrappedInfo);
-
-    m_LastCmdBufferID = GetResID(commandBuffer);
 
     if(IsActiveReplaying(m_State))
     {
@@ -3603,6 +4035,19 @@ bool WrappedVulkan::Serialise_vkCmdCopyBufferToImage2(
 
   if(IsReplayingAndReading())
   {
+    m_LastCmdBufferID = GetResID(commandBuffer);
+
+    if(ShouldAddResourceUsage())
+    {
+      uint32_t eid = m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID;
+      rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage =
+          m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage;
+      resourceUsage.push_back(
+          make_rdcpair(GetResID(CopyInfo.srcBuffer), EventUsage(eid, ResourceUsage::CopySrc)));
+      resourceUsage.push_back(
+          make_rdcpair(GetResID(CopyInfo.dstImage), EventUsage(eid, ResourceUsage::CopyDst)));
+    }
+
     VkCopyBufferToImageInfo2 unwrappedInfo = CopyInfo;
     unwrappedInfo.srcBuffer = Unwrap(unwrappedInfo.srcBuffer);
     unwrappedInfo.dstImage = Unwrap(unwrappedInfo.dstImage);
@@ -3611,8 +4056,6 @@ bool WrappedVulkan::Serialise_vkCmdCopyBufferToImage2(
 
     UnwrapNextChain(m_State, "VkCopyBufferToImageInfo2", tempMem,
                     (VkBaseInStructure *)&unwrappedInfo);
-
-    m_LastCmdBufferID = GetResID(commandBuffer);
 
     if(IsActiveReplaying(m_State))
     {
@@ -3726,6 +4169,19 @@ bool WrappedVulkan::Serialise_vkCmdCopyImageToBuffer2(
 
   if(IsReplayingAndReading())
   {
+    m_LastCmdBufferID = GetResID(commandBuffer);
+
+    if(ShouldAddResourceUsage())
+    {
+      uint32_t eid = m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID;
+      rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage =
+          m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage;
+      resourceUsage.push_back(
+          make_rdcpair(GetResID(CopyInfo.srcImage), EventUsage(eid, ResourceUsage::CopySrc)));
+      resourceUsage.push_back(
+          make_rdcpair(GetResID(CopyInfo.dstBuffer), EventUsage(eid, ResourceUsage::CopyDst)));
+    }
+
     VkCopyImageToBufferInfo2 unwrappedInfo = CopyInfo;
     unwrappedInfo.srcImage = Unwrap(unwrappedInfo.srcImage);
     unwrappedInfo.dstBuffer = Unwrap(unwrappedInfo.dstBuffer);
@@ -3734,8 +4190,6 @@ bool WrappedVulkan::Serialise_vkCmdCopyImageToBuffer2(
 
     UnwrapNextChain(m_State, "VkCopyImageToBufferInfo2", tempMem,
                     (VkBaseInStructure *)&unwrappedInfo);
-
-    m_LastCmdBufferID = GetResID(commandBuffer);
 
     if(IsActiveReplaying(m_State))
     {
@@ -3857,6 +4311,25 @@ bool WrappedVulkan::Serialise_vkCmdBlitImage2(SerialiserType &ser, VkCommandBuff
     UnwrapNextChain(m_State, "VkBlitImageInfo2", tempMem, (VkBaseInStructure *)&unwrappedInfo);
 
     m_LastCmdBufferID = GetResID(commandBuffer);
+
+    if(ShouldAddResourceUsage())
+    {
+      uint32_t eid = m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID;
+      rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage =
+          m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage;
+
+      ResourceId srcid = GetResID(BlitInfo.srcImage);
+      ResourceId dstid = GetResID(BlitInfo.dstImage);
+      if(srcid == dstid)
+      {
+        resourceUsage.push_back(make_rdcpair(srcid, EventUsage(eid, ResourceUsage::Resolve)));
+      }
+      else
+      {
+        resourceUsage.push_back(make_rdcpair(srcid, EventUsage(eid, ResourceUsage::ResolveSrc)));
+        resourceUsage.push_back(make_rdcpair(dstid, EventUsage(eid, ResourceUsage::ResolveDst)));
+      }
+    }
 
     if(IsActiveReplaying(m_State))
     {
@@ -3980,6 +4453,24 @@ bool WrappedVulkan::Serialise_vkCmdResolveImage2(SerialiserType &ser, VkCommandB
     UnwrapNextChain(m_State, "VkResolveImageInfo2", tempMem, (VkBaseInStructure *)&unwrappedInfo);
 
     m_LastCmdBufferID = GetResID(commandBuffer);
+    if(ShouldAddResourceUsage())
+    {
+      uint32_t eid = m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID;
+      rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage =
+          m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage;
+
+      ResourceId srcid = GetResID(ResolveInfo.srcImage);
+      ResourceId dstid = GetResID(ResolveInfo.dstImage);
+      if(srcid == dstid)
+      {
+        resourceUsage.push_back(make_rdcpair(srcid, EventUsage(eid, ResourceUsage::Resolve)));
+      }
+      else
+      {
+        resourceUsage.push_back(make_rdcpair(srcid, EventUsage(eid, ResourceUsage::ResolveSrc)));
+        resourceUsage.push_back(make_rdcpair(dstid, EventUsage(eid, ResourceUsage::ResolveDst)));
+      }
+    }
 
     if(IsActiveReplaying(m_State))
     {
@@ -4091,6 +4582,17 @@ bool WrappedVulkan::Serialise_vkCmdDrawMeshTasksEXT(SerialiserType &ser,
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
+    if(ShouldAddResourceUsage())
+    {
+      uint32_t eid = m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID;
+      rdcarray<DebugMessage> &debugMessages = m_BakedCmdBufferInfo[m_LastCmdBufferID].debugMessages;
+      rdcarray<BakedCmdBufferInfo::DeferredResourceUsage> &deferredResourceUsage =
+          m_BakedCmdBufferInfo[m_LastCmdBufferID].deferredResourceUsage;
+      rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage =
+          m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage;
+      AddUsage(ActionFlags::MeshDispatch, eid, debugMessages, deferredResourceUsage, resourceUsage);
+    }
+
     if(IsActiveReplaying(m_State))
     {
       if(InRerecordRange(m_LastCmdBufferID))
@@ -4181,6 +4683,38 @@ bool WrappedVulkan::Serialise_vkCmdDrawMeshTasksIndirectEXT(SerialiserType &ser,
     // do execution (possibly partial)
     if(IsActiveReplaying(m_State))
     {
+      if(ShouldAddResourceUsage())
+      {
+        uint32_t eid = m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID;
+        rdcarray<DebugMessage> &debugMessages = m_BakedCmdBufferInfo[m_LastCmdBufferID].debugMessages;
+        rdcarray<BakedCmdBufferInfo::DeferredResourceUsage> &deferredResourceUsage =
+            m_BakedCmdBufferInfo[m_LastCmdBufferID].deferredResourceUsage;
+        rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage =
+            m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage;
+
+        // account for the fake indirect subcommand
+        if(drawCount == 1)
+          ++eid;
+
+        const uint32_t indirectEID = eid;
+
+        if(multidraw)
+          ++eid;
+
+        for(uint32_t i = 0; i < drawCount; ++i)
+        {
+          AddUsage(ActionFlags::MeshDispatch | ActionFlags::Indirect, eid, debugMessages,
+                   deferredResourceUsage, resourceUsage);
+          ++eid;
+        }
+        if(drawCount == 0)
+          AddUsage(ActionFlags::MeshDispatch | ActionFlags::Indirect, indirectEID, debugMessages,
+                   deferredResourceUsage, resourceUsage);
+
+        resourceUsage.push_back(
+            make_rdcpair(GetResID(buffer), EventUsage(indirectEID, ResourceUsage::Indirect)));
+      }
+
       if(!multidraw)
       {
         // for single draws, it's pretty simple
@@ -4638,6 +5172,36 @@ bool WrappedVulkan::Serialise_vkCmdDrawMeshTasksIndirectCountEXT(
           // don't count the popmarker child
           if(!children.empty() && children.back().flags & ActionFlags::PopMarker)
             count--;
+
+          if(ShouldAddResourceUsage())
+          {
+            uint32_t eid = m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID;
+            rdcarray<DebugMessage> &debugMessages =
+                m_BakedCmdBufferInfo[m_LastCmdBufferID].debugMessages;
+            rdcarray<BakedCmdBufferInfo::DeferredResourceUsage> &deferredResourceUsage =
+                m_BakedCmdBufferInfo[m_LastCmdBufferID].deferredResourceUsage;
+            rdcarray<rdcpair<ResourceId, EventUsage>> &resourceUsage =
+                m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage;
+
+            const uint32_t indirectEID = eid;
+
+            // account for the fake indirect subcommand
+            ++eid;
+            for(uint32_t i = 0; i < count; ++i)
+            {
+              AddUsage(ActionFlags::MeshDispatch | ActionFlags::Indirect, eid, debugMessages,
+                       deferredResourceUsage, resourceUsage);
+              ++eid;
+            }
+            if(count == 0)
+              AddUsage(ActionFlags::MeshDispatch | ActionFlags::Indirect, indirectEID,
+                       debugMessages, deferredResourceUsage, resourceUsage);
+
+            resourceUsage.push_back(
+                make_rdcpair(GetResID(buffer), EventUsage(indirectEID, ResourceUsage::Indirect)));
+            resourceUsage.push_back(make_rdcpair(GetResID(countBuffer),
+                                                 EventUsage(indirectEID, ResourceUsage::Indirect)));
+          }
 
           // when we have a callback, submit every action individually to the callback
           if(m_ActionCallback)
