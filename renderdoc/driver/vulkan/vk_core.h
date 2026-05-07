@@ -813,6 +813,20 @@ private:
 
     int markerCount;
 
+    struct DeferredResourceUsage
+    {
+      uint32_t descBufVersionIdx;
+      ResourceId pipeline;
+      ResourceId shaderObjects[NumShaderStages];
+      rdcarray<VulkanStatePipeline::DescriptorAndOffsets> descSets;
+      ActionFlags flags;
+      uint32_t eid;
+    };
+    rdcarray<DeferredResourceUsage> deferredResourceUsage;
+    rdcarray<rdcpair<ResourceId, EventUsage>> resourceUsage;
+
+    rdcarray<rdcpair<ResourceId, EventUsage>> OLD_resourceUsage;
+
     VulkanRenderState state;
 
     rdcflatmap<ResourceId, ImageState> imageStates;
@@ -845,6 +859,18 @@ private:
     uint32_t eventCount;             // how many events are in this cmd buffer, for quick skipping
     uint32_t curEventID;             // current event ID while reading or executing
     uint32_t actionCount;            // similar to above
+
+    // the index in m_DescriptorBufferVersions for the current GPUBuffer containing the descriptor buffer snapshot
+    uint32_t descBufVersionIdx = ~0U;
+
+    // when multiple buffers are bound, the offsets of each in the single GPUBuffer where they are
+    rdcarray<uint64_t> descBufOffsets;
+    struct DeferredDescBufCopy
+    {
+      VkBuffer unwrappedDstBuffer;
+      rdcarray<rdcpair<VkDeviceAddress, uint64_t>> copyOffsets;
+    };
+    rdcarray<DeferredDescBufCopy> descBufDeferredCopies;
   };
 
   uint64_t m_FakePushSetID = 0;
@@ -1088,6 +1114,9 @@ private:
   std::map<ResourceId, BakedCmdBufferInfo> m_BakedCmdBufferInfo;
   // immutable creation data
   VulkanCreationInfo m_CreationInfo;
+
+  rdcarray<GPUBuffer> m_DescriptorBufferVersions;
+  void VersionDescriptorBuffers(VkCommandBuffer cmd);
 
   void CopyVersionedDescriptorBuffer(VkCommandBuffer cmdBuf, VkBuffer unwrappedDstBuf,
                                      const rdcarray<rdcpair<VkDeviceAddress, uint64_t>> &copyOffsets);
