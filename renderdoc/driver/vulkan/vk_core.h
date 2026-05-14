@@ -1029,7 +1029,10 @@ private:
   // undefined/empty otherwise.
   VulkanRenderState m_RenderState;
 
-  bool ShouldAddResourceUsage() const { return IsActiveReplaying(m_State) && !m_ReplayedToEnd; }
+  bool ShouldAddResourceUsage() const
+  {
+    return IsActiveReplaying(m_State) && (m_ResourceUsageState == ResourceUsageState::Add);
+  }
   bool InRerecordRange(ResourceId cmdid);
   bool HasRerecordCmdBuf(ResourceId cmdid);
   bool IsRenderpassOpen(ResourceId cmdid);
@@ -1279,7 +1282,13 @@ private:
 
   rdcarray<APIEvent> m_RootEvents, m_Events;
   bool m_AddedAction;
-  bool m_ReplayedToEnd = false;
+  enum class ResourceUsageState
+  {
+    Needed,
+    Add,
+    Added,
+  };
+  ResourceUsageState m_ResourceUsageState = ResourceUsageState::Needed;
 
   SDObject *m_RootAnnotation = NULL;
 

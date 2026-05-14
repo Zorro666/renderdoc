@@ -199,7 +199,7 @@ WrappedVulkan::WrappedVulkan()
 
   m_CurChunkOffset = 0;
   m_AddedAction = false;
-  m_ReplayedToEnd = false;
+  m_ResourceUsageState = ResourceUsageState::Needed;
 
   m_LastCmdBufferID = ResourceId();
 
@@ -3822,6 +3822,13 @@ RDResult WrappedVulkan::ReadLogInitialisation(RDCFile *rdc, bool storeStructured
 RDResult WrappedVulkan::ContextReplayLog(CaptureState readType, uint32_t startEventID,
                                          uint32_t endEventID, bool partial)
 {
+  if(IsActiveReplaying(m_State))
+  {
+    if((m_ResourceUsageState == ResourceUsageState::Needed) &&
+       (endEventID >= m_Actions.back()->eventId))
+      m_ResourceUsageState = ResourceUsageState::Add;
+  }
+
   m_FrameReader->SetOffset(0);
 
   ReadSerialiser ser(m_FrameReader, Ownership::Nothing);
@@ -4152,10 +4159,10 @@ RDResult WrappedVulkan::ContextReplayLog(CaptureState readType, uint32_t startEv
 
   m_RerecordCmds.clear();
 
-  if(IsActiveReplaying(m_State))
+  if(ShouldAddResourceUsage())
   {
-    if(endEventID >= m_Actions.back()->eventId)
-      m_ReplayedToEnd = true;
+    RDCASSERT(endEventID >= m_Actions.back()->eventId);
+    m_ResourceUsageState = ResourceUsageState::Added;
   }
 
   RDCASSERT(m_BakedCmdBufferInfo.find(ResourceId()) == m_BakedCmdBufferInfo.end());
@@ -5854,7 +5861,7 @@ WrappedVulkan::CommandBufferNode *WrappedVulkan::GetCommandBufferPartialSubmissi
 
 EventFlags WrappedVulkan::GetEventFlags(uint32_t eid)
 {
-  if(!m_ReplayedToEnd)
+  if(m_ResourceUsageState != ResourceUsageState::Added)
     ReplayLog(0, ~0U, ReplayLogType::eReplay_Full);
 
   return m_EventFlags[eid];
@@ -5862,7 +5869,7 @@ EventFlags WrappedVulkan::GetEventFlags(uint32_t eid)
 
 rdcarray<EventUsage> WrappedVulkan::GetUsage(ResourceId id)
 {
-  if(!m_ReplayedToEnd)
+  if(m_ResourceUsageState != ResourceUsageState::Added)
     ReplayLog(0, ~0U, ReplayLogType::eReplay_Full);
 
   rdcarray<EventUsage> newUsages = m_ResourceUsageTracker.GetUsage(id);
