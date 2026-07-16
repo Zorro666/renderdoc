@@ -520,6 +520,7 @@ bool WrappedVulkan::Serialise_vkCmdDrawIndirect(SerialiserType &ser, VkCommandBu
 
         // account for the fake indirect subcommand before checking if we're in re-record range
         m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID += count;
+        m_BakedCmdBufferInfo[m_LastCmdBufferID].OLD_curEventID += count;
 
         if(InRerecordRange(m_LastCmdBufferID))
         {
@@ -538,7 +539,10 @@ bool WrappedVulkan::Serialise_vkCmdDrawIndirect(SerialiserType &ser, VkCommandBu
           }
         }
         if(m_FirstEventID > 1)
+        {
+          OLD_m_RootEventID += count;
           m_RootEventID += count;
+        }
       }
       else
       {
@@ -548,7 +552,7 @@ bool WrappedVulkan::Serialise_vkCmdDrawIndirect(SerialiserType &ser, VkCommandBu
         {
           commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-          uint32_t curEID = m_RootEventID;
+          uint32_t curEID = OLD_m_RootEventID;
 
           if(m_FirstEventID <= 1)
           {
@@ -690,9 +694,15 @@ bool WrappedVulkan::Serialise_vkCmdDrawIndirect(SerialiserType &ser, VkCommandBu
         // multidraws skip the event ID past the whole thing
         ++countEventsReplayed;
         if(m_FirstEventID > 1)
+        {
+          OLD_m_RootEventID += countEventsReplayed;
           m_RootEventID += countEventsReplayed;
+        }
         else
+        {
           m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID += countEventsReplayed;
+          m_BakedCmdBufferInfo[m_LastCmdBufferID].OLD_curEventID += countEventsReplayed;
+        }
       }
     }
     else
@@ -738,6 +748,8 @@ bool WrappedVulkan::Serialise_vkCmdDrawIndirect(SerialiserType &ser, VkCommandBu
 
         m_StructuredFile->chunks.insert(m_StructuredFile->chunks.size() - 1, fakeChunk);
 
+        m_BakedCmdBufferInfo[m_LastCmdBufferID].OLD_curEventID++;
+
         AddEvent();
 
         action.customName = name;
@@ -748,6 +760,13 @@ bool WrappedVulkan::Serialise_vkCmdDrawIndirect(SerialiserType &ser, VkCommandBu
         VulkanEventNode &eventNode = GetLastEventNode();
         eventNode.indirectPatch = indirectPatch;
         eventNode.AddResourceUsage(GetResID(buffer), ResourceUsage::Indirect);
+
+        VulkanActionTreeNode &actionNode = GetActionStack().back()->children.back();
+
+        actionNode.indirectPatch = indirectPatch;
+
+        actionNode.resourceUsage.push_back(make_rdcpair(
+            GetResID(buffer), EventUsage(actionNode.action.eventId, ResourceUsage::Indirect)));
 
         return true;
       }
@@ -768,6 +787,16 @@ bool WrappedVulkan::Serialise_vkCmdDrawIndirect(SerialiserType &ser, VkCommandBu
       VulkanEventNode &eventNode = GetLastEventNode();
       eventNode.indirectPatch = indirectPatch;
       eventNode.AddResourceUsage(GetResID(buffer), ResourceUsage::Indirect);
+
+      VulkanActionTreeNode &actionNode = GetActionStack().back()->children.back();
+
+      actionNode.indirectPatch = indirectPatch;
+
+      actionNode.resourceUsage.push_back(make_rdcpair(
+          GetResID(buffer), EventUsage(actionNode.action.eventId, ResourceUsage::Indirect)));
+
+      if(count > 0)
+        m_BakedCmdBufferInfo[m_LastCmdBufferID].OLD_curEventID++;
 
       for(uint32_t i = 0; i < count; i++)
       {
@@ -797,6 +826,8 @@ bool WrappedVulkan::Serialise_vkCmdDrawIndirect(SerialiserType &ser, VkCommandBu
 
         AddEvent();
         AddAction(multi);
+
+        m_BakedCmdBufferInfo[m_LastCmdBufferID].OLD_curEventID++;
       }
 
       if(count > 0)
@@ -873,6 +904,7 @@ bool WrappedVulkan::Serialise_vkCmdDrawIndexedIndirect(SerialiserType &ser,
 
         // account for the fake indirect subcommand before checking if we're in re-record range
         m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID += count;
+        m_BakedCmdBufferInfo[m_LastCmdBufferID].OLD_curEventID += count;
 
         if(InRerecordRange(m_LastCmdBufferID))
         {
@@ -892,7 +924,10 @@ bool WrappedVulkan::Serialise_vkCmdDrawIndexedIndirect(SerialiserType &ser,
           }
         }
         if(m_FirstEventID > 1)
+        {
+          OLD_m_RootEventID += count;
           m_RootEventID += count;
+        }
       }
       else
       {
@@ -902,7 +937,7 @@ bool WrappedVulkan::Serialise_vkCmdDrawIndexedIndirect(SerialiserType &ser,
         {
           commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-          uint32_t curEID = m_RootEventID;
+          uint32_t curEID = OLD_m_RootEventID;
 
           if(m_FirstEventID <= 1)
           {
@@ -1048,9 +1083,15 @@ bool WrappedVulkan::Serialise_vkCmdDrawIndexedIndirect(SerialiserType &ser,
         // multidraws skip the event ID past the whole thing
         ++countEventsReplayed;
         if(m_FirstEventID > 1)
+        {
+          OLD_m_RootEventID += countEventsReplayed;
           m_RootEventID += countEventsReplayed;
+        }
         else
+        {
           m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID += countEventsReplayed;
+          m_BakedCmdBufferInfo[m_LastCmdBufferID].OLD_curEventID += countEventsReplayed;
+        }
       }
     }
     else
@@ -1096,6 +1137,8 @@ bool WrappedVulkan::Serialise_vkCmdDrawIndexedIndirect(SerialiserType &ser,
 
         m_StructuredFile->chunks.insert(m_StructuredFile->chunks.size() - 1, fakeChunk);
 
+        m_BakedCmdBufferInfo[m_LastCmdBufferID].OLD_curEventID++;
+
         AddEvent();
 
         action.customName = name;
@@ -1107,6 +1150,13 @@ bool WrappedVulkan::Serialise_vkCmdDrawIndexedIndirect(SerialiserType &ser,
         VulkanEventNode &eventNode = GetLastEventNode();
         eventNode.indirectPatch = indirectPatch;
         eventNode.AddResourceUsage(GetResID(buffer), ResourceUsage::Indirect);
+
+        VulkanActionTreeNode &actionNode = GetActionStack().back()->children.back();
+
+        actionNode.indirectPatch = indirectPatch;
+
+        actionNode.resourceUsage.push_back(make_rdcpair(
+            GetResID(buffer), EventUsage(actionNode.action.eventId, ResourceUsage::Indirect)));
 
         return true;
       }
@@ -1128,6 +1178,16 @@ bool WrappedVulkan::Serialise_vkCmdDrawIndexedIndirect(SerialiserType &ser,
       VulkanEventNode &eventNode = GetLastEventNode();
       eventNode.indirectPatch = indirectPatch;
       eventNode.AddResourceUsage(GetResID(buffer), ResourceUsage::Indirect);
+
+      VulkanActionTreeNode &actionNode = GetActionStack().back()->children.back();
+
+      actionNode.indirectPatch = indirectPatch;
+
+      actionNode.resourceUsage.push_back(make_rdcpair(
+          GetResID(buffer), EventUsage(actionNode.action.eventId, ResourceUsage::Indirect)));
+
+      if(count > 0)
+        m_BakedCmdBufferInfo[m_LastCmdBufferID].OLD_curEventID++;
 
       for(uint32_t i = 0; i < count; i++)
       {
@@ -1158,6 +1218,8 @@ bool WrappedVulkan::Serialise_vkCmdDrawIndexedIndirect(SerialiserType &ser,
 
         AddEvent();
         AddAction(multi);
+
+        m_BakedCmdBufferInfo[m_LastCmdBufferID].OLD_curEventID++;
       }
 
       if(count > 0)
@@ -1336,6 +1398,13 @@ bool WrappedVulkan::Serialise_vkCmdDispatchIndirect(SerialiserType &ser,
         VulkanEventNode &eventNode = GetLastEventNode();
         eventNode.indirectPatch = indirectPatch;
         eventNode.AddResourceUsage(GetResID(buffer), ResourceUsage::Indirect);
+
+        VulkanActionTreeNode &actionNode = GetActionStack().back()->children.back();
+
+        actionNode.indirectPatch = indirectPatch;
+
+        actionNode.resourceUsage.push_back(make_rdcpair(
+            GetResID(buffer), EventUsage(actionNode.action.eventId, ResourceUsage::Indirect)));
       }
     }
   }
@@ -1443,12 +1512,20 @@ bool WrappedVulkan::Serialise_vkCmdBlitImage(SerialiserType &ser, VkCommandBuffe
         AddAction(action);
 
         VulkanEventNode &eventNode = GetLastEventNode();
+        VulkanActionTreeNode &actionNode = GetActionStack().back()->children.back();
+
         if(srcImage == destImage)
         {
+          actionNode.resourceUsage.push_back(make_rdcpair(
+              GetResID(srcImage), EventUsage(actionNode.action.eventId, ResourceUsage::Resolve)));
           eventNode.AddResourceUsage(GetResID(srcImage), ResourceUsage::Resolve);
         }
         else
         {
+          actionNode.resourceUsage.push_back(make_rdcpair(
+              GetResID(srcImage), EventUsage(actionNode.action.eventId, ResourceUsage::ResolveSrc)));
+          actionNode.resourceUsage.push_back(make_rdcpair(
+              GetResID(destImage), EventUsage(actionNode.action.eventId, ResourceUsage::ResolveDst)));
           eventNode.AddResourceUsage(GetResID(srcImage), ResourceUsage::ResolveSrc);
           eventNode.AddResourceUsage(GetResID(destImage), ResourceUsage::ResolveDst);
         }
@@ -1586,12 +1663,20 @@ bool WrappedVulkan::Serialise_vkCmdResolveImage(SerialiserType &ser, VkCommandBu
         AddAction(action);
 
         VulkanEventNode &eventNode = GetLastEventNode();
+        VulkanActionTreeNode &actionNode = GetActionStack().back()->children.back();
+
         if(srcImage == destImage)
         {
+          actionNode.resourceUsage.push_back(make_rdcpair(
+              GetResID(srcImage), EventUsage(actionNode.action.eventId, ResourceUsage::Resolve)));
           eventNode.AddResourceUsage(GetResID(srcImage), ResourceUsage::Resolve);
         }
         else
         {
+          actionNode.resourceUsage.push_back(make_rdcpair(
+              GetResID(srcImage), EventUsage(actionNode.action.eventId, ResourceUsage::ResolveSrc)));
+          actionNode.resourceUsage.push_back(make_rdcpair(
+              GetResID(destImage), EventUsage(actionNode.action.eventId, ResourceUsage::ResolveDst)));
           eventNode.AddResourceUsage(GetResID(srcImage), ResourceUsage::ResolveSrc);
           eventNode.AddResourceUsage(GetResID(destImage), ResourceUsage::ResolveDst);
         }
@@ -1719,12 +1804,20 @@ bool WrappedVulkan::Serialise_vkCmdCopyImage(SerialiserType &ser, VkCommandBuffe
         AddAction(action);
 
         VulkanEventNode &eventNode = GetLastEventNode();
+        VulkanActionTreeNode &actionNode = GetActionStack().back()->children.back();
+
         if(srcImage == destImage)
         {
+          actionNode.resourceUsage.push_back(make_rdcpair(
+              GetResID(srcImage), EventUsage(actionNode.action.eventId, ResourceUsage::Copy)));
           eventNode.AddResourceUsage(GetResID(srcImage), ResourceUsage::Copy);
         }
         else
         {
+          actionNode.resourceUsage.push_back(make_rdcpair(
+              GetResID(srcImage), EventUsage(actionNode.action.eventId, ResourceUsage::CopySrc)));
+          actionNode.resourceUsage.push_back(make_rdcpair(
+              GetResID(destImage), EventUsage(actionNode.action.eventId, ResourceUsage::CopyDst)));
           eventNode.AddResourceUsage(GetResID(srcImage), ResourceUsage::CopySrc);
           eventNode.AddResourceUsage(GetResID(destImage), ResourceUsage::CopyDst);
         }
@@ -1846,6 +1939,12 @@ bool WrappedVulkan::Serialise_vkCmdCopyBufferToImage(
         VulkanEventNode &eventNode = GetLastEventNode();
         eventNode.AddResourceUsage(GetResID(srcBuffer), ResourceUsage::CopySrc);
         eventNode.AddResourceUsage(GetResID(destImage), ResourceUsage::CopyDst);
+
+        VulkanActionTreeNode &actionNode = GetActionStack().back()->children.back();
+        actionNode.resourceUsage.push_back(make_rdcpair(
+            GetResID(srcBuffer), EventUsage(actionNode.action.eventId, ResourceUsage::CopySrc)));
+        actionNode.resourceUsage.push_back(make_rdcpair(
+            GetResID(destImage), EventUsage(actionNode.action.eventId, ResourceUsage::CopyDst)));
       }
     }
   }
@@ -1954,6 +2053,12 @@ bool WrappedVulkan::Serialise_vkCmdCopyImageToBuffer(SerialiserType &ser,
         VulkanEventNode &eventNode = GetLastEventNode();
         eventNode.AddResourceUsage(GetResID(srcImage), ResourceUsage::CopySrc);
         eventNode.AddResourceUsage(GetResID(destBuffer), ResourceUsage::CopyDst);
+
+        VulkanActionTreeNode &actionNode = GetActionStack().back()->children.back();
+        actionNode.resourceUsage.push_back(make_rdcpair(
+            GetResID(srcImage), EventUsage(actionNode.action.eventId, ResourceUsage::CopySrc)));
+        actionNode.resourceUsage.push_back(make_rdcpair(
+            GetResID(destBuffer), EventUsage(actionNode.action.eventId, ResourceUsage::CopyDst)));
       }
     }
   }
@@ -2054,12 +2159,20 @@ bool WrappedVulkan::Serialise_vkCmdCopyBuffer(SerialiserType &ser, VkCommandBuff
         AddAction(action);
 
         VulkanEventNode &eventNode = GetLastEventNode();
+        VulkanActionTreeNode &actionNode = GetActionStack().back()->children.back();
+
         if(srcBuffer == destBuffer)
         {
+          actionNode.resourceUsage.push_back(make_rdcpair(
+              GetResID(srcBuffer), EventUsage(actionNode.action.eventId, ResourceUsage::Copy)));
           eventNode.AddResourceUsage(GetResID(srcBuffer), ResourceUsage::Copy);
         }
         else
         {
+          actionNode.resourceUsage.push_back(make_rdcpair(
+              GetResID(srcBuffer), EventUsage(actionNode.action.eventId, ResourceUsage::CopySrc)));
+          actionNode.resourceUsage.push_back(make_rdcpair(
+              GetResID(destBuffer), EventUsage(actionNode.action.eventId, ResourceUsage::CopyDst)));
           eventNode.AddResourceUsage(GetResID(srcBuffer), ResourceUsage::CopySrc);
           eventNode.AddResourceUsage(GetResID(destBuffer), ResourceUsage::CopyDst);
         }
@@ -2163,6 +2276,10 @@ bool WrappedVulkan::Serialise_vkCmdUpdateBuffer(SerialiserType &ser, VkCommandBu
 
         VulkanEventNode &eventNode = GetLastEventNode();
         eventNode.AddResourceUsage(GetResID(destBuffer), ResourceUsage::CopyDst);
+
+        VulkanActionTreeNode &actionNode = GetActionStack().back()->children.back();
+        actionNode.resourceUsage.push_back(make_rdcpair(
+            GetResID(destBuffer), EventUsage(actionNode.action.eventId, ResourceUsage::CopyDst)));
       }
     }
   }
@@ -2255,6 +2372,10 @@ bool WrappedVulkan::Serialise_vkCmdFillBuffer(SerialiserType &ser, VkCommandBuff
 
         VulkanEventNode &eventNode = GetLastEventNode();
         eventNode.AddResourceUsage(GetResID(destBuffer), ResourceUsage::Clear);
+
+        VulkanActionTreeNode &actionNode = GetActionStack().back()->children.back();
+        actionNode.resourceUsage.push_back(make_rdcpair(
+            GetResID(destBuffer), EventUsage(actionNode.action.eventId, ResourceUsage::Clear)));
       }
     }
   }
@@ -2357,6 +2478,10 @@ bool WrappedVulkan::Serialise_vkCmdClearColorImage(SerialiserType &ser, VkComman
 
         VulkanEventNode &eventNode = GetLastEventNode();
         eventNode.AddResourceUsage(GetResID(image), ResourceUsage::Clear);
+
+        VulkanActionTreeNode &actionNode = GetActionStack().back()->children.back();
+        actionNode.resourceUsage.push_back(make_rdcpair(
+            GetResID(image), EventUsage(actionNode.action.eventId, ResourceUsage::Clear)));
       }
     }
   }
@@ -2467,6 +2592,10 @@ bool WrappedVulkan::Serialise_vkCmdClearDepthStencilImage(
 
         VulkanEventNode &eventNode = GetLastEventNode();
         eventNode.AddResourceUsage(GetResID(image), ResourceUsage::Clear);
+
+        VulkanActionTreeNode &actionNode = GetActionStack().back()->children.back();
+        actionNode.resourceUsage.push_back(make_rdcpair(
+            GetResID(image), EventUsage(actionNode.action.eventId, ResourceUsage::Clear)));
       }
     }
   }
@@ -2578,6 +2707,7 @@ bool WrappedVulkan::Serialise_vkCmdClearAttachments(SerialiserType &ser,
         AddAction(action);
 
         VulkanEventNode &eventNode = GetLastEventNode();
+        VulkanActionTreeNode &actionNode = GetActionStack().back()->children.back();
         const VulkanRenderState &state = m_BakedCmdBufferInfo[m_LastCmdBufferID].state;
 
         if(state.GetRenderPass() != ResourceId() && state.GetFramebuffer() != ResourceId())
@@ -2597,6 +2727,9 @@ bool WrappedVulkan::Serialise_vkCmdClearAttachments(SerialiserType &ser,
                 att = rp.subpasses[state.subpass].colorAttachments[att];
                 if(att < (uint32_t)state.GetFramebufferAttachments().size())
                 {
+                  actionNode.resourceUsage.push_back(make_rdcpair(
+                      m_CreationInfo.m_ImageView[state.GetFramebufferAttachments()[att]].image,
+                      EventUsage(actionNode.action.eventId, ResourceUsage::Clear)));
                   eventNode.AddResourceUsage(
                       m_CreationInfo.m_ImageView[state.GetFramebufferAttachments()[att]].image,
                       ResourceUsage::Clear);
@@ -2609,6 +2742,9 @@ bool WrappedVulkan::Serialise_vkCmdClearAttachments(SerialiserType &ser,
               if(rp.subpasses[state.subpass].depthstencilAttachment >= 0)
               {
                 att = (uint32_t)rp.subpasses[state.subpass].depthstencilAttachment;
+                actionNode.resourceUsage.push_back(make_rdcpair(
+                    m_CreationInfo.m_ImageView[state.GetFramebufferAttachments()[att]].image,
+                    EventUsage(actionNode.action.eventId, ResourceUsage::Clear)));
                 eventNode.AddResourceUsage(
                     m_CreationInfo.m_ImageView[state.GetFramebufferAttachments()[att]].image,
                     ResourceUsage::Clear);
@@ -2622,6 +2758,9 @@ bool WrappedVulkan::Serialise_vkCmdClearAttachments(SerialiserType &ser,
 
           for(size_t a = 0; a < dyn.color.size(); a++)
           {
+            actionNode.resourceUsage.push_back(
+                make_rdcpair(m_CreationInfo.m_ImageView[GetResID(dyn.color[a].imageView)].image,
+                             EventUsage(actionNode.action.eventId, ResourceUsage::Clear)));
             eventNode.AddResourceUsage(
                 m_CreationInfo.m_ImageView[GetResID(dyn.color[a].imageView)].image,
                 ResourceUsage::Clear);
@@ -2629,12 +2768,18 @@ bool WrappedVulkan::Serialise_vkCmdClearAttachments(SerialiserType &ser,
 
           if(dyn.depth.imageView != VK_NULL_HANDLE)
           {
+            actionNode.resourceUsage.push_back(
+                make_rdcpair(m_CreationInfo.m_ImageView[GetResID(dyn.depth.imageView)].image,
+                             EventUsage(actionNode.action.eventId, ResourceUsage::Clear)));
             eventNode.AddResourceUsage(m_CreationInfo.m_ImageView[GetResID(dyn.depth.imageView)].image,
                                        ResourceUsage::Clear);
           }
 
           if(dyn.stencil.imageView != VK_NULL_HANDLE && dyn.depth.imageView != dyn.stencil.imageView)
           {
+            actionNode.resourceUsage.push_back(
+                make_rdcpair(m_CreationInfo.m_ImageView[GetResID(dyn.stencil.imageView)].image,
+                             EventUsage(actionNode.action.eventId, ResourceUsage::Clear)));
             eventNode.AddResourceUsage(
                 m_CreationInfo.m_ImageView[GetResID(dyn.stencil.imageView)].image,
                 ResourceUsage::Clear);
@@ -2955,9 +3100,15 @@ bool WrappedVulkan::Serialise_vkCmdDrawIndirectCount(SerialiserType &ser,
       // multidraws skip the event ID past the whole thing
       ++countEventsReplayed;
       if(m_FirstEventID > 1)
+      {
+        OLD_m_RootEventID += countEventsReplayed;
         m_RootEventID += countEventsReplayed;
+      }
       else
+      {
         m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID += countEventsReplayed;
+        m_BakedCmdBufferInfo[m_LastCmdBufferID].OLD_curEventID += countEventsReplayed;
+      }
     }
     else
     {
@@ -3003,6 +3154,19 @@ bool WrappedVulkan::Serialise_vkCmdDrawIndirectCount(SerialiserType &ser,
       if(maxDrawCount > 0)
         eventNode.action.flags = flags;
 
+      VulkanActionTreeNode &actionNode = GetActionStack().back()->children.back();
+      if(maxDrawCount > 0)
+        actionNode.action.flags = flags;
+
+      actionNode.indirectPatch = indirectPatch;
+
+      actionNode.resourceUsage.push_back(make_rdcpair(
+          GetResID(buffer), EventUsage(actionNode.action.eventId, ResourceUsage::Indirect)));
+      actionNode.resourceUsage.push_back(make_rdcpair(
+          GetResID(countBuffer), EventUsage(actionNode.action.eventId, ResourceUsage::Indirect)));
+
+      m_BakedCmdBufferInfo[m_LastCmdBufferID].OLD_curEventID++;
+
       // only allocate up to one indirect sub-command to avoid pessimistic allocation if
       // maxDrawCount is very high but the actual action count is low.
       for(uint32_t i = 0; i < RDCMIN(1U, maxDrawCount); i++)
@@ -3033,6 +3197,8 @@ bool WrappedVulkan::Serialise_vkCmdDrawIndirectCount(SerialiserType &ser,
 
         AddEvent();
         AddAction(multi);
+
+        m_BakedCmdBufferInfo[m_LastCmdBufferID].OLD_curEventID++;
       }
 
       AddEvent();
@@ -3261,9 +3427,15 @@ bool WrappedVulkan::Serialise_vkCmdDrawIndexedIndirectCount(
       // multidraws skip the event ID past the whole thing
       ++countEventsReplayed;
       if(m_FirstEventID > 1)
+      {
+        OLD_m_RootEventID += countEventsReplayed;
         m_RootEventID += countEventsReplayed;
+      }
       else
+      {
         m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID += countEventsReplayed;
+        m_BakedCmdBufferInfo[m_LastCmdBufferID].OLD_curEventID += countEventsReplayed;
+      }
     }
     else
     {
@@ -3310,6 +3482,19 @@ bool WrappedVulkan::Serialise_vkCmdDrawIndexedIndirectCount(
       if(maxDrawCount > 0)
         eventNode.action.flags = flags;
 
+      VulkanActionTreeNode &actionNode = GetActionStack().back()->children.back();
+      if(maxDrawCount > 0)
+        actionNode.action.flags = flags;
+
+      actionNode.indirectPatch = indirectPatch;
+
+      actionNode.resourceUsage.push_back(make_rdcpair(
+          GetResID(buffer), EventUsage(actionNode.action.eventId, ResourceUsage::Indirect)));
+      actionNode.resourceUsage.push_back(make_rdcpair(
+          GetResID(countBuffer), EventUsage(actionNode.action.eventId, ResourceUsage::Indirect)));
+
+      m_BakedCmdBufferInfo[m_LastCmdBufferID].OLD_curEventID++;
+
       // only allocate up to one indirect sub-command to avoid pessimistic allocation if
       // maxDrawCount is very high but the actual action count is low.
       for(uint32_t i = 0; i < RDCMIN(1U, maxDrawCount); i++)
@@ -3341,6 +3526,8 @@ bool WrappedVulkan::Serialise_vkCmdDrawIndexedIndirectCount(
 
         AddEvent();
         AddAction(multi);
+
+        m_BakedCmdBufferInfo[m_LastCmdBufferID].OLD_curEventID++;
       }
 
       AddEvent();
@@ -3457,6 +3644,11 @@ bool WrappedVulkan::Serialise_vkCmdDrawIndirectByteCountEXT(
       eventNode.indirectPatch = indirectPatch;
       eventNode.AddResourceUsage(GetResID(counterBuffer), ResourceUsage::Indirect);
 
+      VulkanActionTreeNode &actionNode = GetActionStack().back()->children.back();
+      actionNode.indirectPatch = indirectPatch;
+      actionNode.resourceUsage.push_back(make_rdcpair(
+          GetResID(counterBuffer), EventUsage(actionNode.action.eventId, ResourceUsage::Indirect)));
+
       return true;
     }
   }
@@ -3559,12 +3751,23 @@ bool WrappedVulkan::Serialise_vkCmdCopyBuffer2(SerialiserType &ser, VkCommandBuf
         AddAction(action);
 
         VulkanEventNode &eventNode = GetLastEventNode();
+        VulkanActionTreeNode &actionNode = GetActionStack().back()->children.back();
+
         if(srcid == dstid)
         {
+          actionNode.resourceUsage.push_back(
+              make_rdcpair(GetResID(CopyInfo.srcBuffer),
+                           EventUsage(actionNode.action.eventId, ResourceUsage::Copy)));
           eventNode.AddResourceUsage(GetResID(CopyInfo.srcBuffer), ResourceUsage::Copy);
         }
         else
         {
+          actionNode.resourceUsage.push_back(
+              make_rdcpair(GetResID(CopyInfo.srcBuffer),
+                           EventUsage(actionNode.action.eventId, ResourceUsage::CopySrc)));
+          actionNode.resourceUsage.push_back(
+              make_rdcpair(GetResID(CopyInfo.dstBuffer),
+                           EventUsage(actionNode.action.eventId, ResourceUsage::CopyDst)));
           eventNode.AddResourceUsage(GetResID(CopyInfo.srcBuffer), ResourceUsage::CopySrc);
           eventNode.AddResourceUsage(GetResID(CopyInfo.dstBuffer), ResourceUsage::CopyDst);
         }
@@ -3676,12 +3879,23 @@ bool WrappedVulkan::Serialise_vkCmdCopyImage2(SerialiserType &ser, VkCommandBuff
         AddAction(action);
 
         VulkanEventNode &eventNode = GetLastEventNode();
+        VulkanActionTreeNode &actionNode = GetActionStack().back()->children.back();
+
         if(srcid == dstid)
         {
+          actionNode.resourceUsage.push_back(
+              make_rdcpair(GetResID(CopyInfo.srcImage),
+                           EventUsage(actionNode.action.eventId, ResourceUsage::Copy)));
           eventNode.AddResourceUsage(GetResID(CopyInfo.srcImage), ResourceUsage::Copy);
         }
         else
         {
+          actionNode.resourceUsage.push_back(
+              make_rdcpair(GetResID(CopyInfo.srcImage),
+                           EventUsage(actionNode.action.eventId, ResourceUsage::CopySrc)));
+          actionNode.resourceUsage.push_back(
+              make_rdcpair(GetResID(CopyInfo.dstImage),
+                           EventUsage(actionNode.action.eventId, ResourceUsage::CopyDst)));
           eventNode.AddResourceUsage(GetResID(CopyInfo.srcImage), ResourceUsage::CopySrc);
           eventNode.AddResourceUsage(GetResID(CopyInfo.dstImage), ResourceUsage::CopyDst);
         }
@@ -3808,6 +4022,14 @@ bool WrappedVulkan::Serialise_vkCmdCopyBufferToImage2(
         VulkanEventNode &eventNode = GetLastEventNode();
         eventNode.AddResourceUsage(GetResID(CopyInfo.srcBuffer), ResourceUsage::CopySrc);
         eventNode.AddResourceUsage(GetResID(CopyInfo.dstImage), ResourceUsage::CopyDst);
+
+        VulkanActionTreeNode &actionNode = GetActionStack().back()->children.back();
+        actionNode.resourceUsage.push_back(
+            make_rdcpair(GetResID(CopyInfo.srcBuffer),
+                         EventUsage(actionNode.action.eventId, ResourceUsage::CopySrc)));
+        actionNode.resourceUsage.push_back(
+            make_rdcpair(GetResID(CopyInfo.dstImage),
+                         EventUsage(actionNode.action.eventId, ResourceUsage::CopyDst)));
       }
     }
   }
@@ -3935,6 +4157,14 @@ bool WrappedVulkan::Serialise_vkCmdCopyImageToBuffer2(
         VulkanEventNode &eventNode = GetLastEventNode();
         eventNode.AddResourceUsage(GetResID(CopyInfo.srcImage), ResourceUsage::CopySrc);
         eventNode.AddResourceUsage(GetResID(CopyInfo.dstBuffer), ResourceUsage::CopyDst);
+
+        VulkanActionTreeNode &actionNode = GetActionStack().back()->children.back();
+        actionNode.resourceUsage.push_back(
+            make_rdcpair(GetResID(CopyInfo.srcImage),
+                         EventUsage(actionNode.action.eventId, ResourceUsage::CopySrc)));
+        actionNode.resourceUsage.push_back(
+            make_rdcpair(GetResID(CopyInfo.dstBuffer),
+                         EventUsage(actionNode.action.eventId, ResourceUsage::CopyDst)));
       }
     }
   }
@@ -4054,12 +4284,23 @@ bool WrappedVulkan::Serialise_vkCmdBlitImage2(SerialiserType &ser, VkCommandBuff
         AddAction(action);
 
         VulkanEventNode &eventNode = GetLastEventNode();
+        VulkanActionTreeNode &actionNode = GetActionStack().back()->children.back();
+
         if(srcid == dstid)
         {
+          actionNode.resourceUsage.push_back(
+              make_rdcpair(GetResID(BlitInfo.srcImage),
+                           EventUsage(actionNode.action.eventId, ResourceUsage::Resolve)));
           eventNode.AddResourceUsage(GetResID(BlitInfo.srcImage), ResourceUsage::Resolve);
         }
         else
         {
+          actionNode.resourceUsage.push_back(
+              make_rdcpair(GetResID(BlitInfo.srcImage),
+                           EventUsage(actionNode.action.eventId, ResourceUsage::ResolveSrc)));
+          actionNode.resourceUsage.push_back(
+              make_rdcpair(GetResID(BlitInfo.dstImage),
+                           EventUsage(actionNode.action.eventId, ResourceUsage::ResolveDst)));
           eventNode.AddResourceUsage(GetResID(BlitInfo.srcImage), ResourceUsage::ResolveSrc);
           eventNode.AddResourceUsage(GetResID(BlitInfo.dstImage), ResourceUsage::ResolveDst);
         }
@@ -4188,12 +4429,23 @@ bool WrappedVulkan::Serialise_vkCmdResolveImage2(SerialiserType &ser, VkCommandB
         AddAction(action);
 
         VulkanEventNode &eventNode = GetLastEventNode();
+        VulkanActionTreeNode &actionNode = GetActionStack().back()->children.back();
+
         if(srcid == dstid)
         {
+          actionNode.resourceUsage.push_back(
+              make_rdcpair(GetResID(ResolveInfo.srcImage),
+                           EventUsage(actionNode.action.eventId, ResourceUsage::Resolve)));
           eventNode.AddResourceUsage(GetResID(ResolveInfo.srcImage), ResourceUsage::Resolve);
         }
         else
         {
+          actionNode.resourceUsage.push_back(
+              make_rdcpair(GetResID(ResolveInfo.srcImage),
+                           EventUsage(actionNode.action.eventId, ResourceUsage::ResolveSrc)));
+          actionNode.resourceUsage.push_back(
+              make_rdcpair(GetResID(ResolveInfo.dstImage),
+                           EventUsage(actionNode.action.eventId, ResourceUsage::ResolveDst)));
           eventNode.AddResourceUsage(GetResID(ResolveInfo.srcImage), ResourceUsage::ResolveSrc);
           eventNode.AddResourceUsage(GetResID(ResolveInfo.dstImage), ResourceUsage::ResolveDst);
         }
@@ -4366,6 +4618,7 @@ bool WrappedVulkan::Serialise_vkCmdDrawMeshTasksIndirectEXT(SerialiserType &ser,
 
         // account for the fake indirect subcommand before checking if we're in re-record range
         m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID += drawCount;
+        m_BakedCmdBufferInfo[m_LastCmdBufferID].OLD_curEventID += drawCount;
 
         if(InRerecordRange(m_LastCmdBufferID))
         {
@@ -4386,7 +4639,10 @@ bool WrappedVulkan::Serialise_vkCmdDrawMeshTasksIndirectEXT(SerialiserType &ser,
           }
         }
         if(m_FirstEventID > 1)
+        {
+          OLD_m_RootEventID += drawCount;
           m_RootEventID += drawCount;
+        }
       }
       else
       {
@@ -4539,9 +4795,15 @@ bool WrappedVulkan::Serialise_vkCmdDrawMeshTasksIndirectEXT(SerialiserType &ser,
         // multidraws skip the event ID past the whole thing
         ++countEventsReplayed;
         if(m_FirstEventID > 1)
+        {
+          OLD_m_RootEventID += countEventsReplayed;
           m_RootEventID += countEventsReplayed;
+        }
         else
+        {
           m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID += countEventsReplayed;
+          m_BakedCmdBufferInfo[m_LastCmdBufferID].OLD_curEventID += countEventsReplayed;
+        }
       }
     }
     else
@@ -4589,6 +4851,8 @@ bool WrappedVulkan::Serialise_vkCmdDrawMeshTasksIndirectEXT(SerialiserType &ser,
 
         m_StructuredFile->chunks.insert(m_StructuredFile->chunks.size() - 1, fakeChunk);
 
+        m_BakedCmdBufferInfo[m_LastCmdBufferID].OLD_curEventID++;
+
         AddEvent();
 
         action.customName = name;
@@ -4599,6 +4863,11 @@ bool WrappedVulkan::Serialise_vkCmdDrawMeshTasksIndirectEXT(SerialiserType &ser,
         VulkanEventNode &eventNode = GetLastEventNode();
         eventNode.indirectPatch = indirectPatch;
         eventNode.AddResourceUsage(GetResID(buffer), ResourceUsage::Indirect);
+
+        VulkanActionTreeNode &actionNode = GetActionStack().back()->children.back();
+        actionNode.indirectPatch = indirectPatch;
+        actionNode.resourceUsage.push_back(make_rdcpair(
+            GetResID(buffer), EventUsage(actionNode.action.eventId, ResourceUsage::Indirect)));
 
         return true;
       }
@@ -4619,6 +4888,14 @@ bool WrappedVulkan::Serialise_vkCmdDrawMeshTasksIndirectEXT(SerialiserType &ser,
       VulkanEventNode &eventNode = GetLastEventNode();
       eventNode.indirectPatch = indirectPatch;
       eventNode.AddResourceUsage(GetResID(buffer), ResourceUsage::Indirect);
+
+      VulkanActionTreeNode &actionNode = GetActionStack().back()->children.back();
+      actionNode.indirectPatch = indirectPatch;
+      actionNode.resourceUsage.push_back(make_rdcpair(
+          GetResID(buffer), EventUsage(actionNode.action.eventId, ResourceUsage::Indirect)));
+
+      if(drawCount > 0)
+        m_BakedCmdBufferInfo[m_LastCmdBufferID].OLD_curEventID++;
 
       for(uint32_t i = 0; i < drawCount; i++)
       {
@@ -4648,6 +4925,8 @@ bool WrappedVulkan::Serialise_vkCmdDrawMeshTasksIndirectEXT(SerialiserType &ser,
 
         AddEvent();
         AddAction(multi);
+
+        m_BakedCmdBufferInfo[m_LastCmdBufferID].OLD_curEventID++;
       }
 
       if(drawCount > 0)
@@ -4877,9 +5156,15 @@ bool WrappedVulkan::Serialise_vkCmdDrawMeshTasksIndirectCountEXT(
       // multidraws skip the event ID past the whole thing
       ++countEventsReplayed;
       if(m_FirstEventID > 1)
+      {
+        OLD_m_RootEventID += countEventsReplayed;
         m_RootEventID += countEventsReplayed;
+      }
       else
+      {
         m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID += countEventsReplayed;
+        m_BakedCmdBufferInfo[m_LastCmdBufferID].OLD_curEventID += countEventsReplayed;
+      }
     }
     else
     {
@@ -4923,6 +5208,15 @@ bool WrappedVulkan::Serialise_vkCmdDrawMeshTasksIndirectCountEXT(
       eventNode.AddResourceUsage(GetResID(buffer), ResourceUsage::Indirect);
       eventNode.AddResourceUsage(GetResID(countBuffer), ResourceUsage::Indirect);
 
+      VulkanActionTreeNode &actionNode = GetActionStack().back()->children.back();
+      actionNode.indirectPatch = indirectPatch;
+      actionNode.resourceUsage.push_back(make_rdcpair(
+          GetResID(buffer), EventUsage(actionNode.action.eventId, ResourceUsage::Indirect)));
+      actionNode.resourceUsage.push_back(make_rdcpair(
+          GetResID(countBuffer), EventUsage(actionNode.action.eventId, ResourceUsage::Indirect)));
+
+      m_BakedCmdBufferInfo[m_LastCmdBufferID].OLD_curEventID++;
+
       // only allocate up to one indirect sub-command to avoid pessimistic allocation if
       // maxDrawCount is very high but the actual action count is low.
       for(uint32_t i = 0; i < RDCMIN(1U, maxDrawCount); i++)
@@ -4953,6 +5247,8 @@ bool WrappedVulkan::Serialise_vkCmdDrawMeshTasksIndirectCountEXT(
 
         AddEvent();
         AddAction(multi);
+
+        m_BakedCmdBufferInfo[m_LastCmdBufferID].OLD_curEventID++;
       }
 
       AddEvent();
