@@ -1939,12 +1939,23 @@ bool WrappedVulkan::Serialise_vkCopyImageToImage(SerialiserType &ser, VkDevice d
       AddAction(action);
 
       VulkanEventNode &eventNode = GetLastEventNode();
+      VulkanActionTreeNode &actionNode = GetActionStack().back()->children.back();
+
       if(CopyImageToImageInfo.srcImage == CopyImageToImageInfo.dstImage)
       {
+        actionNode.resourceUsage.push_back(
+            make_rdcpair(GetResID(CopyImageToImageInfo.srcImage),
+                         EventUsage(actionNode.action.eventId, ResourceUsage::Copy)));
         eventNode.AddResourceUsage(GetResID(CopyImageToImageInfo.srcImage), ResourceUsage::Copy);
       }
       else
       {
+        actionNode.resourceUsage.push_back(
+            make_rdcpair(GetResID(CopyImageToImageInfo.srcImage),
+                         EventUsage(actionNode.action.eventId, ResourceUsage::CopySrc)));
+        actionNode.resourceUsage.push_back(
+            make_rdcpair(GetResID(CopyImageToImageInfo.dstImage),
+                         EventUsage(actionNode.action.eventId, ResourceUsage::CopyDst)));
         eventNode.AddResourceUsage(GetResID(CopyImageToImageInfo.srcImage), ResourceUsage::CopySrc);
         eventNode.AddResourceUsage(GetResID(CopyImageToImageInfo.dstImage), ResourceUsage::CopyDst);
       }
@@ -2028,6 +2039,10 @@ bool WrappedVulkan::Serialise_vkCopyImageToMemory(SerialiserType &ser, VkDevice 
 
       VulkanEventNode &eventNode = GetLastEventNode();
       eventNode.AddResourceUsage(GetResID(srcImage), ResourceUsage::CopySrc);
+
+      VulkanActionTreeNode &actionNode = GetActionStack().back()->children.back();
+      actionNode.resourceUsage.push_back(make_rdcpair(
+          GetResID(srcImage), EventUsage(actionNode.action.eventId, ResourceUsage::CopySrc)));
     }
   }
 
@@ -2113,6 +2128,10 @@ bool WrappedVulkan::Serialise_vkCopyMemoryToImage(SerialiserType &ser, VkDevice 
 
       VulkanEventNode &eventNode = GetLastEventNode();
       eventNode.AddResourceUsage(GetResID(dstImage), ResourceUsage::CopyDst);
+
+      VulkanActionTreeNode &actionNode = GetActionStack().back()->children.back();
+      actionNode.resourceUsage.push_back(make_rdcpair(
+          GetResID(dstImage), EventUsage(actionNode.action.eventId, ResourceUsage::CopyDst)));
     }
   }
 
@@ -2819,6 +2838,11 @@ bool WrappedVulkan::Serialise_SetCommandAnnotation(SerialiserType &ser, VkComman
     {
       if(!m_RootAnnotation)
         m_RootAnnotation = new SDObject("Event Annotations"_lit, "Event Annotations"_lit);
+
+      PendingAnnotation OLDannot = {m_BakedCmdBufferInfo[m_LastCmdBufferID].OLD_curEventID, key,
+                                    valueType, valueVectorWidth, value};
+
+      m_BakedCmdBufferInfo[m_LastCmdBufferID].OLD_annotations.push_back(OLDannot);
 
       PendingAnnotation annot = {0, key, valueType, valueVectorWidth, value};
       m_BakedCmdBufferInfo[m_LastCmdBufferID].pendingAnnotations.push_back(annot);

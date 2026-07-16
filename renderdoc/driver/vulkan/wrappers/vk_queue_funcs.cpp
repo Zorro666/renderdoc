@@ -242,6 +242,39 @@ void WrappedVulkan::DoSubmit(VkQueue queue, VkSubmitInfo2 submitInfo)
   }
 }
 
+WrappedVulkan::CommandBufferNode *WrappedVulkan::OLD_BuildSubmitTree(ResourceId cmdId,
+                                                                     uint32_t curEvent,
+                                                                     CommandBufferNode *rootNode)
+{
+  CommandBufferNode *cmdNode = new CommandBufferNode();
+  cmdNode->cmdId = cmdId;
+  cmdNode->beginEvent = curEvent;
+
+  // setting the root node of the primary to itself simplifies building the tree here, as well as
+  // building the partial stack during active replay.
+  if(rootNode == NULL)
+    rootNode = cmdNode;
+
+  cmdNode->rootNode = rootNode;
+
+  m_Partial.OLD_submitLookup[cmdId].push_back(cmdNode);
+
+  auto it = OLD_m_CommandBufferExecutes.find(cmdId);
+  if(it != OLD_m_CommandBufferExecutes.end())
+  {
+    const rdcarray<OLD_CommandBufferExecuteInfo> &executedCmds = it->second;
+
+    for(const OLD_CommandBufferExecuteInfo &childExecuteInfo : executedCmds)
+    {
+      CommandBufferNode *rebaseChild = OLD_BuildSubmitTree(
+          childExecuteInfo.cmdId, cmdNode->beginEvent + childExecuteInfo.relPos, rootNode);
+      cmdNode->childCmdNodes.push_back(rebaseChild);
+    }
+  }
+
+  return cmdNode;
+}
+
 WrappedVulkan::CommandBufferNode *WrappedVulkan::BuildSubmitTree(ResourceId cmdId, uint32_t curEvent,
                                                                  CommandBufferNode *rootNode)
 {
@@ -282,6 +315,9 @@ void WrappedVulkan::ReplayQueueSubmit(VkQueue queue, VkSubmitInfo2 submitInfo, r
   {
     AddEvent();
 
+    // we're adding multiple events, need to increment ourselves
+    OLD_m_RootEventID++;
+
     uint32_t numCmds = submitInfo.commandBufferInfoCount;
     if(numCmds == 0)
     {
@@ -294,7 +330,11 @@ void WrappedVulkan::ReplayQueueSubmit(VkQueue queue, VkSubmitInfo2 submitInfo, r
       action.flags |= ActionFlags::CommandBufferBoundary | ActionFlags::PassBoundary;
       AddEvent();
 
+      OLD_m_RootEvents.back().chunkIndex = APIEvent::NoChunk;
+      OLD_m_Events.back().chunkIndex = APIEvent::NoChunk;
+
       AddAction(action);
+      OLD_m_RootEventID++;
       VulkanEventNode &eventNode = GetLastEventNode();
       eventNode.event.chunkIndex = APIEvent::NoChunk;
       eventNode.addActionUse = false;
@@ -329,7 +369,11 @@ void WrappedVulkan::ReplayQueueSubmit(VkQueue queue, VkSubmitInfo2 submitInfo, r
             ActionFlags::CommandBufferBoundary | ActionFlags::PassBoundary | ActionFlags::BeginPass;
         AddEvent();
 
+        OLD_m_RootEvents.back().chunkIndex = cmdBufInfo.beginChunk;
+        OLD_m_Events.back().chunkIndex = cmdBufInfo.beginChunk;
+
         AddAction(action);
+        OLD_m_RootEventID++;
         VulkanEventNode &eventNode = GetLastEventNode();
         eventNode.event.chunkIndex = cmdBufInfo.beginChunk;
         eventNode.addActionUse = false;
@@ -337,10 +381,53 @@ void WrappedVulkan::ReplayQueueSubmit(VkQueue queue, VkSubmitInfo2 submitInfo, r
         eventNode.cmdBufId = cmd;
       }
 
+      // here we build a tree of command nodes representing the current command buffer and any
+      // descendant secondaries. this tree is later used during active replay to handle cases where
+      // the selected event occurs within a command buffer. the node returned here represents the
+      // current primary command buffer.
+      CommandBufferNode *rebaseNode = OLD_BuildSubmitTree(cmd, OLD_m_RootEventID);
+      m_Partial.OLD_commandTree.push_back(rebaseNode);
+
+      // insert the baked command buffer in-line into this list of nodes, assigning new event
+      // and drawIDs
+      size_t oldSize = m_StructuredFile->chunks.size();
+      OLD_InsertActionsAndRefreshIDs(cmdBufInfo);
+      m_StructuredFile->chunks.resize(oldSize);
+
       // insert the baked command buffer into the root events, resolving indirect and deferred actions
       SDObject *localAnnotations = InsertEventNodes(cmdBufInfo);
 
+      for(size_t i = 0; i < cmdBufInfo.OLD_debugMessages.size(); i++)
       {
+        OLD_m_DebugMessages.push_back(cmdBufInfo.OLD_debugMessages[i]);
+        OLD_m_DebugMessages.back().eventId += OLD_m_RootEventID;
+      }
+
+      {
+        // pull in any remaining events on the command buffer that weren't added to an action
+        // THIS IS MISSING ANNOTATIONS ON THE LOOSE EVENTS
+        for(const APIEvent &event : cmdBufInfo.OLD_curEvents)
+        {
+          APIEvent apievent(event);
+          apievent.eventId += OLD_m_RootEventID;
+
+          OLD_m_RootEvents.push_back(apievent);
+          OLD_m_Events.resize(apievent.eventId + 1);
+          OLD_m_Events[apievent.eventId] = apievent;
+        }
+
+        for(auto it = cmdBufInfo.OLD_resourceUsage.begin();
+            it != cmdBufInfo.OLD_resourceUsage.end(); ++it)
+        {
+          EventUsage u = it->second;
+          u.eventId += OLD_m_RootEventID;
+          OLD_m_ResourceUses[it->first].push_back(u);
+          OLD_m_EventFlags[u.eventId] |= PipeRWUsageEventFlags(u.usage);
+        }
+
+        OLD_m_RootEventID += cmdBufInfo.OLD_eventCount;
+        OLD_m_RootActionID += cmdBufInfo.OLD_actionCount;
+
         name = StringFormat::Fmt("=> %s[%u]: vkEndCommandBuffer(%s)", basename.c_str(), c,
                                  ToStr(cmd).c_str());
         action.customName = name;
@@ -348,7 +435,11 @@ void WrappedVulkan::ReplayQueueSubmit(VkQueue queue, VkSubmitInfo2 submitInfo, r
             ActionFlags::CommandBufferBoundary | ActionFlags::PassBoundary | ActionFlags::EndPass;
         AddEvent();
 
+        OLD_m_RootEvents.back().chunkIndex = cmdBufInfo.endChunk;
+        OLD_m_Events.back().chunkIndex = cmdBufInfo.endChunk;
+
         AddAction(action);
+        OLD_m_RootEventID++;
         VulkanEventNode &eventNode = GetLastEventNode();
         eventNode.event.chunkIndex = cmdBufInfo.endChunk;
         eventNode.addActionUse = false;
@@ -372,11 +463,14 @@ void WrappedVulkan::ReplayQueueSubmit(VkQueue queue, VkSubmitInfo2 submitInfo, r
   else
   {
     // account for the queue submit event
+    OLD_m_RootEventID++;
     m_RootEventID++;
 
     if(submitInfo.commandBufferInfoCount == 0)
     {
       // account for the "No Command Buffers" virtual label
+      OLD_m_RootEventID++;
+      OLD_m_RootActionID++;
       m_RootEventID++;
     }
 
@@ -388,10 +482,14 @@ void WrappedVulkan::ReplayQueueSubmit(VkQueue queue, VkSubmitInfo2 submitInfo, r
       // cmd is not valid when selecting a vkQueueSubmit event
       if(cmd != ResourceId())
       {
+        OLD_m_RootEventID += m_BakedCmdBufferInfo[cmd].OLD_eventCount;
+        OLD_m_RootActionID += m_BakedCmdBufferInfo[cmd].OLD_actionCount;
         m_RootEventID += m_BakedCmdBufferInfo[cmd].eventCount;
 
         // 2 extra for the virtual labels around the command buffer
         {
+          OLD_m_RootEventID += 2;
+          OLD_m_RootActionID += 2;
           m_RootEventID += 2;
         }
       }
@@ -840,6 +938,350 @@ SDObject *WrappedVulkan::InsertEventNodes(BakedCmdBufferInfo &cmdBufInfo)
   cmdBufInfo.eventCount = (uint32_t)eventNodes.size();
 
   return localAnnotations;
+}
+
+void WrappedVulkan::OLD_InsertActionsAndRefreshIDs(BakedCmdBufferInfo &cmdBufInfo)
+{
+  SDObject *localAnnotations = NULL;
+  if(m_RootAnnotation)
+    localAnnotations = m_RootAnnotation->Duplicate();
+
+  size_t curAnnot = 0;
+  int32_t totalEIDShift = 0;
+
+  rdcarray<VulkanActionTreeNode> &cmdBufNodes = cmdBufInfo.OLD_action->children;
+
+  // assign new action IDs
+  for(size_t i = 0; i < cmdBufNodes.size(); i++)
+  {
+    VulkanActionTreeNode n = cmdBufNodes[i];
+
+    for(VulkanActionTreeNode::DeferredResourceUsage &def : n.deferredResourceUsage)
+    {
+      if(def.descBufVersionIdx >= m_DescriptorBufferVersions.size())
+      {
+        RDCERR("Invalid deferred resource usage buffer reference");
+        continue;
+      }
+
+      OLD_AddUsageForDescriptorBuffers(n, cmdBufInfo.OLD_debugMessages, def);
+    }
+
+    n.action.eventId += OLD_m_RootEventID;
+    n.action.actionId += OLD_m_RootActionID;
+
+    if(n.indirectPatch.type == VkIndirectPatchType::DispatchIndirect)
+    {
+      VkDispatchIndirectCommand unknown = {0};
+      bytebuf argbuf;
+      GetDebugManager()->GetBufferData(GetResID(n.indirectPatch.buf), 0, 0, argbuf);
+      VkDispatchIndirectCommand *args = (VkDispatchIndirectCommand *)&argbuf[0];
+
+      if(argbuf.size() < sizeof(VkDispatchIndirectCommand))
+      {
+        RDCERR("Couldn't fetch arguments buffer for vkCmdDispatchIndirect");
+        args = &unknown;
+      }
+
+      n.action.customName =
+          StringFormat::Fmt("vkCmdDispatchIndirect(<%u, %u, %u>)", args->x, args->y, args->z);
+      n.action.dispatchDimension[0] = args->x;
+      n.action.dispatchDimension[1] = args->y;
+      n.action.dispatchDimension[2] = args->z;
+    }
+    else if(n.indirectPatch.type == VkIndirectPatchType::DrawIndirectByteCount ||
+            n.indirectPatch.type == VkIndirectPatchType::DrawIndirect ||
+            n.indirectPatch.type == VkIndirectPatchType::DrawIndexedIndirect ||
+            n.indirectPatch.type == VkIndirectPatchType::MeshIndirect ||
+            n.indirectPatch.type == VkIndirectPatchType::DrawIndirectCount ||
+            n.indirectPatch.type == VkIndirectPatchType::DrawIndexedIndirectCount ||
+            n.indirectPatch.type == VkIndirectPatchType::MeshIndirectCount)
+    {
+      bool hasCount = (n.indirectPatch.type == VkIndirectPatchType::DrawIndirectCount ||
+                       n.indirectPatch.type == VkIndirectPatchType::DrawIndexedIndirectCount ||
+                       n.indirectPatch.type == VkIndirectPatchType::MeshIndirectCount);
+      bytebuf argbuf;
+      GetDebugManager()->GetBufferData(GetResID(n.indirectPatch.buf), 0, 0, argbuf);
+
+      byte *ptr = argbuf.begin(), *end = argbuf.end();
+
+      uint32_t indirectCount = n.indirectPatch.count;
+      if(hasCount)
+      {
+        if(argbuf.size() >= 16)
+        {
+          uint32_t *count = (uint32_t *)end;
+          count -= 4;
+          indirectCount = *count;
+        }
+        else
+        {
+          RDCERR("Couldn't get indirect action count");
+        }
+
+        if(indirectCount > n.indirectPatch.count)
+        {
+          RDCERR("Indirect count higher than maxCount, clamping");
+          indirectCount = n.indirectPatch.count;
+        }
+
+        // this can be negative if indirectCount is 0
+        int32_t eidShift = indirectCount - 1;
+        totalEIDShift += eidShift;
+
+        // we reserved one event and action for the indirect count based action.
+        // if we ended up with a different number eidShift will be non-zero, so we need to adjust
+        // all subsequent EIDs and action IDs and either remove the subdraw we allocated (if no
+        // draws
+        // happened) or clone the subdraw to create more that we can then patch.
+        if(eidShift != 0)
+        {
+          // the command buffer submission trees must be updated such that any command buffer
+          // nodes that occur after the draw indirect count action account for the new events.
+          // this function also updates the BakedCommandBufferInfo for the primary command buffer
+          // and any descendants that the indirect action occured in
+          OLD_ShiftSuccessiveCommandNodes(n.action.eventId + 2, eidShift);
+
+          // i is the pushmarker, so i + 1 is the sub draws, and i + 2 is the pop marker.
+          // adjust all EIDs and action IDs after that point
+          for(size_t j = i + 2; j < cmdBufNodes.size(); j++)
+          {
+            cmdBufNodes[j].action.eventId += eidShift;
+            cmdBufNodes[j].action.actionId += eidShift;
+
+            for(APIEvent &ev : cmdBufNodes[j].action.events)
+              ev.eventId += eidShift;
+
+            for(rdcpair<ResourceId, EventUsage> &use : cmdBufNodes[j].resourceUsage)
+              use.second.eventId += eidShift;
+          }
+
+          for(size_t j = 0; j < cmdBufInfo.OLD_debugMessages.size(); j++)
+          {
+            if(cmdBufInfo.OLD_debugMessages[j].eventId >= cmdBufNodes[i].action.eventId + 2)
+              cmdBufInfo.OLD_debugMessages[j].eventId += eidShift;
+          }
+
+          RDCASSERT(cmdBufNodes[i + 1].action.events.size() == 1);
+          uint32_t chunkIndex = cmdBufNodes[i + 1].action.events[0].chunkIndex;
+
+          // everything afterwards is adjusted. Now see if we need to remove the subdraw or clone it
+          if(indirectCount == 0)
+          {
+            // Copy the flags and resource usage from the subdraw to the indirect action (push marker)
+            n.action.flags |= cmdBufNodes[i + 1].action.flags;
+            n.resourceUsage.swap(cmdBufNodes[i + 1].resourceUsage);
+            for(rdcpair<ResourceId, EventUsage> &use : n.resourceUsage)
+              use.second.eventId += eidShift;
+            for(const rdcpair<ResourceId, EventUsage> &use : cmdBufNodes[i + 1].resourceUsage)
+              n.resourceUsage.push_back(use);
+
+            // i is the pushmarker, which we leave. i+1 is the subdraw
+            cmdBufNodes.erase(i + 1);
+          }
+          else
+          {
+            // duplicate the fake structured data chunk N times
+            SDChunk *chunk = m_StructuredFile->chunks[chunkIndex];
+
+            uint32_t baseAddedChunk = (uint32_t)m_StructuredFile->chunks.size();
+            m_StructuredFile->chunks.reserve(m_StructuredFile->chunks.size() + eidShift);
+            for(int32_t e = 0; e < eidShift; e++)
+              m_StructuredFile->chunks.push_back(chunk->Duplicate());
+
+            // now copy the subdraw so we're not inserting into the array from itself
+            VulkanActionTreeNode node = cmdBufNodes[i + 1];
+
+            cmdBufNodes.resize(cmdBufNodes.size() + eidShift);
+            for(size_t e = cmdBufNodes.size() - 1; e > i + 1 + eidShift; e--)
+              cmdBufNodes[e] = std::move(cmdBufNodes[e - eidShift]);
+
+            // then insert enough duplicates
+            for(int32_t e = 0; e < eidShift; e++)
+            {
+              node.action.eventId++;
+              node.action.actionId++;
+
+              for(APIEvent &ev : node.action.events)
+              {
+                ev.eventId++;
+                ev.chunkIndex = baseAddedChunk + e;
+              }
+
+              for(rdcpair<ResourceId, EventUsage> &use : node.resourceUsage)
+                use.second.eventId++;
+
+              cmdBufNodes[i + 2 + e] = node;
+            }
+          }
+        }
+      }
+
+      // indirect count versions always have a multidraw marker regions, but static count of 1
+      // would be in-lined as a single action, so we patch in-place
+      if(!hasCount && indirectCount == 1)
+      {
+        rdcstr name = GetStructuredFile()->chunks[n.action.events.back().chunkIndex]->name;
+
+        uint32_t chunkIndex =
+            n.action.events.empty() ? APIEvent::NoChunk : n.action.events.back().chunkIndex;
+        bool valid = PatchIndirectDraw(0, n.indirectPatch.stride, n.indirectPatch.type, chunkIndex,
+                                       n.action, ptr, end);
+
+        if(n.indirectPatch.type == VkIndirectPatchType::DrawIndirectByteCount)
+        {
+          if(n.action.numIndices > n.indirectPatch.vertexoffset)
+            n.action.numIndices -= n.indirectPatch.vertexoffset;
+          else
+            n.action.numIndices = 0;
+
+          n.action.numIndices /= n.indirectPatch.stride;
+        }
+
+        // if the actual action count was greater than 1, display this as an indirect count
+        const char *countString = (n.indirectPatch.count > 1 ? "<1>" : "1");
+
+        if(n.indirectPatch.type == VkIndirectPatchType::MeshIndirect ||
+           n.indirectPatch.type == VkIndirectPatchType::MeshIndirectCount)
+        {
+          if(valid)
+            n.action.customName = StringFormat::Fmt(
+                "%s(%s) => <%u, %u, %u>", name.c_str(), countString, n.action.dispatchDimension[0],
+                n.action.dispatchDimension[1], n.action.dispatchDimension[2]);
+          else
+            n.action.customName = StringFormat::Fmt("%s(%s) => <?, ?>", name.c_str(), countString);
+        }
+        else
+        {
+          if(valid)
+            n.action.customName = StringFormat::Fmt("%s(%s) => <%u, %u>", name.c_str(), countString,
+                                                    n.action.numIndices, n.action.numInstances);
+          else
+            n.action.customName = StringFormat::Fmt("%s(%s) => <?, ?>", name.c_str(), countString);
+        }
+      }
+      else
+      {
+        // we should have N draws immediately following this one, check that that's the case
+        RDCASSERT(i + indirectCount < cmdBufNodes.size(), i, indirectCount, n.indirectPatch.count,
+                  cmdBufNodes.size());
+
+        rdcstr name = GetStructuredFile()->chunks[n.action.events.back().chunkIndex]->name;
+
+        // patch the count onto the root action name. The root is otherwise un-suffixed to allow
+        // for collapsing non-multidraws and making everything generally simpler
+        if(hasCount)
+          n.action.customName = StringFormat::Fmt("%s(<%u>)", name.c_str(), indirectCount);
+        else
+          n.action.customName = StringFormat::Fmt("%s(%u)", name.c_str(), n.indirectPatch.count);
+
+        for(size_t j = 0; j < (size_t)indirectCount && i + j + 1 < cmdBufNodes.size(); j++)
+        {
+          VulkanActionTreeNode &n2 = cmdBufNodes[i + j + 1];
+
+          uint32_t chunkIndex =
+              n2.action.events.empty() ? APIEvent::NoChunk : n2.action.events.back().chunkIndex;
+          bool valid = PatchIndirectDraw(j, n.indirectPatch.stride, n.indirectPatch.type,
+                                         chunkIndex, n2.action, ptr, end);
+
+          name = GetStructuredFile()->chunks[n2.action.events.back().chunkIndex]->name;
+
+          if(n.indirectPatch.type == VkIndirectPatchType::MeshIndirect ||
+             n.indirectPatch.type == VkIndirectPatchType::MeshIndirectCount)
+          {
+            if(valid)
+              n2.action.customName = StringFormat::Fmt(
+                  "%s[%zu](<%u, %u, %u>)", name.c_str(), j, n2.action.dispatchDimension[0],
+                  n2.action.dispatchDimension[1], n2.action.dispatchDimension[2]);
+            else
+              n2.action.customName = StringFormat::Fmt("%s[%zu](<?, ?>)", name.c_str(), j);
+          }
+          else
+          {
+            if(valid)
+              n2.action.customName = StringFormat::Fmt("%s[%zu](<%u, %u>)", name.c_str(), j,
+                                                       n2.action.numIndices, n2.action.numInstances);
+            else
+              n2.action.customName = StringFormat::Fmt("%s[%zu](<?, ?>)", name.c_str(), j);
+          }
+
+          if(ptr)
+            ptr += n.indirectPatch.stride;
+        }
+      }
+    }
+
+    for(APIEvent &ev : n.action.events)
+    {
+      if(localAnnotations)
+      {
+        for(; curAnnot < cmdBufInfo.OLD_annotations.size(); curAnnot++)
+        {
+          const PendingAnnotation &annot = cmdBufInfo.OLD_annotations[curAnnot];
+          if(annot.eventId == ev.eventId)
+          {
+            if(annot.valueType == eRENDERDOC_Empty)
+              localAnnotations->EraseChildByKeyPath(annot.key);
+            else
+              WriteAnnotation(localAnnotations->CreateChildByKeyPath(annot.key), annot.valueType,
+                              annot.valueVectorWidth, annot.value);
+          }
+          else if(annot.eventId > ev.eventId)
+          {
+            break;
+          }
+        }
+
+        ev.annotations = localAnnotations->Duplicate();
+        m_EventAnnotations.push_back(ev.annotations);
+      }
+
+      ev.eventId += OLD_m_RootEventID;
+      OLD_m_Events.resize(ev.eventId + 1);
+      OLD_m_Events[ev.eventId] = ev;
+    }
+
+    if(!n.action.events.empty())
+    {
+      ActionUse use(n.action.events.back().fileOffset, n.action.eventId);
+
+      // insert in sorted location
+      auto drawit = std::lower_bound(OLD_m_ActionUses.begin(), OLD_m_ActionUses.end(), use);
+      OLD_m_ActionUses.insert(drawit - OLD_m_ActionUses.begin(), use);
+    }
+
+    RDCASSERT(n.children.empty());
+
+    for(auto it = n.resourceUsage.begin(); it != n.resourceUsage.end(); ++it)
+    {
+      EventUsage u = it->second;
+      u.eventId += OLD_m_RootEventID;
+      OLD_m_ResourceUses[it->first].push_back(u);
+      OLD_m_EventFlags[u.eventId] |= PipeRWUsageEventFlags(u.usage);
+    }
+
+    GetActionStack().back()->children.push_back(n);
+
+    // if this is a push marker too, step down the action stack
+    if(cmdBufNodes[i].action.flags & ActionFlags::PushMarker)
+      GetActionStack().push_back(&GetActionStack().back()->children.back());
+
+    // similarly for a pop, but don't pop off the root
+    if((cmdBufNodes[i].action.flags & ActionFlags::PopMarker) && GetActionStack().size() > 1)
+      GetActionStack().pop_back();
+  }
+
+  if(totalEIDShift != 0)
+  {
+    // Move the loose events and resource usage by the total EID shift
+    for(auto it = cmdBufInfo.OLD_curEvents.begin(); it != cmdBufInfo.OLD_curEvents.end(); ++it)
+      it->eventId += totalEIDShift;
+    for(auto it = cmdBufInfo.OLD_resourceUsage.begin(); it != cmdBufInfo.OLD_resourceUsage.end(); ++it)
+      it->second.eventId += totalEIDShift;
+  }
+  // ANNOTATIONS ON LOOSE EVENTS ARE MISSING FROM m_Events and m_EventAnnotations
+
+  delete localAnnotations;
 }
 
 void WrappedVulkan::AddReferencesForSecondaries(VkResourceRecord *record,
@@ -1320,7 +1762,15 @@ bool WrappedVulkan::Serialise_vkQueueSubmit(SerialiserType &ser, VkQueue queue, 
 
     // add an action use for this submission, to tally up with any debug messages that come from it
     if(IsLoading(m_State))
+    {
       m_LoadingEventNode.addActionUse = true;
+
+      ActionUse OLD_use(m_CurChunkOffset, OLD_m_RootEventID);
+
+      // insert in sorted location
+      auto OLD_drawit = std::lower_bound(OLD_m_ActionUses.begin(), OLD_m_ActionUses.end(), OLD_use);
+      OLD_m_ActionUses.insert(OLD_drawit - OLD_m_ActionUses.begin(), OLD_use);
+    }
 
     rdcarray<VkCommandBufferSubmitInfo> cmds;
 
@@ -1372,6 +1822,9 @@ bool WrappedVulkan::Serialise_vkQueueSubmit(SerialiserType &ser, VkQueue queue, 
       {
         AddEvent();
 
+        // we're adding multiple events, need to increment ourselves
+        OLD_m_RootEventID++;
+
         ObjDisp(queue)->QueueSubmit(Unwrap(queue), 0, NULL, VK_NULL_HANDLE);
 
         ActionDescription action;
@@ -1379,12 +1832,16 @@ bool WrappedVulkan::Serialise_vkQueueSubmit(SerialiserType &ser, VkQueue queue, 
         action.flags |= ActionFlags::CommandBufferBoundary | ActionFlags::PassBoundary;
         AddEvent();
 
+        OLD_m_RootEvents.back().chunkIndex = APIEvent::NoChunk;
+        OLD_m_Events.back().chunkIndex = APIEvent::NoChunk;
+
         AddAction(action);
         GetLastEventNode().event.chunkIndex = APIEvent::NoChunk;
       }
       else
       {
         // account for the queue submit event
+        OLD_m_RootEventID++;
         m_RootEventID++;
         ObjDisp(queue)->QueueSubmit(Unwrap(queue), 0, NULL, VK_NULL_HANDLE);
       }
@@ -1393,6 +1850,7 @@ bool WrappedVulkan::Serialise_vkQueueSubmit(SerialiserType &ser, VkQueue queue, 
     {
       // account for the outer loop thinking we've added one event and incrementing,
       // since we've done all the handling ourselves this will be off by one.
+      OLD_m_RootEventID--;
       m_RootEventID--;
     }
   }
@@ -1549,7 +2007,15 @@ bool WrappedVulkan::Serialise_vkQueueSubmit2(SerialiserType &ser, VkQueue queue,
 
     // add an action use for this submission, to tally up with any debug messages that come from it
     if(IsLoading(m_State))
+    {
       m_LoadingEventNode.addActionUse = true;
+
+      ActionUse OLD_use(m_CurChunkOffset, OLD_m_RootEventID);
+
+      // insert in sorted location
+      auto OLD_drawit = std::lower_bound(OLD_m_ActionUses.begin(), OLD_m_ActionUses.end(), OLD_use);
+      OLD_m_ActionUses.insert(OLD_drawit - OLD_m_ActionUses.begin(), OLD_use);
+    }
 
     for(uint32_t sub = 0; sub < submitCount; sub++)
     {
@@ -1563,6 +2029,9 @@ bool WrappedVulkan::Serialise_vkQueueSubmit2(SerialiserType &ser, VkQueue queue,
       {
         AddEvent();
 
+        // we're adding multiple events, need to increment ourselves
+        OLD_m_RootEventID++;
+
         ObjDisp(queue)->QueueSubmit2(Unwrap(queue), 0, NULL, VK_NULL_HANDLE);
 
         ActionDescription action;
@@ -1570,12 +2039,16 @@ bool WrappedVulkan::Serialise_vkQueueSubmit2(SerialiserType &ser, VkQueue queue,
         action.flags |= ActionFlags::CommandBufferBoundary | ActionFlags::PassBoundary;
         AddEvent();
 
+        OLD_m_RootEvents.back().chunkIndex = APIEvent::NoChunk;
+        OLD_m_Events.back().chunkIndex = APIEvent::NoChunk;
+
         AddAction(action);
         GetLastEventNode().event.chunkIndex = APIEvent::NoChunk;
       }
       else
       {
         // account for the queue submit event
+        OLD_m_RootEventID++;
         m_RootEventID++;
         ObjDisp(queue)->QueueSubmit2(Unwrap(queue), 0, NULL, VK_NULL_HANDLE);
       }
@@ -1584,6 +2057,7 @@ bool WrappedVulkan::Serialise_vkQueueSubmit2(SerialiserType &ser, VkQueue queue,
     {
       // account for the outer loop thinking we've added one event and incrementing,
       // since we've done all the handling ourselves this will be off by one.
+      OLD_m_RootEventID--;
       m_RootEventID--;
     }
   }
@@ -2052,6 +2526,9 @@ bool WrappedVulkan::Serialise_vkQueueBeginDebugUtilsLabelEXT(SerialiserType &ser
 
       AddEvent();
       AddAction(action);
+
+      // now push the action stack
+      GetActionStack().push_back(&GetActionStack().back()->children.back());
     }
   }
 
@@ -2097,6 +2574,9 @@ bool WrappedVulkan::Serialise_vkQueueEndDebugUtilsLabelEXT(SerialiserType &ser, 
 
       AddEvent();
       AddAction(action);
+
+      if(GetActionStack().size() > 1)
+        GetActionStack().pop_back();
     }
   }
 
