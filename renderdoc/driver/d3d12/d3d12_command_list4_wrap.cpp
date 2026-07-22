@@ -1397,12 +1397,19 @@ bool WrappedID3D12GraphicsCommandList::Serialise_EmitRaytracingAccelerationStruc
 
       m_Cmd->AddAction(action);
 
+      D3D12ActionTreeNode &actionNode = m_Cmd->OLD_GetActionStack().back()->children.back();
       D3D12EventNode &eventNode = m_Cmd->GetLastEventNode();
 
+      actionNode.resourceUsage.push_back(
+          make_rdcpair(WrappedID3D12Resource::GetResIDFromAddr(Desc.DestBuffer),
+                       EventUsage(actionNode.action.eventId, ResourceUsage::CopyDst)));
       eventNode.resourceUsage.push_back(make_rdcpair(
           WrappedID3D12Resource::GetResIDFromAddr(Desc.DestBuffer), ResourceUsage::CopyDst));
       for(UINT i = 0; i < NumSourceAccelerationStructures; i++)
       {
+        actionNode.resourceUsage.push_back(make_rdcpair(
+            WrappedID3D12Resource::GetResIDFromAddr(pSourceAccelerationStructureData[i]),
+            EventUsage(actionNode.action.eventId, ResourceUsage::CopySrc)));
         eventNode.resourceUsage.push_back(make_rdcpair(
             WrappedID3D12Resource::GetResIDFromAddr(pSourceAccelerationStructureData[i]),
             ResourceUsage::CopySrc));
