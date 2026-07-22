@@ -766,6 +766,7 @@ private:
   Threading::CriticalSection m_ThreadTempMemLock;
   rdcarray<TempMem *> m_ThreadTempMem;
 
+  rdcarray<DebugMessage> OLD_m_DebugMessages;
   rdcarray<DebugMessage> m_DebugMessages;
   int m_OOMHandler = 0;
   RDResult m_FatalError = ResultCode::Succeeded;
@@ -994,6 +995,7 @@ public:
   ResourceId GetFrameCaptureResourceId() { return m_FrameCaptureRecord->GetResourceID(); }
   void AddDebugMessage(MessageCategory c, MessageSeverity sv, MessageSource src, rdcstr d);
   void AddDebugMessage(const DebugMessage &msg);
+  void OLD_AddDebugMessage(const DebugMessage &msg);
   rdcarray<DebugMessage> GetDebugMessages();
 
   void HandleOOM(bool handle)
