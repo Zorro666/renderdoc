@@ -89,16 +89,23 @@ bool WrappedID3D12GraphicsCommandList::Serialise_Close(SerialiserType &ser)
           m_Cmd->m_Partial[D3D12CommandData::Primary].partialParent = ResourceId();
       }
 
+      m_Cmd->m_BakedCmdListInfo[CommandList].OLD_curEventID = 0;
       m_Cmd->m_BakedCmdListInfo[CommandList].curEventID = 0;
     }
     else
     {
       GetResourceManager()->GetResAs<WrappedID3D12GraphicsCommandList>(CommandList)->Close();
 
+      {
+        if(m_Cmd->OLD_GetActionStack().size() > 1)
+          m_Cmd->OLD_GetActionStack().pop_back();
+      }
+
       BakedCmdListInfo &baked = m_Cmd->m_BakedCmdListInfo[BakedCommandList];
       BakedCmdListInfo &parent = m_Cmd->m_BakedCmdListInfo[CommandList];
 
-      baked.eventCount = baked.curEventID;
+      baked.OLD_eventCount = baked.OLD_curEventID;
+      baked.OLD_curEventID = 0;
       baked.curEventID = 0;
       baked.parentList = CommandList;
 
@@ -106,6 +113,10 @@ bool WrappedID3D12GraphicsCommandList::Serialise_Close(SerialiserType &ser)
 
       parent.curEventID = 0;
       parent.eventCount = 0;
+
+      parent.OLD_curEventID = 0;
+      parent.OLD_eventCount = 0;
+      parent.OLD_actionCount = 0;
     }
   }
 
@@ -284,6 +295,10 @@ bool WrappedID3D12GraphicsCommandList::Serialise_Reset(SerialiserType &ser,
           m_Cmd->m_BakedCmdListInfo[BakedCommandList].markerCount = 0;
       m_Cmd->m_BakedCmdListInfo[CommandList].curEventID =
           m_Cmd->m_BakedCmdListInfo[BakedCommandList].curEventID = 0;
+      m_Cmd->m_BakedCmdListInfo[CommandList].OLD_curEventID =
+          m_Cmd->m_BakedCmdListInfo[BakedCommandList].OLD_curEventID = 0;
+      m_Cmd->m_BakedCmdListInfo[CommandList].OLD_executeEvents =
+          m_Cmd->m_BakedCmdListInfo[BakedCommandList].OLD_executeEvents;
       m_Cmd->m_BakedCmdListInfo[CommandList].barriers.clear();
       m_Cmd->m_BakedCmdListInfo[BakedCommandList].barriers.clear();
     }
@@ -329,6 +344,9 @@ bool WrappedID3D12GraphicsCommandList::Serialise_Reset(SerialiserType &ser,
       }
 
       {
+        D3D12ActionTreeNode *action = new D3D12ActionTreeNode;
+        m_Cmd->m_BakedCmdListInfo[BakedCommandList].OLD_action = action;
+
         m_Cmd->m_BakedCmdListInfo[CommandList].type =
             m_Cmd->m_BakedCmdListInfo[BakedCommandList].type = type;
         m_Cmd->m_BakedCmdListInfo[CommandList].nodeMask =
@@ -340,8 +358,14 @@ bool WrappedID3D12GraphicsCommandList::Serialise_Reset(SerialiserType &ser,
 
         // On list execute we increment all child events/actions by
         // m_RootEventID and insert them into the tree.
+        m_Cmd->m_BakedCmdListInfo[BakedCommandList].OLD_curEventID = 0;
+        m_Cmd->m_BakedCmdListInfo[BakedCommandList].OLD_eventCount = 0;
+        m_Cmd->m_BakedCmdListInfo[BakedCommandList].OLD_actionCount = 0;
+
         m_Cmd->m_BakedCmdListInfo[BakedCommandList].curEventID = 0;
         m_Cmd->m_BakedCmdListInfo[BakedCommandList].eventCount = 0;
+
+        m_Cmd->m_BakedCmdListInfo[BakedCommandList].OLD_actionStack.push_back(action);
 
         m_Cmd->m_BakedCmdListInfo[BakedCommandList].beginChunk =
             uint32_t(m_Cmd->m_StructuredFile->chunks.size() - 1);
@@ -510,14 +534,19 @@ bool WrappedID3D12GraphicsCommandList::Serialise_ResourceBarrier(
 
           if(IsLoading(m_State) && (res1 || res2))
           {
+            BakedCmdListInfo &cmdinfo = m_Cmd->m_BakedCmdListInfo[m_Cmd->m_LastCmdListID];
             D3D12EventNode &eventNode = m_Cmd->m_LoadingEventNode;
 
             if(res1)
             {
+              cmdinfo.OLD_resourceUsage.push_back(make_rdcpair(
+                  GetResID(res1), EventUsage(cmdinfo.OLD_curEventID, ResourceUsage::Barrier)));
               eventNode.resourceUsage.push_back(make_rdcpair(GetResID(res1), ResourceUsage::Barrier));
             }
             if(res2)
             {
+              cmdinfo.OLD_resourceUsage.push_back(make_rdcpair(
+                  GetResID(res2), EventUsage(cmdinfo.OLD_curEventID, ResourceUsage::Barrier)));
               eventNode.resourceUsage.push_back(make_rdcpair(GetResID(res2), ResourceUsage::Barrier));
             }
           }
@@ -3016,7 +3045,12 @@ bool WrappedID3D12GraphicsCommandList::Serialise_ResolveQueryData(
 
         m_Cmd->AddAction(action);
 
+        D3D12ActionTreeNode &actionNode = m_Cmd->OLD_GetActionStack().back()->children.back();
         D3D12EventNode &eventNode = m_Cmd->GetLastEventNode();
+
+        actionNode.resourceUsage.push_back(
+            make_rdcpair(GetResID(pDestinationBuffer),
+                         EventUsage(actionNode.action.eventId, ResourceUsage::ResolveDst)));
         eventNode.resourceUsage.push_back(
             make_rdcpair(GetResID(pDestinationBuffer), ResourceUsage::ResolveDst));
       }
@@ -3350,6 +3384,11 @@ bool WrappedID3D12GraphicsCommandList::Serialise_SetCommandAnnotation(
 
       ResourceId cmdId = GetResID(pCommandList);
 
+      PendingAnnotation OLD_annot = {m_Cmd->m_BakedCmdListInfo[m_Cmd->m_LastCmdListID].OLD_curEventID,
+                                     key, valueType, valueVectorWidth, value};
+
+      m_Cmd->m_BakedCmdListInfo[m_Cmd->m_LastCmdListID].OLD_annotations.push_back(OLD_annot);
+
       PendingAnnotation annot = {0, key, valueType, valueVectorWidth, value};
       m_Cmd->m_BakedCmdListInfo[m_Cmd->m_LastCmdListID].pendingAnnotations.push_back(annot);
 
@@ -3672,6 +3711,8 @@ D3D12ExecuteData WrappedID3D12GraphicsCommandList::SaveExecuteIndirectParameters
 {
   WrappedID3D12CommandSignature *comSig = (WrappedID3D12CommandSignature *)pCommandSignature;
 
+  BakedCmdListInfo &cmdListInfo = m_Cmd->m_BakedCmdListInfo[m_Cmd->m_LastCmdListID];
+
   const size_t argsSize =
       comSig->sig.ByteStride * (RDCMAX(1U, MaxCommandCount) - 1) + comSig->sig.PackedByteSize;
   const size_t countSize = 16;
@@ -3700,6 +3741,19 @@ D3D12ExecuteData WrappedID3D12GraphicsCommandList::SaveExecuteIndirectParameters
   }
   exec.argBuf = buf;
   exec.argOffs = offs + 16;
+
+  BakedCmdListInfo::OLD_ExecuteData OLD_exec = {};
+  OLD_exec.sig = comSig;
+  OLD_exec.baseEvent = cmdListInfo.OLD_curEventID;
+  OLD_exec.maxCount = MaxCommandCount;
+  if(pCountBuffer)
+  {
+    OLD_exec.countBuf = buf;
+    OLD_exec.countOffs = offs;
+  }
+  OLD_exec.argBuf = buf;
+  OLD_exec.argOffs = offs + 16;
+  cmdListInfo.OLD_executeEvents.push_back(OLD_exec);
 
   return exec;
 }
@@ -4209,6 +4263,461 @@ void WrappedID3D12GraphicsCommandList::FinaliseExecuteIndirectEvents(BakedCmdLis
   exec.argBuf->Unmap(0, &range);
 }
 
+void WrappedID3D12GraphicsCommandList::OLD_FinaliseExecuteIndirectEvents(
+    BakedCmdListInfo &info, const BakedCmdListInfo::OLD_ExecuteData &exec)
+{
+  WrappedID3D12CommandSignature *comSig = exec.sig;
+
+  uint32_t count = exec.maxCount;
+
+  if(exec.countBuf)
+  {
+    bytebuf data;
+    m_pDevice->GetDebugManager()->GetBufferData(exec.countBuf, exec.countOffs, 4, data);
+
+    if(data.size() < sizeof(uint32_t))
+      count = 0;
+    else
+      count = RDCMIN(count, *(uint32_t *)&data[0]);
+  }
+
+  const uint32_t sigSize = (uint32_t)comSig->sig.arguments.size();
+
+  D3D12_RANGE range = {0, D3D12CommandData::m_IndirectSize};
+  byte *mapPtr = NULL;
+  CHECK_HR(m_pDevice, exec.argBuf->Map(0, &range, (void **)&mapPtr));
+
+  if(m_pDevice->HasFatalError())
+    return;
+
+  rdcarray<D3D12ActionTreeNode> &actions = info.OLD_action->children;
+
+  size_t idx = 0;
+  uint32_t eid = exec.baseEvent;
+
+  uint32_t firstActionEid = eid;
+
+  // find the action where our execute begins
+  for(; idx < actions.size(); idx++)
+    if(actions[idx].action.eventId == firstActionEid)
+      break;
+
+  RDCASSERTMSG("Couldn't find base event action!", idx < actions.size(), idx, actions.size());
+
+  // patch the name for the base action
+  actions[idx].action.customName =
+      StringFormat::Fmt("ExecuteIndirect(maxCount %u, count <%u>)", exec.maxCount, count);
+
+  // move to the first actual action of the commands
+  idx++;
+  eid++;
+
+  D3D12RenderState state;
+
+  SDChunk *baseChunk = NULL;
+
+  if(count > 0)
+  {
+    RDCASSERT(actions[idx].state);
+
+    state = *actions[idx].state;
+    baseChunk = m_Cmd->m_StructuredFile->chunks[actions[idx].action.events[0].chunkIndex];
+  }
+
+  for(uint32_t i = 0; i < count; i++)
+  {
+    byte *data = mapPtr + exec.argOffs;
+    mapPtr += comSig->sig.ByteStride;
+
+    for(uint32_t a = 0; a < sigSize; a++)
+    {
+      const D3D12_INDIRECT_ARGUMENT_DESC &arg = comSig->sig.arguments[a];
+
+      ActionDescription &curAction = actions[idx].action;
+
+      APIEvent *curEvent = NULL;
+
+      for(APIEvent &ev : curAction.events)
+      {
+        if(ev.eventId == eid)
+        {
+          curEvent = &ev;
+          break;
+        }
+      }
+
+      APIEvent dummy;
+      if(!curEvent)
+      {
+        RDCERR("Couldn't find EID %u in current action while patching ExecuteIndirect", eid);
+        // assign a dummy so we don't have to NULL-check below
+        curEvent = &dummy;
+      }
+
+      SDChunk *fakeChunk = new SDChunk(""_lit);
+      fakeChunk->metadata = baseChunk->metadata;
+      fakeChunk->metadata.chunkID = (uint32_t)D3D12Chunk::List_IndirectSubCommand;
+
+      {
+        StructuredSerialiser structuriser(fakeChunk, &GetChunkName);
+        structuriser.SetUserData(GetResourceManager());
+
+        structuriser.Serialise("CommandIndex"_lit, i);
+        structuriser.Serialise("ArgumentIndex"_lit, a);
+        structuriser.Serialise("ArgumentSignature"_lit, arg);
+
+        switch(arg.Type)
+        {
+          case D3D12_INDIRECT_ARGUMENT_TYPE_DRAW:
+          {
+            const D3D12_DRAW_ARGUMENTS *args = (D3D12_DRAW_ARGUMENTS *)data;
+            data += sizeof(D3D12_DRAW_ARGUMENTS);
+
+            curAction.drawIndex = a;
+            curAction.numIndices = args->VertexCountPerInstance;
+            curAction.numInstances = args->InstanceCount;
+            curAction.vertexOffset = args->StartVertexLocation;
+            curAction.instanceOffset = args->StartInstanceLocation;
+            curAction.flags |= ActionFlags::Drawcall | ActionFlags::Instanced | ActionFlags::Indirect;
+
+            curAction.customName = StringFormat::Fmt("[%u] arg%u: IndirectDraw(<%u, %u>)", i, a,
+                                                     curAction.numIndices, curAction.numInstances);
+
+            fakeChunk->name = curAction.customName;
+
+            structuriser.Serialise("ArgumentData"_lit, *args).Important();
+
+            // if this is the first action of the indirect, we could have picked up previous
+            // non-indirect events in this action, so the EID will be higher than we expect. Just
+            // assign the action's EID
+            eid = curAction.eventId;
+
+            m_Cmd->OLD_AddUsage(state, actions[idx]);
+
+            // advance
+            idx++;
+            eid++;
+
+            break;
+          }
+          case D3D12_INDIRECT_ARGUMENT_TYPE_DRAW_INDEXED:
+          {
+            const D3D12_DRAW_INDEXED_ARGUMENTS *args = (D3D12_DRAW_INDEXED_ARGUMENTS *)data;
+            data += sizeof(D3D12_DRAW_INDEXED_ARGUMENTS);
+
+            curAction.drawIndex = a;
+            curAction.numIndices = args->IndexCountPerInstance;
+            curAction.numInstances = args->InstanceCount;
+            curAction.baseVertex = args->BaseVertexLocation;
+            curAction.indexOffset = args->StartIndexLocation;
+            curAction.instanceOffset = args->StartInstanceLocation;
+            curAction.flags |= ActionFlags::Drawcall | ActionFlags::Instanced |
+                               ActionFlags::Indexed | ActionFlags::Indirect;
+            curAction.customName = StringFormat::Fmt("[%u] arg%u: IndirectDrawIndexed(<%u, %u>)", i,
+                                                     a, curAction.numIndices, curAction.numInstances);
+
+            fakeChunk->name = curAction.customName;
+
+            structuriser.Serialise("ArgumentData"_lit, *args).Important();
+
+            // if this is the first action of the indirect, we could have picked up previous
+            // non-indirect events in this action, so the EID will be higher than we expect. Just
+            // assign the action's EID
+            eid = curAction.eventId;
+
+            m_Cmd->OLD_AddUsage(state, actions[idx]);
+
+            // advance
+            idx++;
+            eid++;
+
+            break;
+          }
+          case D3D12_INDIRECT_ARGUMENT_TYPE_DISPATCH:
+          {
+            const D3D12_DISPATCH_ARGUMENTS *args = (D3D12_DISPATCH_ARGUMENTS *)data;
+            data += sizeof(D3D12_DISPATCH_ARGUMENTS);
+
+            curAction.dispatchDimension[0] = args->ThreadGroupCountX;
+            curAction.dispatchDimension[1] = args->ThreadGroupCountY;
+            curAction.dispatchDimension[2] = args->ThreadGroupCountZ;
+            curAction.flags |= ActionFlags::Dispatch | ActionFlags::Indirect;
+            curAction.customName = StringFormat::Fmt(
+                "[%u] arg%u: IndirectDispatch(<%u, %u, %u>)", i, a, curAction.dispatchDimension[0],
+                curAction.dispatchDimension[1], curAction.dispatchDimension[2]);
+
+            fakeChunk->name = curAction.customName;
+
+            structuriser.Serialise("ArgumentData"_lit, *args).Important();
+
+            // if this is the first action of the indirect, we could have picked up previous
+            // non-indirect events in this action, so the EID will be higher than we expect. Just
+            // assign the action's EID
+            eid = curAction.eventId;
+
+            m_Cmd->OLD_AddUsage(state, actions[idx]);
+
+            // advance
+            idx++;
+            eid++;
+
+            break;
+          }
+          case D3D12_INDIRECT_ARGUMENT_TYPE_DISPATCH_MESH:
+          {
+            const D3D12_DISPATCH_MESH_ARGUMENTS *args = (D3D12_DISPATCH_MESH_ARGUMENTS *)data;
+            data += sizeof(D3D12_DISPATCH_MESH_ARGUMENTS);
+
+            curAction.dispatchDimension[0] = args->ThreadGroupCountX;
+            curAction.dispatchDimension[1] = args->ThreadGroupCountY;
+            curAction.dispatchDimension[2] = args->ThreadGroupCountZ;
+            curAction.flags |= ActionFlags::MeshDispatch | ActionFlags::Indirect;
+            curAction.customName =
+                StringFormat::Fmt("[%u] arg%u: IndirectDispatchMesh(<%u, %u, %u>)", i, a,
+                                  curAction.dispatchDimension[0], curAction.dispatchDimension[1],
+                                  curAction.dispatchDimension[2]);
+
+            fakeChunk->name = curAction.customName;
+
+            structuriser.Serialise("ArgumentData"_lit, *args).Important();
+
+            // if this is the first action of the indirect, we could have picked up previous
+            // non-indirect events in this action, so the EID will be higher than we expect. Just
+            // assign the action's EID
+            eid = curAction.eventId;
+
+            m_Cmd->OLD_AddUsage(state, actions[idx]);
+
+            // advance
+            idx++;
+            eid++;
+
+            break;
+          }
+          case D3D12_INDIRECT_ARGUMENT_TYPE_DISPATCH_RAYS:
+          {
+            // Do not modify the mapped data
+            D3D12_DISPATCH_RAYS_DESC argsData = *(D3D12_DISPATCH_RAYS_DESC *)data;
+            D3D12_DISPATCH_RAYS_DESC *args = &argsData;
+            data += sizeof(D3D12_DISPATCH_RAYS_DESC);
+
+            for(D3D12_GPU_VIRTUAL_ADDRESS *addr :
+                {&args->RayGenerationShaderRecord.StartAddress, &args->MissShaderTable.StartAddress,
+                 &args->HitGroupTable.StartAddress, &args->CallableShaderTable.StartAddress})
+            {
+              if(*addr == 0)
+                continue;
+
+              ResourceId id;
+              uint64_t offs = 0;
+              m_pDevice->GetResIDFromOrigAddr(*addr, id, offs);
+
+              ID3D12Resource *res = GetResourceManager()->GetResAs<ID3D12Resource>(id);
+              RDCASSERT(res);
+              if(res)
+                *addr = res->GetGPUVirtualAddress() + offs;
+            }
+
+            curAction.dispatchDimension[0] = args->Width;
+            curAction.dispatchDimension[1] = args->Height;
+            curAction.dispatchDimension[2] = args->Depth;
+            curAction.flags |= ActionFlags::DispatchRay | ActionFlags::Indirect;
+            curAction.customName =
+                StringFormat::Fmt("[%u] arg%u: IndirectDispatchRays(<%u, %u, %u>)", i, a,
+                                  curAction.dispatchDimension[0], curAction.dispatchDimension[1],
+                                  curAction.dispatchDimension[2]);
+
+            fakeChunk->name = curAction.customName;
+
+            structuriser.Serialise("ArgumentData"_lit, *args).Important();
+
+            // if this is the first action of the indirect, we could have picked up previous
+            // non-indirect events in this action, so the EID will be higher than we expect. Just
+            // assign the action's EID
+            eid = curAction.eventId;
+
+            m_Cmd->OLD_AddUsage(state, actions[idx]);
+
+            // advance
+            idx++;
+            eid++;
+
+            break;
+          }
+          case D3D12_INDIRECT_ARGUMENT_TYPE_CONSTANT:
+          {
+            size_t argSize = sizeof(uint32_t) * arg.Constant.Num32BitValuesToSet;
+            const uint32_t *data32 = (uint32_t *)data;
+            data += argSize;
+
+            fakeChunk->name = StringFormat::Fmt("[%u] arg%u: IndirectSetRoot32BitConstants", i, a);
+
+            structuriser.Serialise("Values"_lit, data32, arg.Constant.Num32BitValuesToSet).Important();
+
+            if(arg.Constant.RootParameterIndex < state.graphics.sigelems.size())
+            {
+              state.graphics.sigelems[arg.Constant.RootParameterIndex].SetConstants(
+                  arg.Constant.Num32BitValuesToSet, data32, arg.Constant.DestOffsetIn32BitValues);
+            }
+
+            if(arg.Constant.RootParameterIndex < state.compute.sigelems.size())
+            {
+              state.compute.sigelems[arg.Constant.RootParameterIndex].SetConstants(
+                  arg.Constant.Num32BitValuesToSet, data32, arg.Constant.DestOffsetIn32BitValues);
+            }
+
+            // advance only the EID, since we're still in the same action
+            eid++;
+
+            break;
+          }
+          case D3D12_INDIRECT_ARGUMENT_TYPE_VERTEX_BUFFER_VIEW:
+          {
+            // Do not modify the mapped data
+            D3D12_VERTEX_BUFFER_VIEW vbData = *(D3D12_VERTEX_BUFFER_VIEW *)data;
+            D3D12_VERTEX_BUFFER_VIEW *vb = &vbData;
+            data += sizeof(D3D12_VERTEX_BUFFER_VIEW);
+
+            ResourceId id;
+            uint64_t offs = 0;
+            m_pDevice->GetResIDFromOrigAddr(vb->BufferLocation, id, offs);
+
+            ID3D12Resource *res = GetResourceManager()->GetResAs<ID3D12Resource>(id);
+            RDCASSERT(res);
+            if(res)
+              vb->BufferLocation = res->GetGPUVirtualAddress() + offs;
+
+            if(arg.VertexBuffer.Slot >= state.vbuffers.size())
+              state.vbuffers.resize(arg.VertexBuffer.Slot + 1);
+
+            state.vbuffers[arg.VertexBuffer.Slot].buf = id;
+            state.vbuffers[arg.VertexBuffer.Slot].offs = offs;
+            state.vbuffers[arg.VertexBuffer.Slot].size = vb->SizeInBytes;
+            state.vbuffers[arg.VertexBuffer.Slot].stride = vb->StrideInBytes;
+
+            fakeChunk->name = StringFormat::Fmt("[%u] arg%u: IndirectIASetVertexBuffer", i, a);
+
+            structuriser.Serialise("ArgumentData"_lit, *vb).Important();
+
+            // advance only the EID, since we're still in the same action
+            eid++;
+
+            break;
+          }
+          case D3D12_INDIRECT_ARGUMENT_TYPE_INDEX_BUFFER_VIEW:
+          {
+            // Do not modify the mapped data
+            D3D12_INDEX_BUFFER_VIEW ibData = *(D3D12_INDEX_BUFFER_VIEW *)data;
+            D3D12_INDEX_BUFFER_VIEW *ib = &ibData;
+            data += sizeof(D3D12_INDEX_BUFFER_VIEW);
+
+            ResourceId id;
+            uint64_t offs = 0;
+            m_pDevice->GetResIDFromOrigAddr(ib->BufferLocation, id, offs);
+
+            ID3D12Resource *res = GetResourceManager()->GetResAs<ID3D12Resource>(id);
+            RDCASSERT(res);
+            if(res)
+              ib->BufferLocation = res->GetGPUVirtualAddress() + offs;
+
+            state.ibuffer.buf = id;
+            state.ibuffer.offs = offs;
+            state.ibuffer.size = ib->SizeInBytes;
+            state.ibuffer.bytewidth = ib->Format == DXGI_FORMAT_R32_UINT ? 4 : 2;
+
+            fakeChunk->name = StringFormat::Fmt("[%u] arg%u: IndirectIASetIndexBuffer", i, a);
+
+            structuriser.Serialise("ArgumentData"_lit, *ib).Important();
+
+            // advance only the EID, since we're still in the same action
+            eid++;
+
+            break;
+          }
+          case D3D12_INDIRECT_ARGUMENT_TYPE_CONSTANT_BUFFER_VIEW:
+          case D3D12_INDIRECT_ARGUMENT_TYPE_SHADER_RESOURCE_VIEW:
+          case D3D12_INDIRECT_ARGUMENT_TYPE_UNORDERED_ACCESS_VIEW:
+          {
+            // Do not modify the mapped data
+            D3D12_GPU_VIRTUAL_ADDRESS addrData = *(D3D12_GPU_VIRTUAL_ADDRESS *)data;
+            D3D12_GPU_VIRTUAL_ADDRESS *addr = &addrData;
+            data += sizeof(D3D12_GPU_VIRTUAL_ADDRESS);
+
+            ResourceId id;
+            uint64_t offs = 0;
+            m_pDevice->GetResIDFromOrigAddr(*addr, id, offs);
+
+            ID3D12Resource *res = GetResourceManager()->GetResAs<ID3D12Resource>(id);
+            if(res)
+              *addr = res->GetGPUVirtualAddress() + offs;
+
+            // ConstantBufferView, ShaderResourceView and UnorderedAccessView all have one member -
+            // RootParameterIndex
+            if(arg.ConstantBufferView.RootParameterIndex < state.graphics.sigelems.size())
+            {
+              state.graphics.sigelems[arg.ConstantBufferView.RootParameterIndex].id = id;
+              state.graphics.sigelems[arg.ConstantBufferView.RootParameterIndex].offset = offs;
+            }
+
+            if(arg.ConstantBufferView.RootParameterIndex < state.compute.sigelems.size())
+            {
+              state.compute.sigelems[arg.ConstantBufferView.RootParameterIndex].id = id;
+              state.compute.sigelems[arg.ConstantBufferView.RootParameterIndex].offset = offs;
+            }
+
+            const char *viewTypeStr = "?";
+
+            if(arg.Type == D3D12_INDIRECT_ARGUMENT_TYPE_CONSTANT_BUFFER_VIEW)
+              viewTypeStr = "ConstantBuffer";
+            else if(arg.Type == D3D12_INDIRECT_ARGUMENT_TYPE_SHADER_RESOURCE_VIEW)
+              viewTypeStr = "ShaderResource";
+            else if(arg.Type == D3D12_INDIRECT_ARGUMENT_TYPE_UNORDERED_ACCESS_VIEW)
+              viewTypeStr = "UnorderedAccess";
+
+            fakeChunk->name =
+                StringFormat::Fmt("[%u] arg%u: IndirectSetRoot%sView", i, a, viewTypeStr);
+
+            D3D12BufferLocation buf = *addr;
+
+            structuriser.Serialise("ArgumentData"_lit, buf).Important();
+
+            // advance only the EID, since we're still in the same action
+            eid++;
+
+            break;
+          }
+          default: RDCERR("Unexpected argument type! %d", arg.Type); break;
+        }
+      }
+
+      m_Cmd->m_StructuredFile->chunks.push_back(fakeChunk);
+
+      curEvent->chunkIndex = uint32_t(m_Cmd->m_StructuredFile->chunks.size() - 1);
+    }
+  }
+
+  range.End = range.Begin = 0;
+  exec.argBuf->Unmap(0, &range);
+
+  // remove excesss actions if count < maxCount
+  if(count < exec.maxCount)
+  {
+    uint32_t shiftEID = (exec.maxCount - count) * sigSize;
+    uint32_t lastEID = exec.baseEvent + 1 + sigSize * exec.maxCount;
+
+    uint32_t shiftActionID = 0;
+
+    while(idx + shiftActionID < actions.size() &&
+          actions[idx + shiftActionID].action.eventId < lastEID)
+      shiftActionID++;
+
+    actions.erase(idx, shiftActionID);
+
+    // shift all subsequent EIDs and action IDs so they're contiguous
+    info.OLD_ShiftForRemoved(shiftActionID, shiftEID, idx);
+  }
+}
+
 template <typename SerialiserType>
 bool WrappedID3D12GraphicsCommandList::Serialise_ExecuteIndirect(
     SerialiserType &ser, ID3D12CommandSignature *pCommandSignature, UINT MaxCommandCount,
@@ -4489,9 +4998,15 @@ bool WrappedID3D12GraphicsCommandList::Serialise_ExecuteIndirect(
       // executes skip the event ID past the whole thing
       ++countEventsReplayed;
       if(m_Cmd->m_FirstEventID > 1)
+      {
         m_Cmd->m_RootEventID += countEventsReplayed;
+        m_Cmd->OLD_m_RootEventID += countEventsReplayed;
+      }
       else
+      {
         cmdInfo.curEventID += countEventsReplayed;
+        cmdInfo.OLD_curEventID += countEventsReplayed;
+      }
     }
     else
     {
@@ -4558,16 +5073,23 @@ bool WrappedID3D12GraphicsCommandList::Serialise_ExecuteIndirect(
         action.flags |= ActionFlags::MultiAction | ActionFlags::PushMarker;
 
         m_Cmd->AddAction(action);
+        cmdInfo.OLD_curEventID++;
 
+        D3D12ActionTreeNode &actionNode = m_Cmd->OLD_GetActionStack().back()->children.back();
         D3D12EventNode &eventNode = m_Cmd->GetLastEventNode();
         eventNode.executeData = execData;
         eventNode.hasExecuteData = true;
         cmdInfo.hasExecuteDatas = true;
 
+        actionNode.resourceUsage.push_back(
+            make_rdcpair(GetResID(pArgumentBuffer),
+                         EventUsage(actionNode.action.eventId, ResourceUsage::Indirect)));
         eventNode.resourceUsage.push_back(
             make_rdcpair(GetResID(pArgumentBuffer), ResourceUsage::Indirect));
         if(pCountBuffer)
         {
+          actionNode.resourceUsage.push_back(make_rdcpair(
+              GetResID(pCountBuffer), EventUsage(actionNode.action.eventId, ResourceUsage::Indirect)));
           eventNode.resourceUsage.push_back(
               make_rdcpair(GetResID(pCountBuffer), ResourceUsage::Indirect));
         }
@@ -4597,6 +5119,10 @@ bool WrappedID3D12GraphicsCommandList::Serialise_ExecuteIndirect(
               m_Cmd->AddAction(action);
               D3D12EventNode &eventNode = m_Cmd->GetLastEventNode();
               eventNode.state = new D3D12RenderState(cmdInfo.state);
+
+              m_Cmd->OLD_GetActionStack().back()->children.back().state =
+                  new D3D12RenderState(cmdInfo.state);
+              cmdInfo.OLD_curEventID++;
               break;
             }
             case D3D12_INDIRECT_ARGUMENT_TYPE_VERTEX_BUFFER_VIEW:
@@ -4607,6 +5133,49 @@ bool WrappedID3D12GraphicsCommandList::Serialise_ExecuteIndirect(
             case D3D12_INDIRECT_ARGUMENT_TYPE_UNORDERED_ACCESS_VIEW:
               // add dummy event
               m_Cmd->AddEvent();
+              cmdInfo.OLD_curEventID++;
+              break;
+            default: RDCERR("Unexpected argument type! %d", arg.Type); break;
+          }
+        }
+      }
+      // HACK FOR THE OLD SYSTEM
+      for(uint32_t i = maxCountCmds; i < execData.maxCount; i++)
+      {
+        for(uint32_t a = 0; a < sigSize; a++)
+        {
+          const D3D12_INDIRECT_ARGUMENT_DESC &arg = comSig->sig.arguments[a];
+
+          switch(arg.Type)
+          {
+            case D3D12_INDIRECT_ARGUMENT_TYPE_DISPATCH:
+            case D3D12_INDIRECT_ARGUMENT_TYPE_DISPATCH_MESH:
+            case D3D12_INDIRECT_ARGUMENT_TYPE_DISPATCH_RAYS:
+            case D3D12_INDIRECT_ARGUMENT_TYPE_DRAW_INDEXED:
+            case D3D12_INDIRECT_ARGUMENT_TYPE_DRAW:
+            {
+              // add dummy event and action
+              m_Cmd->OLD_AddEvent();
+              ActionDescription action;
+              action.customName = "ExecuteIndirect";
+              m_Cmd->OLD_AddAction(action);
+              D3D12EventNode &eventNode = m_Cmd->GetLastEventNode();
+              eventNode.state = new D3D12RenderState(cmdInfo.state);
+
+              m_Cmd->OLD_GetActionStack().back()->children.back().state =
+                  new D3D12RenderState(cmdInfo.state);
+              cmdInfo.OLD_curEventID++;
+              break;
+            }
+            case D3D12_INDIRECT_ARGUMENT_TYPE_VERTEX_BUFFER_VIEW:
+            case D3D12_INDIRECT_ARGUMENT_TYPE_INDEX_BUFFER_VIEW:
+            case D3D12_INDIRECT_ARGUMENT_TYPE_CONSTANT:
+            case D3D12_INDIRECT_ARGUMENT_TYPE_CONSTANT_BUFFER_VIEW:
+            case D3D12_INDIRECT_ARGUMENT_TYPE_SHADER_RESOURCE_VIEW:
+            case D3D12_INDIRECT_ARGUMENT_TYPE_UNORDERED_ACCESS_VIEW:
+              // add dummy event
+              m_Cmd->OLD_AddEvent();
+              cmdInfo.OLD_curEventID++;
               break;
             default: RDCERR("Unexpected argument type! %d", arg.Type); break;
           }
@@ -4768,7 +5337,12 @@ bool WrappedID3D12GraphicsCommandList::Serialise_ClearDepthStencilView(
             Subresource(GetMipForDsv(descriptor->GetDSV()), GetSliceForDsv(descriptor->GetDSV()));
         m_Cmd->AddAction(action);
 
+        D3D12ActionTreeNode &actionNode = m_Cmd->OLD_GetActionStack().back()->children.back();
         D3D12EventNode &eventNode = m_Cmd->GetLastEventNode();
+
+        actionNode.resourceUsage.push_back(
+            make_rdcpair(descriptor->GetResResourceId(),
+                         EventUsage(actionNode.action.eventId, ResourceUsage::Clear)));
         eventNode.resourceUsage.push_back(
             make_rdcpair(descriptor->GetResResourceId(), ResourceUsage::Clear));
       }
@@ -4867,7 +5441,12 @@ bool WrappedID3D12GraphicsCommandList::Serialise_ClearRenderTargetView(
             Subresource(GetMipForRtv(descriptor->GetRTV()), GetSliceForRtv(descriptor->GetRTV()));
         m_Cmd->AddAction(action);
 
+        D3D12ActionTreeNode &actionNode = m_Cmd->OLD_GetActionStack().back()->children.back();
         D3D12EventNode &eventNode = m_Cmd->GetLastEventNode();
+
+        actionNode.resourceUsage.push_back(
+            make_rdcpair(descriptor->GetResResourceId(),
+                         EventUsage(actionNode.action.eventId, ResourceUsage::Clear)));
         eventNode.resourceUsage.push_back(
             make_rdcpair(descriptor->GetResResourceId(), ResourceUsage::Clear));
       }
@@ -4969,7 +5548,11 @@ bool WrappedID3D12GraphicsCommandList::Serialise_ClearUnorderedAccessViewUint(
 
         m_Cmd->AddAction(action);
 
+        D3D12ActionTreeNode &actionNode = m_Cmd->OLD_GetActionStack().back()->children.back();
         D3D12EventNode &eventNode = m_Cmd->GetLastEventNode();
+
+        actionNode.resourceUsage.push_back(make_rdcpair(
+            GetResID(pResource), EventUsage(actionNode.action.eventId, ResourceUsage::Clear)));
         eventNode.resourceUsage.push_back(make_rdcpair(GetResID(pResource), ResourceUsage::Clear));
       }
     }
@@ -5078,7 +5661,11 @@ bool WrappedID3D12GraphicsCommandList::Serialise_ClearUnorderedAccessViewFloat(
 
         m_Cmd->AddAction(action);
 
+        D3D12ActionTreeNode &actionNode = m_Cmd->OLD_GetActionStack().back()->children.back();
         D3D12EventNode &eventNode = m_Cmd->GetLastEventNode();
+
+        actionNode.resourceUsage.push_back(make_rdcpair(
+            GetResID(pResource), EventUsage(actionNode.action.eventId, ResourceUsage::Clear)));
         eventNode.resourceUsage.push_back(make_rdcpair(GetResID(pResource), ResourceUsage::Clear));
       }
     }
@@ -5165,7 +5752,11 @@ bool WrappedID3D12GraphicsCommandList::Serialise_DiscardResource(SerialiserType 
 
         m_Cmd->AddAction(action);
 
+        D3D12ActionTreeNode &actionNode = m_Cmd->OLD_GetActionStack().back()->children.back();
         D3D12EventNode &eventNode = m_Cmd->GetLastEventNode();
+
+        actionNode.resourceUsage.push_back(make_rdcpair(
+            GetResID(pResource), EventUsage(actionNode.action.eventId, ResourceUsage::Discard)));
         eventNode.resourceUsage.push_back(make_rdcpair(GetResID(pResource), ResourceUsage::Discard));
       }
     }
@@ -5250,14 +5841,21 @@ bool WrappedID3D12GraphicsCommandList::Serialise_CopyBufferRegion(SerialiserType
 
         m_Cmd->AddAction(action);
 
+        D3D12ActionTreeNode &actionNode = m_Cmd->OLD_GetActionStack().back()->children.back();
         D3D12EventNode &eventNode = m_Cmd->GetLastEventNode();
 
         if(pSrcBuffer == pDstBuffer)
         {
+          actionNode.resourceUsage.push_back(make_rdcpair(
+              GetResID(pSrcBuffer), EventUsage(actionNode.action.eventId, ResourceUsage::Copy)));
           eventNode.resourceUsage.push_back(make_rdcpair(GetResID(pSrcBuffer), ResourceUsage::Copy));
         }
         else
         {
+          actionNode.resourceUsage.push_back(make_rdcpair(
+              GetResID(pSrcBuffer), EventUsage(actionNode.action.eventId, ResourceUsage::CopySrc)));
+          actionNode.resourceUsage.push_back(make_rdcpair(
+              GetResID(pDstBuffer), EventUsage(actionNode.action.eventId, ResourceUsage::CopyDst)));
           eventNode.resourceUsage.push_back(
               make_rdcpair(GetResID(pSrcBuffer), ResourceUsage::CopySrc));
           eventNode.resourceUsage.push_back(
@@ -5366,14 +5964,21 @@ bool WrappedID3D12GraphicsCommandList::Serialise_CopyTextureRegion(
 
         m_Cmd->AddAction(action);
 
+        D3D12ActionTreeNode &actionNode = m_Cmd->OLD_GetActionStack().back()->children.back();
         D3D12EventNode &eventNode = m_Cmd->GetLastEventNode();
 
         if(origSrc == origDst)
         {
+          actionNode.resourceUsage.push_back(
+              make_rdcpair(liveSrc, EventUsage(actionNode.action.eventId, ResourceUsage::Copy)));
           eventNode.resourceUsage.push_back(make_rdcpair(liveSrc, ResourceUsage::Copy));
         }
         else
         {
+          actionNode.resourceUsage.push_back(
+              make_rdcpair(liveSrc, EventUsage(actionNode.action.eventId, ResourceUsage::CopySrc)));
+          actionNode.resourceUsage.push_back(
+              make_rdcpair(liveDst, EventUsage(actionNode.action.eventId, ResourceUsage::CopyDst)));
           eventNode.resourceUsage.push_back(make_rdcpair(liveSrc, ResourceUsage::CopySrc));
           eventNode.resourceUsage.push_back(make_rdcpair(liveDst, ResourceUsage::CopyDst));
         }
@@ -5458,14 +6063,21 @@ bool WrappedID3D12GraphicsCommandList::Serialise_CopyResource(SerialiserType &se
 
         m_Cmd->AddAction(action);
 
+        D3D12ActionTreeNode &actionNode = m_Cmd->OLD_GetActionStack().back()->children.back();
         D3D12EventNode &eventNode = m_Cmd->GetLastEventNode();
 
         if(pSrcResource == pDstResource)
         {
+          actionNode.resourceUsage.push_back(make_rdcpair(
+              GetResID(pSrcResource), EventUsage(actionNode.action.eventId, ResourceUsage::Copy)));
           eventNode.resourceUsage.push_back(make_rdcpair(GetResID(pSrcResource), ResourceUsage::Copy));
         }
         else
         {
+          actionNode.resourceUsage.push_back(make_rdcpair(
+              GetResID(pSrcResource), EventUsage(actionNode.action.eventId, ResourceUsage::CopySrc)));
+          actionNode.resourceUsage.push_back(make_rdcpair(
+              GetResID(pDstResource), EventUsage(actionNode.action.eventId, ResourceUsage::CopyDst)));
           eventNode.resourceUsage.push_back(
               make_rdcpair(GetResID(pSrcResource), ResourceUsage::CopySrc));
           eventNode.resourceUsage.push_back(
@@ -5555,15 +6167,24 @@ bool WrappedID3D12GraphicsCommandList::Serialise_ResolveSubresource(
 
         m_Cmd->AddAction(action);
 
+        D3D12ActionTreeNode &actionNode = m_Cmd->OLD_GetActionStack().back()->children.back();
         D3D12EventNode &eventNode = m_Cmd->GetLastEventNode();
 
         if(pSrcResource == pDstResource)
         {
+          actionNode.resourceUsage.push_back(make_rdcpair(
+              GetResID(pSrcResource), EventUsage(actionNode.action.eventId, ResourceUsage::Resolve)));
           eventNode.resourceUsage.push_back(
               make_rdcpair(GetResID(pSrcResource), ResourceUsage::Resolve));
         }
         else
         {
+          actionNode.resourceUsage.push_back(
+              make_rdcpair(GetResID(pSrcResource),
+                           EventUsage(actionNode.action.eventId, ResourceUsage::ResolveSrc)));
+          actionNode.resourceUsage.push_back(
+              make_rdcpair(GetResID(pDstResource),
+                           EventUsage(actionNode.action.eventId, ResourceUsage::ResolveDst)));
           eventNode.resourceUsage.push_back(
               make_rdcpair(GetResID(pSrcResource), ResourceUsage::ResolveSrc));
           eventNode.resourceUsage.push_back(
@@ -5672,7 +6293,13 @@ bool WrappedID3D12GraphicsCommandList::Serialise_CopyTiles(
 
         m_Cmd->AddAction(action);
 
+        D3D12ActionTreeNode &actionNode = m_Cmd->OLD_GetActionStack().back()->children.back();
         D3D12EventNode &eventNode = m_Cmd->GetLastEventNode();
+
+        actionNode.resourceUsage.push_back(
+            make_rdcpair(liveSrc, EventUsage(actionNode.action.eventId, ResourceUsage::CopySrc)));
+        actionNode.resourceUsage.push_back(
+            make_rdcpair(liveDst, EventUsage(actionNode.action.eventId, ResourceUsage::CopyDst)));
         eventNode.resourceUsage.push_back(make_rdcpair(liveSrc, ResourceUsage::CopySrc));
         eventNode.resourceUsage.push_back(make_rdcpair(liveDst, ResourceUsage::CopyDst));
       }

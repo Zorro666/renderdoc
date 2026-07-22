@@ -59,6 +59,94 @@ WRAPPED_POOL_INST(WrappedID3D12Device);
 Threading::CriticalSection WrappedID3D12Device::m_DeviceWrappersLock;
 std::map<ID3D12Device *, WrappedID3D12Device *> WrappedID3D12Device::m_DeviceWrappers;
 
+static bool EventsEqual(const APIEvent &a, const APIEvent &b)
+{
+  if(a.eventId != b.eventId)
+    return false;
+  if(a.chunkIndex != b.chunkIndex)
+    return false;
+  if(a.fileOffset != b.fileOffset)
+    return false;
+  if(a.annotations && !a.annotations->HasEqualValue(b.annotations))
+    return false;
+  return true;
+}
+
+static bool ActionsEqual(const ActionDescription *a, const ActionDescription *b, bool recurse)
+{
+  if(!a && !b)
+    return true;
+  if(!a || !b)
+    return false;
+  if(a->eventId != b->eventId)
+    return false;
+  if(a->actionId != b->actionId)
+    return false;
+  if(a->customName != b->customName)
+    return false;
+  if(a->flags != b->flags)
+    return false;
+  if(a->markerColor != b->markerColor)
+    return false;
+  if(a->numIndices != b->numIndices)
+    return false;
+  if(a->numInstances != b->numInstances)
+    return false;
+  if(a->baseVertex != b->baseVertex)
+    return false;
+  if(a->indexOffset != b->indexOffset)
+    return false;
+  if(a->vertexOffset != b->vertexOffset)
+    return false;
+  if(a->instanceOffset != b->instanceOffset)
+    return false;
+  if(a->drawIndex != b->drawIndex)
+    return false;
+  if(a->dispatchDimension != b->dispatchDimension)
+    return false;
+  if(a->dispatchThreadsDimension != b->dispatchThreadsDimension)
+    return false;
+  if(a->dispatchBase != b->dispatchBase)
+    return false;
+  if(a->copySource != b->copySource)
+    return false;
+  if(a->copySourceSubresource != b->copySourceSubresource)
+    return false;
+  if(a->copyDestination != b->copyDestination)
+    return false;
+  if(a->copyDestinationSubresource != b->copyDestinationSubresource)
+    return false;
+  if(recurse)
+  {
+    if(!ActionsEqual(a->parent, b->parent, false))
+      return false;
+    if(!ActionsEqual(a->previousAction, b->previousAction, false))
+      return false;
+    if(!ActionsEqual(a->nextAction, b->nextAction, false))
+      return false;
+  }
+  if(a->outputs != b->outputs)
+    return false;
+  if(a->depthOut != b->depthOut)
+    return false;
+  if(a->events.size() != b->events.size())
+    return false;
+  for(size_t i = 0; i < a->events.size(); ++i)
+  {
+    if(!EventsEqual(a->events[i], b->events[i]))
+      return false;
+  }
+  if(a->children.size() != b->children.size())
+    return false;
+  if(recurse)
+  {
+    for(size_t i = 0; i < a->children.size(); ++i)
+      if(!ActionsEqual(&a->children[i], &b->children[i], true))
+        return false;
+  }
+
+  return true;
+}
 void WrappedID3D12Device::RemoveQueue(WrappedID3D12CommandQueue *queue)
 {
   m_Queues.removeOne(queue);
@@ -3891,16 +3979,22 @@ void WrappedID3D12Device::AddDebugMessage(MessageCategory c, MessageSeverity sv,
       RDCERR("Couldn't locate action use for current chunk offset %llu", cmd.m_CurChunkOffset);
 
     AddDebugMessage(msg);
+    OLD_AddDebugMessage(msg);
   }
   else
   {
-    cmd.m_EventMessages.push_back(msg);
+    cmd.OLD_m_EventMessages.push_back(msg);
   }
 }
 
 void WrappedID3D12Device::AddDebugMessage(const DebugMessage &msg)
 {
   m_DebugMessages.push_back(msg);
+}
+
+void WrappedID3D12Device::OLD_AddDebugMessage(const DebugMessage &msg)
+{
+  OLD_m_DebugMessages.push_back(msg);
 }
 
 rdcarray<DebugMessage> WrappedID3D12Device::GetDebugMessages()
@@ -5660,10 +5754,145 @@ RDResult WrappedID3D12Device::ReadLogInitialisation(RDCFile *rdc, bool storeStru
 
   if(!IsStructuredExporting(m_State))
   {
+    rdcarray<ActionDescription> OLD_actionList = m_Queue->OLD_GetParentAction().OLD_Bake();
+    rdcarray<ActionDescription *> OLD_m_Actions;
+    SetupActionPointers(OLD_m_Actions, OLD_actionList);
+    m_Queue->OLD_GetParentAction().children.clear();
+
     ActionDescription rootAction;
     m_Queue->BakeEventNodes(rootAction);
     rootAction.children.swap(GetReplay()->WriteFrameRecord().actionList);
     SetupActionPointers(m_Actions, GetReplay()->WriteFrameRecord().actionList);
+
+    // CHECK m_Actions identical to OLD_m_Actions
+    if(OLD_m_Actions.size() != m_Actions.size())
+      RDCERR("Actions sizes do not match");
+    for(size_t i = 0; i < m_Actions.size(); ++i)
+    {
+      if(i >= OLD_m_Actions.size())
+        RDCFATAL("Actions sizes do not match");
+      if(!ActionsEqual(m_Actions[i], OLD_m_Actions[i], true))
+        RDCFATAL("Action does not match");
+    }
+
+    D3D12CommandData &cmd = *m_Queue->GetCommandData();
+    rdcarray<APIEvent> &OLD_Events = cmd.OLD_m_Events;
+    rdcarray<APIEvent> &NEW_Events = cmd.m_Events;
+    // CHECK m_Events identical to OLD_m_Events
+    if(OLD_Events.size() != NEW_Events.size())
+      RDCERR("Events sizes do not match");
+    for(size_t i = 0; i < NEW_Events.size(); ++i)
+    {
+      if(i >= OLD_Events.size())
+        RDCFATAL("Events sizes do not match");
+      if(!EventsEqual(NEW_Events[i], OLD_Events[i]))
+        RDCFATAL("Event does not match");
+    }
+
+    // CHECK m_DebugMessages identical OLD_m_DebugMessages
+    if(OLD_m_DebugMessages.size() != m_DebugMessages.size())
+      RDCERR("DebugMessages sizes do not match");
+    for(size_t i = 0; i < m_DebugMessages.size(); ++i)
+    {
+      if(i >= OLD_m_DebugMessages.size())
+        RDCFATAL("DebugMessages sizes do not match");
+      if(!(m_DebugMessages[i] == OLD_m_DebugMessages[i]))
+        RDCFATAL("DebugMessage does not match");
+    }
+
+    // CHECK EID data inside BakedCmdBufNode
+    for(auto it = cmd.m_BakedCmdListInfo.begin(); it != cmd.m_BakedCmdListInfo.end(); ++it)
+    {
+      const BakedCmdListInfo &cmdListInfo = it->second;
+      if(cmdListInfo.curEventID != cmdListInfo.OLD_curEventID)
+        RDCFATAL("curEventID does not match");
+      if(cmdListInfo.eventCount != cmdListInfo.OLD_eventCount)
+        RDCFATAL("eventCount does not match");
+    }
+
+    for(uint32_t i = 0; i < D3D12CommandData::PartialReplayIndex::ePartialNum; ++i)
+    {
+      D3D12CommandData::PartialReplayData &partial = cmd.m_Partial[i];
+      // CHECK m_Partial.cmdListExecs data
+      if(partial.cmdListExecs.size() != partial.OLD_cmdListExecs.size())
+        RDCERR("m_Partial.cmdListExecs sizes do not match");
+      for(auto it = partial.cmdListExecs.begin(); it != partial.cmdListExecs.end(); ++it)
+      {
+        if(partial.OLD_cmdListExecs.find(it->first) == partial.OLD_cmdListExecs.end())
+          RDCFATAL("m_Partial.cmdListExecs not found");
+
+        const rdcarray<uint32_t> submits = it->second;
+        const rdcarray<uint32_t> OLD_submits = partial.OLD_cmdListExecs[it->first];
+
+        if(submits != OLD_submits)
+          RDCERR("submits do not match");
+      }
+    }
+
+    // CHECK m_ActionUses identical OLD_m_ActionUses
+    if(cmd.OLD_m_ActionUses.size() != cmd.m_ActionUses.size())
+      RDCERR("ActionUses sizes do not match");
+    for(size_t i = 0; i < cmd.m_ActionUses.size(); ++i)
+    {
+      if(i >= cmd.OLD_m_ActionUses.size())
+        RDCFATAL("ActionUses sizes do not match");
+      if(cmd.OLD_m_ActionUses[i].fileOffset != cmd.m_ActionUses[i].fileOffset)
+        RDCFATAL("ActionUse.fileOffset does not match");
+      if(cmd.OLD_m_ActionUses[i].cmdList != cmd.m_ActionUses[i].cmdList)
+        RDCFATAL("ActionUse.cmdList does not match");
+      if(cmd.OLD_m_ActionUses[i].eventId != cmd.m_ActionUses[i].eventId)
+        RDCFATAL("ActionUse.eventId does not match");
+      if(cmd.OLD_m_ActionUses[i].relativeEID != cmd.m_ActionUses[i].relativeEID)
+        RDCFATAL("ActionUse.relativeEID does not match");
+    }
+
+    uint32_t maxEID = m_Queue->GetMaxEID();
+
+    // CHECK m_ResourceUsages identical
+    if(cmd.OLD_m_ResourceUses.size() != cmd.m_ResourceUses.size())
+      RDCERR("m_ResourceUsages sizes do not match");
+    for(auto it = cmd.m_ResourceUses.begin(); it != cmd.m_ResourceUses.end(); ++it)
+    {
+      ResourceId id = it->first;
+      if(cmd.OLD_m_ResourceUses.find(id) == cmd.OLD_m_ResourceUses.end())
+        RDCFATAL("OLD_m_ResourceUses not found");
+
+      rdcarray<EventUsage> newUsages = it->second;
+      rdcarray<EventUsage> oldUsages = cmd.OLD_m_ResourceUses[id];
+
+      if(newUsages.count() != oldUsages.count())
+        RDCERR("Resource %s Size mismatch New:%i Old:%i", ToStr(id).c_str(), newUsages.count(),
+               oldUsages.count());
+
+      for(uint32_t i = 0; i < newUsages.size(); ++i)
+      {
+        if(i >= oldUsages.size())
+          RDCFATAL("Resource %s Size mismatch New:%i Old:%i", ToStr(id).c_str(), newUsages.count(),
+                   oldUsages.count());
+        EventUsage newUsage = newUsages[i];
+        EventUsage oldUsage = oldUsages[i];
+        if(newUsage.eventId != oldUsage.eventId)
+        {
+          // UGLY HACK TRY TO IGNORE BROKEN OLD usage EID
+          if(oldUsage.eventId > maxEID)
+          {
+            RDCERR("%s EventUsage.eventId mismatch New:%i %s Old:%i %s", ToStr(id).c_str(),
+                   newUsage.eventId, ToStr(newUsage.usage).c_str(), oldUsage.eventId,
+                   ToStr(oldUsage.usage).c_str());
+          }
+          else
+          {
+            RDCFATAL("%s EventUsage.eventId mismatch New:%i %s Old:%i %s", ToStr(id).c_str(),
+                     newUsage.eventId, ToStr(newUsage.usage).c_str(), oldUsage.eventId,
+                     ToStr(oldUsage.usage).c_str());
+          }
+        }
+        if(newUsage.usage != oldUsage.usage)
+          RDCFATAL("%s EventUsage.usage mismatch New:%s %i Old:%s %i", ToStr(id).c_str(),
+                   ToStr(newUsage.usage).c_str(), newUsage.eventId, ToStr(oldUsage.usage).c_str(),
+                   oldUsage.eventId);
+      }
+    }
   }
 
   {
