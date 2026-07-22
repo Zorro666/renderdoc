@@ -64,6 +64,7 @@ bool WrappedID3D12GraphicsCommandList::Serialise_Barrier(SerialiserType &ser, UI
     D3D12_BUFFER_BARRIER *buf = filteredUnwrappedBuf.data();
 
     D3D12EventNode &eventNode = m_Cmd->m_LoadingEventNode;
+    BakedCmdListInfo &cmdinfo = m_Cmd->m_BakedCmdListInfo[m_Cmd->m_LastCmdListID];
 
     // filter out any barriers that reference a NULL resource - this means the resource wasn't used
     // elsewhere so was discarded from the capture
@@ -87,7 +88,11 @@ bool WrappedID3D12GraphicsCommandList::Serialise_Barrier(SerialiserType &ser, UI
             group.NumBarriers++;
 
             if(IsLoading(m_State))
+            {
+              cmdinfo.OLD_resourceUsage.push_back(make_rdcpair(
+                  GetResID(res), EventUsage(cmdinfo.OLD_curEventID, ResourceUsage::Barrier)));
               eventNode.resourceUsage.push_back(make_rdcpair(GetResID(res), ResourceUsage::Barrier));
+            }
           }
         }
 
@@ -113,7 +118,11 @@ bool WrappedID3D12GraphicsCommandList::Serialise_Barrier(SerialiserType &ser, UI
             group.NumBarriers++;
 
             if(IsLoading(m_State))
+            {
+              cmdinfo.OLD_resourceUsage.push_back(make_rdcpair(
+                  GetResID(res), EventUsage(cmdinfo.OLD_curEventID, ResourceUsage::Barrier)));
               eventNode.resourceUsage.push_back(make_rdcpair(GetResID(res), ResourceUsage::Barrier));
+            }
           }
         }
 

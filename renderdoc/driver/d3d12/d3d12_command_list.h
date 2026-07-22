@@ -228,6 +228,8 @@ public:
   D3D12ResourceRecord *GetCreationRecord() { return m_CreationRecord; }
 
   void FinaliseExecuteIndirectEvents(BakedCmdListInfo &info, size_t nodeIdx);
+  void OLD_FinaliseExecuteIndirectEvents(BakedCmdListInfo &info,
+                                         const BakedCmdListInfo::OLD_ExecuteData &exec);
   D3D12ExecuteData SaveExecuteIndirectParameters(
       ID3D12GraphicsCommandListX *list, ID3D12CommandSignature *pCommandSignature,
       UINT MaxCommandCount, ID3D12Resource *pArgumentBuffer, UINT64 ArgumentBufferOffset,
