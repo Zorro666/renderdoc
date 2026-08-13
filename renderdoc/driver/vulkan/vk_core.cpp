@@ -4521,6 +4521,7 @@ RDResult WrappedVulkan::ContextReplayLog(CaptureState readType, uint32_t startEv
         RDCFATAL("ActionUse.eventId does not match");
     }
 
+#if 0
     // CHECK m_ResourceUsages identical
     if(OLD_m_ResourceUses.size() != m_ResourceUses.size())
       RDCERR("m_ResourceUsages sizes do not match");
@@ -4570,6 +4571,7 @@ RDResult WrappedVulkan::ContextReplayLog(CaptureState readType, uint32_t startEv
       if(OLD_m_EventFlags[eid] != it->second)
         RDCFATAL("EventFlags mismatch New:0x%04X Old:0x%04X", it->second, OLD_m_EventFlags[eid]);
     }
+#endif    // #if 0
   }
 
   // submit the indirect preparation command buffer, if we need to
@@ -6318,6 +6320,7 @@ WrappedVulkan::CommandBufferNode *WrappedVulkan::GetCommandBufferPartialSubmissi
 rdcarray<EventUsage> WrappedVulkan::GetUsage(ResourceId id)
 {
   rdcarray<EventUsage> newUsages = m_ResourceUses[id];
+#if 0
   rdcarray<EventUsage> oldUsages = OLD_m_ResourceUses[id];
 
   if(newUsages.count() != oldUsages.count())
@@ -6354,6 +6357,7 @@ rdcarray<EventUsage> WrappedVulkan::GetUsage(ResourceId id)
         RDCFATAL("EventFlags mismatch New:0x%04X Old:0x%04X", it->second, OLD_m_EventFlags[eid]);
     }
   }
+#endif    // #if 0
 
   return newUsages;
 }
