@@ -190,6 +190,10 @@ bool WrappedVulkan::Serialise_vkGetFenceStatus(SerialiserType &ser, VkDevice dev
   {
     ObjDisp(device)->DeviceWaitIdle(Unwrap(device));
   }
+  if(IsLoading(m_State))
+  {
+    m_LoadingEventNode.AddResourceUsage(GetResID(fence), ResourceUsage::Read);
+  }
 
   return true;
 }
@@ -249,6 +253,11 @@ bool WrappedVulkan::Serialise_vkResetFences(SerialiserType &ser, VkDevice device
     // either.
     // ObjDisp(device)->ResetFences(Unwrap(device), fenceCount, pFences);
   }
+  if(IsLoading(m_State))
+  {
+    for(uint32_t i = 0; i < fenceCount; ++i)
+      m_LoadingEventNode.AddResourceUsage(GetResID(pFences[i]), ResourceUsage::Reset);
+  }
 
   return true;
 }
@@ -294,6 +303,11 @@ bool WrappedVulkan::Serialise_vkWaitForFences(SerialiserType &ser, VkDevice devi
   if(IsReplayingAndReading())
   {
     ObjDisp(device)->DeviceWaitIdle(Unwrap(device));
+  }
+  if(IsLoading(m_State))
+  {
+    for(uint32_t i = 0; i < fenceCount; ++i)
+      m_LoadingEventNode.AddResourceUsage(GetResID(pFences[i]), ResourceUsage::Wait);
   }
 
   return true;
@@ -406,6 +420,8 @@ bool WrappedVulkan::Serialise_vkSetEvent(SerialiserType &ser, VkDevice device, V
   if(IsReplayingAndReading())
   {
     // see top of this file for current event/fence handling
+    if(IsLoading(m_State))
+      m_LoadingEventNode.AddResourceUsage(GetResID(event), ResourceUsage::Signal);
   }
 
   return true;
@@ -444,6 +460,8 @@ bool WrappedVulkan::Serialise_vkResetEvent(SerialiserType &ser, VkDevice device,
   if(IsReplayingAndReading())
   {
     // see top of this file for current event/fence handling
+    if(IsLoading(m_State))
+      m_LoadingEventNode.AddResourceUsage(GetResID(event), ResourceUsage::Reset);
   }
 
   return true;
@@ -482,6 +500,8 @@ bool WrappedVulkan::Serialise_vkGetEventStatus(SerialiserType &ser, VkDevice dev
   if(IsReplayingAndReading())
   {
     ObjDisp(device)->DeviceWaitIdle(Unwrap(device));
+    if(IsLoading(m_State))
+      m_LoadingEventNode.AddResourceUsage(GetResID(event), ResourceUsage::Wait);
   }
 
   return true;

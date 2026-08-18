@@ -1620,6 +1620,33 @@ QString ToQStr(const ResourceUsage usage, const GraphicsAPI apitype)
       case ResourceUsage::Barrier: return lit("Barrier");
 
       case ResourceUsage::CPUWrite: return lit("CPU Write");
+
+      case ResourceUsage::Pipeline: return lit("PSO");
+      case ResourceUsage::PipelineLayout: return lit("PSO Layout");
+      case ResourceUsage::VS_Shader: return lit("VS - Shader");
+      case ResourceUsage::HS_Shader: return lit("HS - Shader");
+      case ResourceUsage::DS_Shader: return lit("DS - Shader");
+      case ResourceUsage::GS_Shader: return lit("GS - Shader");
+      case ResourceUsage::PS_Shader: return lit("PS - Shader");
+      case ResourceUsage::CS_Shader: return lit("CS - Shader");
+      case ResourceUsage::TS_Shader: return lit("AS - Shader");
+      case ResourceUsage::MS_Shader: return lit("MS - Shader");
+      case ResourceUsage::DescriptorSet: return lit("DescriptorSet");
+      case ResourceUsage::DescriptorSetLayout: return lit("DescriptorSet Layout");
+      case ResourceUsage::DescriptorBuffer: return lit("Descriptor Buffer");
+      case ResourceUsage::RenderPass: return lit("Render Pass");
+      case ResourceUsage::Framebuffer: return lit("Framebuffer");
+      case ResourceUsage::Sampler: return lit("Sampler");
+      case ResourceUsage::ImageView: return lit("ImageView");
+      case ResourceUsage::BufferView: return lit("BufferView");
+      case ResourceUsage::Bind: return lit("Bind");
+      case ResourceUsage::UnBind: return lit("UnBind");
+      case ResourceUsage::Read: return lit("Read");
+      case ResourceUsage::Reset: return lit("Reset");
+      case ResourceUsage::Signal: return lit("Signal");
+      case ResourceUsage::Wait: return lit("Wait");
+      case ResourceUsage::Submit: return lit("Submit");
+      case ResourceUsage::Used: return lit("-");
     }
   }
   else if(apitype == GraphicsAPI::OpenGL || apitype == GraphicsAPI::Vulkan)
@@ -1687,6 +1714,33 @@ QString ToQStr(const ResourceUsage usage, const GraphicsAPI apitype)
       case ResourceUsage::Barrier: return lit("Barrier");
 
       case ResourceUsage::CPUWrite: return lit("CPU Write");
+
+      case ResourceUsage::Pipeline: return lit("PSO");
+      case ResourceUsage::PipelineLayout: return lit("PSO Layout");
+      case ResourceUsage::VS_Shader: return lit("VS - Shader");
+      case ResourceUsage::HS_Shader: return lit("HS - Shader");
+      case ResourceUsage::DS_Shader: return lit("TCS - Shader");
+      case ResourceUsage::GS_Shader: return lit("TES - Shader");
+      case ResourceUsage::PS_Shader: return lit("FS - Shader");
+      case ResourceUsage::CS_Shader: return lit("CS - Shader");
+      case ResourceUsage::TS_Shader: return lit("TS - Shader");
+      case ResourceUsage::MS_Shader: return lit("MS - Shader");
+      case ResourceUsage::DescriptorSet: return lit("DescriptorSet");
+      case ResourceUsage::DescriptorSetLayout: return lit("DescriptorSet Layout");
+      case ResourceUsage::DescriptorBuffer: return lit("Descriptor Buffer");
+      case ResourceUsage::RenderPass: return lit("Render Pass");
+      case ResourceUsage::Framebuffer: return lit("Framebuffer");
+      case ResourceUsage::Sampler: return lit("Sampler");
+      case ResourceUsage::ImageView: return lit("ImageView");
+      case ResourceUsage::BufferView: return lit("BufferView");
+      case ResourceUsage::Bind: return lit("Bind");
+      case ResourceUsage::UnBind: return lit("UnBind");
+      case ResourceUsage::Read: return lit("Read");
+      case ResourceUsage::Reset: return lit("Reset");
+      case ResourceUsage::Signal: return lit("Signal");
+      case ResourceUsage::Wait: return lit("Wait");
+      case ResourceUsage::Submit: return lit("Submit");
+      case ResourceUsage::Used: return lit("-");
     }
   }
 

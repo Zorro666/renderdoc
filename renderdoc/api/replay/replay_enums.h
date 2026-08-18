@@ -2972,6 +2972,38 @@ Note that a resource may be used for more than one thing in one event, see :clas
 
   The resource is being used as a read-write resource in all shader stages.
 
+.. data:: VS_Shader
+
+  The :data:`vertex shader <ShaderStage.Vertex>`.
+
+.. data:: HS_Shader
+
+  The :data:`hull shader <ShaderStage.Hull>`.
+
+.. data:: DS_Shader
+
+  The :data:`domain shader <ShaderStage.Domain>`.
+
+.. data:: GS_Shader
+
+  The :data:`geometry shader <ShaderStage.Geometry>`.
+
+.. data:: PS_Shader
+
+  The :data:`pixel shader <ShaderStage.Pixel>`.
+
+.. data:: CS_Shader
+
+  The :data:`compute shader <ShaderStage.Compute>`.
+
+.. data:: TS_Shader
+
+  The amplification or :data:`task shader <ShaderStage.Task>`.
+
+.. data:: MS_Shader
+
+  The :data:`mesh shader <ShaderStage.Mesh>`.
+
 .. data:: InputTarget
 
   The resource is being read as an input target for reading from the target currently being written.
@@ -3032,6 +3064,78 @@ Note that a resource may be used for more than one thing in one event, see :clas
 
   The resource is written from the CPU, either directly as mapped memory or indirectly via a
   synchronous update.
+
+.. data:: Pipeline
+
+  The Pipeline Object in Vulkan :data:`VKPipeline <renderdoc.VKPipeline>`.
+
+.. data:: PipelineLayout
+
+  The PipelineLayout used when creating a Pipeline Object
+
+.. data:: DescriptorSet
+
+  The DescriptorSet in Vulkan :data:`VKDescriptorSet <renderdoc.VKDescriptorSet>`.
+
+.. data:: DescriptorSetLayout
+
+  The DescriptorSetLayout used when creating a DescriptorSet
+
+.. data:: DescriptorBuffer
+
+  The resource is used as a DescriptorBuffer in Vulkan :data:`VKDescriptorBuffer <renderdoc.VKDescriptorBuffer>`.
+
+.. data:: RenderPass
+
+  The RenderPass Object in Vulkan :data: 'VKRenderPass <renderdoc.VKRenderPass>'.
+
+.. data:: Framebuffer
+
+  The FrameBuffer Object in Vulkan :data: 'VKFrameBuffer <renderdoc.VKFrameBuffer>'.
+
+.. data:: Sampler
+
+  The Sampler Object
+
+.. data:: ImageView
+
+  An ImageView Object in Vulkan or D3D12.
+
+.. data:: BufferView
+
+  A BufferView Object in Vulkan or D3D12.
+
+.. data:: Bind
+
+  The resource is bound i.e. as a resource to the render state or memory bound to a resource.
+
+.. data:: UnBind
+
+  The resource is unbound i.e. it was replaced in the render state.
+
+.. data:: Read
+
+  The resource state is read i.e. getting the status of a Vulkan Fence.
+
+.. data:: Reset
+
+  The resource is reset on i.e. Fence, Event, Semaphore, Command Buffer.
+
+.. data:: Signal
+
+  The synchronisation resource is signalled/set i.e. Fence, Event, Semaphore.
+
+.. data:: Wait
+
+  The synchronisation resource is waited on i.e. Fence, Event, Semaphore.
+
+.. data:: Submit
+
+  The resource is submitted i.e. Command Buffer, Command List.
+
+.. data:: Used
+
+  The resource is accessed 
 )");
 enum class ResourceUsage : uint32_t
 {
@@ -3075,6 +3179,15 @@ enum class ResourceUsage : uint32_t
 
   All_RWResource,
 
+  VS_Shader,
+  HS_Shader,
+  DS_Shader,
+  GS_Shader,
+  PS_Shader,
+  CS_Shader,
+  TS_Shader,
+  MS_Shader,
+
   InputTarget,
   ColorTarget,
   DepthStencilTarget,
@@ -3095,6 +3208,28 @@ enum class ResourceUsage : uint32_t
   Barrier,
 
   CPUWrite,
+
+  Pipeline,
+  PipelineLayout,
+  DescriptorSet,
+  DescriptorSetLayout,
+  DescriptorBuffer,
+  RenderPass,
+  Framebuffer,
+  Sampler,
+  ImageView,
+  BufferView,
+
+  Bind,
+  UnBind,
+  Read,
+  Reset,
+  Signal,
+  Wait,
+
+  Submit,
+
+  Used,
 };
 
 DECLARE_REFLECTION_ENUM(ResourceUsage);
