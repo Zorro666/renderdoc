@@ -2141,60 +2141,63 @@ bool WrappedVulkan::Serialise_vkCmdBeginRenderPass(SerialiserType &ser, VkComman
 
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      bool replaySingleEvent = !loading && (m_FirstEventID == m_LastEventID);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        // only if we're partially recording do we update this state
-        if(ShouldUpdateRenderpassActive(m_LastCmdBufferID, false))
+      // only if we're partially recording do we update this state
+      if(ShouldUpdateRenderpassActive(m_LastCmdBufferID, false))
+      {
+        GetCommandBufferPartialSubmission(m_LastCmdBufferID)->renderPassActive =
+            m_BakedCmdBufferInfo[m_LastCmdBufferID].renderPassOpen = true;
+      }
+
+      m_BakedCmdBufferInfo[m_LastCmdBufferID].activeSubpass = 0;
+
+      ResourceId fb = GetResID(RenderPassBegin.framebuffer);
+      VulkanCreationInfo::Framebuffer fbinfo = m_CreationInfo.m_Framebuffer[fb];
+      ResourceId rp = GetResID(RenderPassBegin.renderPass);
+
+      rdcarray<ResourceId> fbAttachments;
+      {
+        VulkanRenderState &renderstate = GetCmdRenderState();
+        renderstate.subpass = 0;
+        renderstate.SetRenderPass(rp);
+        renderstate.renderArea = RenderPassBegin.renderArea;
+        renderstate.subpassContents = contents;
+
+        renderstate.fragmentDensityMapOffsets.clear();
+
+        const VkRenderPassAttachmentBeginInfo *attachmentsInfo =
+            (const VkRenderPassAttachmentBeginInfo *)FindNextStruct(
+                &RenderPassBegin, VK_STRUCTURE_TYPE_RENDER_PASS_ATTACHMENT_BEGIN_INFO);
+
+        fbAttachments.resize(fbinfo.attachments.size());
+
+        // set framebuffer attachments - by default from the ones used to create it, but if it is
+        // imageless then look for the attachments in our pNext chain
+        if(!fbinfo.imageless)
         {
-          GetCommandBufferPartialSubmission(m_LastCmdBufferID)->renderPassActive =
-              m_BakedCmdBufferInfo[m_LastCmdBufferID].renderPassOpen = true;
+          for(size_t i = 0; i < fbinfo.attachments.size(); i++)
+            fbAttachments[i] = fbinfo.attachments[i].createdView;
         }
-
-        m_BakedCmdBufferInfo[m_LastCmdBufferID].activeSubpass = 0;
-
-        ResourceId fb = GetResID(RenderPassBegin.framebuffer);
-        VulkanCreationInfo::Framebuffer fbinfo = m_CreationInfo.m_Framebuffer[fb];
-
+        else
         {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-          renderstate.subpass = 0;
-          renderstate.SetRenderPass(GetResID(RenderPassBegin.renderPass));
-          renderstate.renderArea = RenderPassBegin.renderArea;
-          renderstate.subpassContents = contents;
-
-          renderstate.fragmentDensityMapOffsets.clear();
-
-          const VkRenderPassAttachmentBeginInfo *attachmentsInfo =
-              (const VkRenderPassAttachmentBeginInfo *)FindNextStruct(
-                  &RenderPassBegin, VK_STRUCTURE_TYPE_RENDER_PASS_ATTACHMENT_BEGIN_INFO);
-
-          rdcarray<ResourceId> attachments;
-          attachments.resize(fbinfo.attachments.size());
-
-          // set framebuffer attachments - by default from the ones used to create it, but if it is
-          // imageless then look for the attachments in our pNext chain
-          if(!fbinfo.imageless)
-          {
-            for(size_t i = 0; i < fbinfo.attachments.size(); i++)
-              attachments[i] = fbinfo.attachments[i].createdView;
-          }
-          else
-          {
-            for(size_t i = 0; i < fbinfo.attachments.size(); i++)
-              attachments[i] = GetResID(attachmentsInfo->pAttachments[i]);
-          }
-          renderstate.SetFramebuffer(GetResID(RenderPassBegin.framebuffer), attachments);
+          for(size_t i = 0; i < fbinfo.attachments.size(); i++)
+            fbAttachments[i] = GetResID(attachmentsInfo->pAttachments[i]);
         }
+        renderstate.SetFramebuffer(fb, fbAttachments);
+      }
 
-        const VulkanCreationInfo::RenderPass &rpinfo =
-            m_CreationInfo.m_RenderPass[GetCmdRenderState().GetRenderPass()];
+      const VulkanCreationInfo::RenderPass &rpinfo = m_CreationInfo.m_RenderPass[rp];
 
-        rdcarray<VkImageMemoryBarrier> imgBarriers = GetImplicitRenderPassBarriers();
+      rdcarray<VkImageMemoryBarrier> imgBarriers = GetImplicitRenderPassBarriers();
 
+      if(!loading)
+      {
         ApplyRPLoadDiscards(commandBuffer, RenderPassBegin.renderArea);
 
         // if we're just replaying the vkCmdBeginRenderPass on its own, we use the first loadRP
@@ -2202,7 +2205,7 @@ bool WrappedVulkan::Serialise_vkCmdBeginRenderPass(SerialiserType &ser, VkComman
         // we need to manually do the subpass 0 barriers, since loadRP expects the image to already
         // be in subpass 0's layout
         // we also need to manually do any clears, since the loadRP will load all attachments
-        if(m_FirstEventID == m_LastEventID)
+        if(replaySingleEvent)
         {
           unwrappedInfo.renderPass = Unwrap(rpinfo.loadRPs[0]);
           unwrappedInfo.framebuffer = Unwrap(fbinfo.loadFBs[0]);
@@ -2215,161 +2218,116 @@ bool WrappedVulkan::Serialise_vkCmdBeginRenderPass(SerialiserType &ser, VkComman
                 barrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
             }
           }
-
-          DoPipelineBarrier(commandBuffer, imgBarriers.size(), imgBarriers.data());
         }
 
-        ActionFlags drawFlags = ActionFlags::PassBoundary | ActionFlags::BeginPass;
-        uint32_t eventId = HandlePreCallback(commandBuffer, drawFlags);
-
-        ObjDisp(commandBuffer)->CmdBeginRenderPass(Unwrap(commandBuffer), &unwrappedInfo, contents);
-
-        if(m_FirstEventID == m_LastEventID)
-        {
-          const rdcarray<ResourceId> &fbattachments =
-              m_BakedCmdBufferInfo[m_LastCmdBufferID].state.GetFramebufferAttachments();
-
-          rdcarray<VkClearAttachment> clearatts;
-          rdcarray<VkClearRect> clearrects;
-          for(int32_t c = 0; c < rpinfo.subpasses[0].colorAttachments.count() + 1; c++)
-          {
-            uint32_t att = ~0U;
-
-            if(c < rpinfo.subpasses[0].colorAttachments.count())
-              att = rpinfo.subpasses[0].colorAttachments[c];
-            else if(rpinfo.subpasses[0].depthstencilAttachment >= 0)
-              att = (uint32_t)rpinfo.subpasses[0].depthstencilAttachment;
-
-            if(att >= rpinfo.attachments.size())
-              continue;
-
-            VkImageAspectFlags clearAspects = 0;
-
-            // loadOp governs color, and depth
-            if(rpinfo.attachments[att].loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR)
-              clearAspects |= VK_IMAGE_ASPECT_COLOR_BIT | VK_IMAGE_ASPECT_DEPTH_BIT;
-            // stencilLoadOp governs the stencil
-            if(rpinfo.attachments[att].stencilLoadOp == VK_ATTACHMENT_LOAD_OP_CLEAR)
-              clearAspects |= VK_IMAGE_ASPECT_STENCIL_BIT;
-
-            // if any aspect is set to clear, go check it in more detail
-            if(clearAspects != 0)
-            {
-              VulkanCreationInfo::ImageView viewinfo = m_CreationInfo.m_ImageView[fbattachments[att]];
-              bool isMultiview = rpinfo.subpasses[0].multiviews.size() > 1;
-
-              VkClearRect rect = {unwrappedInfo.renderArea, 0,
-                                  isMultiview ? 1 : viewinfo.range.layerCount};
-              VkClearAttachment clear = {};
-              clear.aspectMask = FormatImageAspects(rpinfo.attachments[att].format) & clearAspects;
-              clear.colorAttachment = c;
-              if(att < unwrappedInfo.clearValueCount)
-                clear.clearValue = unwrappedInfo.pClearValues[att];
-              else
-                RDCWARN("Missing clear value for attachment %u", att);
-
-              // check that the actual aspects in the attachment overlap with those being cleared.
-              // In particular this means we ignore stencil load op being CLEAR for a color
-              // attachment - that doesn't mean we should clear the color. This also means we don't
-              // clear the stencil if it's not specified, even when clearing depth *is*
-              if(clear.aspectMask != 0)
-              {
-                clearrects.push_back(rect);
-                clearatts.push_back(clear);
-              }
-            }
-          }
-
-          if(!clearatts.empty())
-            ObjDisp(commandBuffer)
-                ->CmdClearAttachments(Unwrap(commandBuffer), (uint32_t)clearatts.size(),
-                                      clearatts.data(), (uint32_t)clearrects.size(),
-                                      clearrects.data());
-        }
-
-        if(eventId && m_ActionCallback->PostMisc(eventId, drawFlags, commandBuffer))
-        {
-          // Do not call vkCmdBeginRenderPass again.
-          m_ActionCallback->PostRemisc(eventId, drawFlags, commandBuffer);
-        }
-
-        GetResourceManager()->RecordBarriers(m_BakedCmdBufferInfo[m_LastCmdBufferID].imageStates,
-                                             FindCommandQueueFamily(m_LastCmdBufferID),
-                                             (uint32_t)imgBarriers.size(), imgBarriers.data());
+        DoPipelineBarrier(commandBuffer, imgBarriers.size(), imgBarriers.data());
       }
-    }
-    else
-    {
+
+      ActionFlags drawFlags = ActionFlags::PassBoundary | ActionFlags::BeginPass;
+      uint32_t eventId = !loading ? HandlePreCallback(commandBuffer, drawFlags) : 0;
+
       ObjDisp(commandBuffer)->CmdBeginRenderPass(Unwrap(commandBuffer), &unwrappedInfo, contents);
 
-      // track while reading, for fetching the right set of outputs in AddAction
-      m_BakedCmdBufferInfo[m_LastCmdBufferID].activeSubpass = 0;
-      m_BakedCmdBufferInfo[m_LastCmdBufferID].state.subpass = 0;
-      m_BakedCmdBufferInfo[m_LastCmdBufferID].state.SetRenderPass(
-          GetResID(RenderPassBegin.renderPass));
-
-      ResourceId fb = GetResID(RenderPassBegin.framebuffer);
-
-      // set framebuffer attachments - by default from the ones used to create it, but if it is
-      // imageless then look for the attachments in our pNext chain
+      if(replaySingleEvent)
       {
-        VulkanCreationInfo::Framebuffer fbinfo = m_CreationInfo.m_Framebuffer[fb];
-        rdcarray<ResourceId> attachments;
-        attachments.resize(fbinfo.attachments.size());
-
-        if(!fbinfo.imageless)
+        rdcarray<VkClearAttachment> clearatts;
+        rdcarray<VkClearRect> clearrects;
+        for(int32_t c = 0; c < rpinfo.subpasses[0].colorAttachments.count() + 1; c++)
         {
-          for(size_t i = 0; i < fbinfo.attachments.size(); i++)
-            attachments[i] = fbinfo.attachments[i].createdView;
-        }
-        else
-        {
-          const VkRenderPassAttachmentBeginInfo *attachmentsInfo =
-              (const VkRenderPassAttachmentBeginInfo *)FindNextStruct(
-                  &RenderPassBegin, VK_STRUCTURE_TYPE_RENDER_PASS_ATTACHMENT_BEGIN_INFO);
+          uint32_t att = ~0U;
 
-          for(size_t i = 0; i < fbinfo.attachments.size(); i++)
-            attachments[i] = GetResID(attachmentsInfo->pAttachments[i]);
+          if(c < rpinfo.subpasses[0].colorAttachments.count())
+            att = rpinfo.subpasses[0].colorAttachments[c];
+          else if(rpinfo.subpasses[0].depthstencilAttachment >= 0)
+            att = (uint32_t)rpinfo.subpasses[0].depthstencilAttachment;
+
+          if(att >= rpinfo.attachments.size())
+            continue;
+
+          VkImageAspectFlags clearAspects = 0;
+
+          // loadOp governs color, and depth
+          if(rpinfo.attachments[att].loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR)
+            clearAspects |= VK_IMAGE_ASPECT_COLOR_BIT | VK_IMAGE_ASPECT_DEPTH_BIT;
+          // stencilLoadOp governs the stencil
+          if(rpinfo.attachments[att].stencilLoadOp == VK_ATTACHMENT_LOAD_OP_CLEAR)
+            clearAspects |= VK_IMAGE_ASPECT_STENCIL_BIT;
+
+          // if any aspect is set to clear, go check it in more detail
+          if(clearAspects != 0)
+          {
+            VulkanCreationInfo::ImageView viewinfo = m_CreationInfo.m_ImageView[fbAttachments[att]];
+            bool isMultiview = rpinfo.subpasses[0].multiviews.size() > 1;
+
+            VkClearRect rect = {unwrappedInfo.renderArea, 0,
+                                isMultiview ? 1 : viewinfo.range.layerCount};
+            VkClearAttachment clear = {};
+            clear.aspectMask = FormatImageAspects(rpinfo.attachments[att].format) & clearAspects;
+            clear.colorAttachment = c;
+            if(att < unwrappedInfo.clearValueCount)
+              clear.clearValue = unwrappedInfo.pClearValues[att];
+            else
+              RDCWARN("Missing clear value for attachment %u", att);
+
+            // check that the actual aspects in the attachment overlap with those being cleared.
+            // In particular this means we ignore stencil load op being CLEAR for a color
+            // attachment - that doesn't mean we should clear the color. This also means we don't
+            // clear the stencil if it's not specified, even when clearing depth *is*
+            if(clear.aspectMask != 0)
+            {
+              clearrects.push_back(rect);
+              clearatts.push_back(clear);
+            }
+          }
         }
-        m_BakedCmdBufferInfo[m_LastCmdBufferID].state.SetFramebuffer(fb, attachments);
+
+        if(!clearatts.empty())
+          ObjDisp(commandBuffer)
+              ->CmdClearAttachments(Unwrap(commandBuffer), (uint32_t)clearatts.size(),
+                                    clearatts.data(), (uint32_t)clearrects.size(), clearrects.data());
       }
 
-      // Record image usage for images cleared in the beginning of the render pass.
-      const VulkanCreationInfo::RenderPass &rpinfo =
-          m_CreationInfo.m_RenderPass[GetResID(RenderPassBegin.renderPass)];
-      const rdcarray<ResourceId> &fbattachments =
-          m_BakedCmdBufferInfo[m_LastCmdBufferID].state.GetFramebufferAttachments();
-      for(size_t i = 0; i < rpinfo.attachments.size(); i++)
+      if(eventId && m_ActionCallback->PostMisc(eventId, drawFlags, commandBuffer))
       {
-        if(rpinfo.attachments[i].loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR ||
-           rpinfo.attachments[i].loadOp == VK_ATTACHMENT_LOAD_OP_DONT_CARE)
-        {
-          ResourceId image = m_CreationInfo.m_ImageView[fbattachments[i]].image;
-          m_BakedCmdBufferInfo[m_LastCmdBufferID].OLD_resourceUsage.push_back(make_rdcpair(
-              image, EventUsage(m_BakedCmdBufferInfo[m_LastCmdBufferID].OLD_curEventID,
-                                rpinfo.attachments[i].loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR
-                                    ? ResourceUsage::Clear
-                                    : ResourceUsage::Discard)));
-          m_LoadingEventNode.AddResourceUsage(
-              image, rpinfo.attachments[i].loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR
-                         ? ResourceUsage::Clear
-                         : ResourceUsage::Discard);
-        }
+        // Do not call vkCmdBeginRenderPass again.
+        m_ActionCallback->PostRemisc(eventId, drawFlags, commandBuffer);
       }
-
-      rdcarray<VkImageMemoryBarrier> imgBarriers = GetImplicitRenderPassBarriers();
 
       GetResourceManager()->RecordBarriers(m_BakedCmdBufferInfo[m_LastCmdBufferID].imageStates,
                                            FindCommandQueueFamily(m_LastCmdBufferID),
                                            (uint32_t)imgBarriers.size(), imgBarriers.data());
+      if(loading)
+      {
+        m_LoadingEventNode.AddResourceUsage(fb, ResourceUsage::Bind);
+        m_LoadingEventNode.AddResourceUsage(rp, ResourceUsage::Bind);
 
-      AddEvent();
-      ActionDescription action;
-      action.customName =
-          StringFormat::Fmt("vkCmdBeginRenderPass(%s)", MakeRenderPassOpString(false).c_str());
-      action.flags |= ActionFlags::PassBoundary | ActionFlags::BeginPass;
+        // Record image usage for images cleared in the beginning of the render pass.
+        for(size_t i = 0; i < rpinfo.attachments.size(); i++)
+        {
+          if(rpinfo.attachments[i].loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR ||
+             rpinfo.attachments[i].loadOp == VK_ATTACHMENT_LOAD_OP_DONT_CARE)
+          {
+            ResourceId image = m_CreationInfo.m_ImageView[fbAttachments[i]].image;
+            m_BakedCmdBufferInfo[m_LastCmdBufferID].OLD_resourceUsage.push_back(make_rdcpair(
+                image, EventUsage(m_BakedCmdBufferInfo[m_LastCmdBufferID].OLD_curEventID,
+                                  rpinfo.attachments[i].loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR
+                                      ? ResourceUsage::Clear
+                                      : ResourceUsage::Discard)));
+            m_LoadingEventNode.AddResourceUsage(
+                image, rpinfo.attachments[i].loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR
+                           ? ResourceUsage::Clear
+                           : ResourceUsage::Discard);
+          }
+        }
 
-      AddAction(action);
+        AddEvent();
+        ActionDescription action;
+        action.customName =
+            StringFormat::Fmt("vkCmdBeginRenderPass(%s)", MakeRenderPassOpString(false).c_str());
+        action.flags |= ActionFlags::PassBoundary | ActionFlags::BeginPass;
+
+        AddAction(action);
+      }
     }
   }
 
@@ -2500,69 +2458,57 @@ bool WrappedVulkan::Serialise_vkCmdNextSubpass(SerialiserType &ser, VkCommandBuf
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    bool loading = IsLoading(m_State);
+    bool replaySingleEvent = !loading && (m_FirstEventID == m_LastEventID);
+    // don't do anything if we're executing a single draw, NextSubpass is meaningless (and invalid
+    // on a partial render pass)
+    if(InRerecordRange(m_LastCmdBufferID) && !replaySingleEvent)
     {
-      // don't do anything if we're executing a single draw, NextSubpass is meaningless (and invalid
-      // on a partial render pass)
-      if(InRerecordRange(m_LastCmdBufferID) && m_FirstEventID != m_LastEventID)
-      {
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          GetCmdRenderState().subpass++;
-          m_BakedCmdBufferInfo[m_LastCmdBufferID].activeSubpass++;
-        }
-
-        ActionFlags drawFlags =
-            ActionFlags::PassBoundary | ActionFlags::BeginPass | ActionFlags::EndPass;
-        uint32_t eventId = HandlePreCallback(commandBuffer, drawFlags);
-
-        ObjDisp(commandBuffer)->CmdNextSubpass(Unwrap(commandBuffer), contents);
-
-        if(eventId && m_ActionCallback->PostMisc(eventId, drawFlags, commandBuffer))
-        {
-          // Do not call vkCmdNextSubpass again.
-          m_ActionCallback->PostRemisc(eventId, drawFlags, commandBuffer);
-        }
-
-        rdcarray<VkImageMemoryBarrier> imgBarriers = GetImplicitRenderPassBarriers();
-
-        GetResourceManager()->RecordBarriers(m_BakedCmdBufferInfo[m_LastCmdBufferID].imageStates,
-                                             FindCommandQueueFamily(m_LastCmdBufferID),
-                                             (uint32_t)imgBarriers.size(), imgBarriers.data());
-      }
-      else if(IsRenderpassOpen(m_LastCmdBufferID) && m_FirstEventID != m_LastEventID)
       {
-        commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
-        ObjDisp(commandBuffer)->CmdNextSubpass(Unwrap(commandBuffer), contents);
-
+        GetCmdRenderState().subpass++;
         m_BakedCmdBufferInfo[m_LastCmdBufferID].activeSubpass++;
-        m_BakedCmdBufferInfo[m_LastCmdBufferID].endBarriers.append(GetImplicitRenderPassBarriers());
       }
-    }
-    else
-    {
+
+      ActionFlags drawFlags =
+          ActionFlags::PassBoundary | ActionFlags::BeginPass | ActionFlags::EndPass;
+      uint32_t eventId = !loading ? HandlePreCallback(commandBuffer, drawFlags) : 0;
+
       ObjDisp(commandBuffer)->CmdNextSubpass(Unwrap(commandBuffer), contents);
 
-      AddImplicitResolveResourceUsage();
-
-      // track while reading, for fetching the right set of outputs in AddAction
-      m_BakedCmdBufferInfo[m_LastCmdBufferID].state.subpass++;
-      m_BakedCmdBufferInfo[m_LastCmdBufferID].activeSubpass++;
+      if(eventId && m_ActionCallback->PostMisc(eventId, drawFlags, commandBuffer))
+      {
+        // Do not call vkCmdNextSubpass again.
+        m_ActionCallback->PostRemisc(eventId, drawFlags, commandBuffer);
+      }
 
       rdcarray<VkImageMemoryBarrier> imgBarriers = GetImplicitRenderPassBarriers();
 
       GetResourceManager()->RecordBarriers(m_BakedCmdBufferInfo[m_LastCmdBufferID].imageStates,
                                            FindCommandQueueFamily(m_LastCmdBufferID),
                                            (uint32_t)imgBarriers.size(), imgBarriers.data());
+      if(loading)
+      {
+        AddImplicitResolveResourceUsage();
 
-      AddEvent();
-      ActionDescription action;
-      action.customName = StringFormat::Fmt("vkCmdNextSubpass() => %u",
-                                            m_BakedCmdBufferInfo[m_LastCmdBufferID].state.subpass);
-      action.flags |= ActionFlags::PassBoundary | ActionFlags::BeginPass | ActionFlags::EndPass;
+        AddEvent();
+        ActionDescription action;
+        action.customName = StringFormat::Fmt(
+            "vkCmdNextSubpass() => %u", m_BakedCmdBufferInfo[m_LastCmdBufferID].state.subpass);
+        action.flags |= ActionFlags::PassBoundary | ActionFlags::BeginPass | ActionFlags::EndPass;
 
-      AddAction(action);
+        AddAction(action);
+      }
+    }
+    else if(IsRenderpassOpen(m_LastCmdBufferID) && m_FirstEventID != m_LastEventID)
+    {
+      commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
+      ObjDisp(commandBuffer)->CmdNextSubpass(Unwrap(commandBuffer), contents);
+
+      m_BakedCmdBufferInfo[m_LastCmdBufferID].activeSubpass++;
+      m_BakedCmdBufferInfo[m_LastCmdBufferID].endBarriers.append(GetImplicitRenderPassBarriers());
     }
   }
 
@@ -2601,115 +2547,109 @@ bool WrappedVulkan::Serialise_vkCmdEndRenderPass(SerialiserType &ser, VkCommandB
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    bool loading = IsLoading(m_State);
+
+    if(!loading)
+      commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
+
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
+      rdcarray<VkImageMemoryBarrier> imgBarriers = GetImplicitRenderPassBarriers(~0U);
+
+      // only if we're partially recording do we update this state
+      if(ShouldUpdateRenderpassActive(m_LastCmdBufferID, false))
       {
-        commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
-
-        rdcarray<VkImageMemoryBarrier> imgBarriers = GetImplicitRenderPassBarriers(~0U);
-
-        // only if we're partially recording do we update this state
-        if(ShouldUpdateRenderpassActive(m_LastCmdBufferID, false))
-        {
-          GetCommandBufferPartialSubmission(m_LastCmdBufferID)->renderPassActive =
-              m_BakedCmdBufferInfo[m_LastCmdBufferID].renderPassOpen = false;
-        }
-
-        rdcarray<ResourceId> attachments;
-        VkRect2D renderArea;
-
-        // save the renderpass that we were in here, so we can look up the rpinfo below
-        ResourceId currentRP = GetCmdRenderState().GetRenderPass();
-
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          attachments = GetCmdRenderState().GetFramebufferAttachments();
-          renderArea = GetCmdRenderState().renderArea;
-
-          renderstate.SetRenderPass(ResourceId());
-          renderstate.SetFramebuffer(ResourceId(), rdcarray<ResourceId>());
-          renderstate.subpassContents = VK_SUBPASS_CONTENTS_MAX_ENUM;
-        }
-
-        ActionFlags drawFlags = ActionFlags::PassBoundary | ActionFlags::EndPass;
-        uint32_t eventId = HandlePreCallback(commandBuffer, drawFlags);
-
-        ObjDisp(commandBuffer)->CmdEndRenderPass(Unwrap(commandBuffer));
-
-        if(eventId && m_ActionCallback->PostMisc(eventId, drawFlags, commandBuffer))
-        {
-          // Do not call vkCmdEndRenderPass again.
-          m_ActionCallback->PostRemisc(eventId, drawFlags, commandBuffer);
-        }
-
-        if(m_ReplayOptions.optimisation != ReplayOptimisationLevel::Fastest &&
-           !m_FeedbackRPs.contains(currentRP))
-        {
-          ApplyRPStoreDiscards(commandBuffer, renderArea, currentRP, attachments);
-        }
-
-        GetResourceManager()->RecordBarriers(m_BakedCmdBufferInfo[m_LastCmdBufferID].imageStates,
-                                             FindCommandQueueFamily(m_LastCmdBufferID),
-                                             (uint32_t)imgBarriers.size(), imgBarriers.data());
+        GetCommandBufferPartialSubmission(m_LastCmdBufferID)->renderPassActive =
+            m_BakedCmdBufferInfo[m_LastCmdBufferID].renderPassOpen = false;
       }
-      else if(IsRenderpassOpen(m_LastCmdBufferID))
+
+      rdcarray<ResourceId> attachments;
+      VkRect2D renderArea;
+
+      // save the renderpass that we were in here, so we can look up the rpinfo below
+      ResourceId currentRP = GetCmdRenderState().GetRenderPass();
+
       {
-        commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
-        ObjDisp(commandBuffer)->CmdEndRenderPass(Unwrap(commandBuffer));
-
-        m_BakedCmdBufferInfo[m_LastCmdBufferID].renderPassOpen = false;
-        m_BakedCmdBufferInfo[m_LastCmdBufferID].endBarriers.append(GetImplicitRenderPassBarriers(~0U));
-
-        ResourceId currentRP = GetCmdRenderState().GetRenderPass();
-
-        if(Vulkan_Hack_DisableRPNormalisation() && !m_FeedbackRPs.contains(currentRP))
+        VulkanRenderState &renderstate = GetCmdRenderState();
+        if(loading)
         {
-          ApplyRPStoreDiscards(commandBuffer, GetCmdRenderState().renderArea, currentRP,
-                               GetCmdRenderState().GetFramebufferAttachments());
+          // Track usage and action outputs before the renderstate is modified
+          AddImplicitResolveResourceUsage(~0U);
+
+          AddEvent();
+          ActionDescription action;
+          action.customName =
+              StringFormat::Fmt("vkCmdEndRenderPass(%s)", MakeRenderPassOpString(true).c_str());
+          action.flags |= ActionFlags::PassBoundary | ActionFlags::EndPass;
+
+          AddAction(action);
+
+          VulkanEventNode &eventNode = GetLastEventNode();
+          eventNode.AddResourceUsage(renderstate.GetFramebuffer(), ResourceUsage::UnBind);
+          eventNode.AddResourceUsage(renderstate.GetRenderPass(), ResourceUsage::UnBind);
         }
+
+        attachments = renderstate.GetFramebufferAttachments();
+        renderArea = renderstate.renderArea;
+
+        renderstate.SetRenderPass(ResourceId());
+        renderstate.SetFramebuffer(ResourceId(), rdcarray<ResourceId>());
+        renderstate.subpassContents = VK_SUBPASS_CONTENTS_MAX_ENUM;
       }
-    }
-    else
-    {
+
+      ActionFlags drawFlags = ActionFlags::PassBoundary | ActionFlags::EndPass;
+      uint32_t eventId = !loading ? HandlePreCallback(commandBuffer, drawFlags) : 0;
+
       ObjDisp(commandBuffer)->CmdEndRenderPass(Unwrap(commandBuffer));
 
-      // fetch any queued indirect readbacks here
-      for(const VkIndirectRecordData &indirectcopy :
-          m_BakedCmdBufferInfo[m_LastCmdBufferID].indirectCopies)
-        ExecuteIndirectReadback(commandBuffer, indirectcopy);
+      if(eventId && m_ActionCallback->PostMisc(eventId, drawFlags, commandBuffer))
+      {
+        // Do not call vkCmdEndRenderPass again.
+        m_ActionCallback->PostRemisc(eventId, drawFlags, commandBuffer);
+      }
 
-      // and deferred descriptor buffer versions here
-      for(const BakedCmdBufferInfo::DeferredDescBufCopy &descVersion :
-          m_BakedCmdBufferInfo[m_LastCmdBufferID].descBufDeferredCopies)
-        CopyVersionedDescriptorBuffer(commandBuffer, descVersion.unwrappedDstBuffer,
-                                      descVersion.copyOffsets);
-
-      m_BakedCmdBufferInfo[m_LastCmdBufferID].indirectCopies.clear();
-      m_BakedCmdBufferInfo[m_LastCmdBufferID].descBufDeferredCopies.clear();
-
-      rdcarray<VkImageMemoryBarrier> imgBarriers = GetImplicitRenderPassBarriers(~0U);
+      if(m_ReplayOptions.optimisation != ReplayOptimisationLevel::Fastest &&
+         !m_FeedbackRPs.contains(currentRP))
+      {
+        ApplyRPStoreDiscards(commandBuffer, renderArea, currentRP, attachments);
+      }
 
       GetResourceManager()->RecordBarriers(m_BakedCmdBufferInfo[m_LastCmdBufferID].imageStates,
                                            FindCommandQueueFamily(m_LastCmdBufferID),
                                            (uint32_t)imgBarriers.size(), imgBarriers.data());
 
-      AddImplicitResolveResourceUsage(~0U);
+      if(loading)
+      {
+        // After the renderpass is ended
+        // fetch any queued indirect readbacks
+        for(const VkIndirectRecordData &indirectcopy :
+            m_BakedCmdBufferInfo[m_LastCmdBufferID].indirectCopies)
+          ExecuteIndirectReadback(commandBuffer, indirectcopy);
 
-      AddEvent();
-      ActionDescription action;
-      action.customName =
-          StringFormat::Fmt("vkCmdEndRenderPass(%s)", MakeRenderPassOpString(true).c_str());
-      action.flags |= ActionFlags::PassBoundary | ActionFlags::EndPass;
+        // and deferred descriptor buffer versions here
+        for(const BakedCmdBufferInfo::DeferredDescBufCopy &descVersion :
+            m_BakedCmdBufferInfo[m_LastCmdBufferID].descBufDeferredCopies)
+          CopyVersionedDescriptorBuffer(commandBuffer, descVersion.unwrappedDstBuffer,
+                                        descVersion.copyOffsets);
 
-      AddAction(action);
+        m_BakedCmdBufferInfo[m_LastCmdBufferID].indirectCopies.clear();
+        m_BakedCmdBufferInfo[m_LastCmdBufferID].descBufDeferredCopies.clear();
+      }
+    }
+    else if(IsRenderpassOpen(m_LastCmdBufferID))
+    {
+      ObjDisp(commandBuffer)->CmdEndRenderPass(Unwrap(commandBuffer));
 
-      // track while reading, reset this to empty so AddAction sets no outputs,
-      // but only AFTER the above AddAction (we want it grouped together)
-      m_BakedCmdBufferInfo[m_LastCmdBufferID].state.SetRenderPass(ResourceId());
-      m_BakedCmdBufferInfo[m_LastCmdBufferID].state.SetFramebuffer(ResourceId(),
-                                                                   rdcarray<ResourceId>());
+      m_BakedCmdBufferInfo[m_LastCmdBufferID].renderPassOpen = false;
+      m_BakedCmdBufferInfo[m_LastCmdBufferID].endBarriers.append(GetImplicitRenderPassBarriers(~0U));
+
+      ResourceId currentRP = GetCmdRenderState().GetRenderPass();
+
+      if(Vulkan_Hack_DisableRPNormalisation() && !m_FeedbackRPs.contains(currentRP))
+      {
+        ApplyRPStoreDiscards(commandBuffer, GetCmdRenderState().renderArea, currentRP,
+                             GetCmdRenderState().GetFramebufferAttachments());
+      }
     }
   }
 
