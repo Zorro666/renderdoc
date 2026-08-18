@@ -2141,60 +2141,63 @@ bool WrappedVulkan::Serialise_vkCmdBeginRenderPass(SerialiserType &ser, VkComman
 
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      bool replaySingleEvent = !loading && (m_FirstEventID == m_LastEventID);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        // only if we're partially recording do we update this state
-        if(ShouldUpdateRenderpassActive(m_LastCmdBufferID, false))
+      // only if we're partially recording do we update this state
+      if(ShouldUpdateRenderpassActive(m_LastCmdBufferID, false))
+      {
+        GetCommandBufferPartialSubmission(m_LastCmdBufferID)->renderPassActive =
+            m_BakedCmdBufferInfo[m_LastCmdBufferID].renderPassOpen = true;
+      }
+
+      m_BakedCmdBufferInfo[m_LastCmdBufferID].activeSubpass = 0;
+
+      ResourceId fb = GetResID(RenderPassBegin.framebuffer);
+      VulkanCreationInfo::Framebuffer fbinfo = m_CreationInfo.m_Framebuffer[fb];
+      ResourceId rp = GetResID(RenderPassBegin.renderPass);
+
+      rdcarray<ResourceId> fbAttachments;
+      {
+        VulkanRenderState &renderstate = GetCmdRenderState();
+        renderstate.subpass = 0;
+        renderstate.SetRenderPass(rp);
+        renderstate.renderArea = RenderPassBegin.renderArea;
+        renderstate.subpassContents = contents;
+
+        renderstate.fragmentDensityMapOffsets.clear();
+
+        const VkRenderPassAttachmentBeginInfo *attachmentsInfo =
+            (const VkRenderPassAttachmentBeginInfo *)FindNextStruct(
+                &RenderPassBegin, VK_STRUCTURE_TYPE_RENDER_PASS_ATTACHMENT_BEGIN_INFO);
+
+        fbAttachments.resize(fbinfo.attachments.size());
+
+        // set framebuffer attachments - by default from the ones used to create it, but if it is
+        // imageless then look for the attachments in our pNext chain
+        if(!fbinfo.imageless)
         {
-          GetCommandBufferPartialSubmission(m_LastCmdBufferID)->renderPassActive =
-              m_BakedCmdBufferInfo[m_LastCmdBufferID].renderPassOpen = true;
+          for(size_t i = 0; i < fbinfo.attachments.size(); i++)
+            fbAttachments[i] = fbinfo.attachments[i].createdView;
         }
-
-        m_BakedCmdBufferInfo[m_LastCmdBufferID].activeSubpass = 0;
-
-        ResourceId fb = GetResID(RenderPassBegin.framebuffer);
-        VulkanCreationInfo::Framebuffer fbinfo = m_CreationInfo.m_Framebuffer[fb];
-
+        else
         {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-          renderstate.subpass = 0;
-          renderstate.SetRenderPass(GetResID(RenderPassBegin.renderPass));
-          renderstate.renderArea = RenderPassBegin.renderArea;
-          renderstate.subpassContents = contents;
-
-          renderstate.fragmentDensityMapOffsets.clear();
-
-          const VkRenderPassAttachmentBeginInfo *attachmentsInfo =
-              (const VkRenderPassAttachmentBeginInfo *)FindNextStruct(
-                  &RenderPassBegin, VK_STRUCTURE_TYPE_RENDER_PASS_ATTACHMENT_BEGIN_INFO);
-
-          rdcarray<ResourceId> attachments;
-          attachments.resize(fbinfo.attachments.size());
-
-          // set framebuffer attachments - by default from the ones used to create it, but if it is
-          // imageless then look for the attachments in our pNext chain
-          if(!fbinfo.imageless)
-          {
-            for(size_t i = 0; i < fbinfo.attachments.size(); i++)
-              attachments[i] = fbinfo.attachments[i].createdView;
-          }
-          else
-          {
-            for(size_t i = 0; i < fbinfo.attachments.size(); i++)
-              attachments[i] = GetResID(attachmentsInfo->pAttachments[i]);
-          }
-          renderstate.SetFramebuffer(GetResID(RenderPassBegin.framebuffer), attachments);
+          for(size_t i = 0; i < fbinfo.attachments.size(); i++)
+            fbAttachments[i] = GetResID(attachmentsInfo->pAttachments[i]);
         }
+        renderstate.SetFramebuffer(fb, fbAttachments);
+      }
 
-        const VulkanCreationInfo::RenderPass &rpinfo =
-            m_CreationInfo.m_RenderPass[GetCmdRenderState().GetRenderPass()];
+      const VulkanCreationInfo::RenderPass &rpinfo = m_CreationInfo.m_RenderPass[rp];
 
-        rdcarray<VkImageMemoryBarrier> imgBarriers = GetImplicitRenderPassBarriers();
+      rdcarray<VkImageMemoryBarrier> imgBarriers = GetImplicitRenderPassBarriers();
 
+      if(!loading)
+      {
         ApplyRPLoadDiscards(commandBuffer, RenderPassBegin.renderArea);
 
         // if we're just replaying the vkCmdBeginRenderPass on its own, we use the first loadRP
@@ -2202,7 +2205,7 @@ bool WrappedVulkan::Serialise_vkCmdBeginRenderPass(SerialiserType &ser, VkComman
         // we need to manually do the subpass 0 barriers, since loadRP expects the image to already
         // be in subpass 0's layout
         // we also need to manually do any clears, since the loadRP will load all attachments
-        if(m_FirstEventID == m_LastEventID)
+        if(replaySingleEvent)
         {
           unwrappedInfo.renderPass = Unwrap(rpinfo.loadRPs[0]);
           unwrappedInfo.framebuffer = Unwrap(fbinfo.loadFBs[0]);
@@ -2215,161 +2218,117 @@ bool WrappedVulkan::Serialise_vkCmdBeginRenderPass(SerialiserType &ser, VkComman
                 barrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
             }
           }
-
-          DoPipelineBarrier(commandBuffer, imgBarriers.size(), imgBarriers.data());
         }
 
-        ActionFlags drawFlags = ActionFlags::PassBoundary | ActionFlags::BeginPass;
-        uint32_t eventId = HandlePreCallback(commandBuffer, drawFlags);
-
-        ObjDisp(commandBuffer)->CmdBeginRenderPass(Unwrap(commandBuffer), &unwrappedInfo, contents);
-
-        if(m_FirstEventID == m_LastEventID)
-        {
-          const rdcarray<ResourceId> &fbattachments =
-              m_BakedCmdBufferInfo[m_LastCmdBufferID].state.GetFramebufferAttachments();
-
-          rdcarray<VkClearAttachment> clearatts;
-          rdcarray<VkClearRect> clearrects;
-          for(int32_t c = 0; c < rpinfo.subpasses[0].colorAttachments.count() + 1; c++)
-          {
-            uint32_t att = ~0U;
-
-            if(c < rpinfo.subpasses[0].colorAttachments.count())
-              att = rpinfo.subpasses[0].colorAttachments[c];
-            else if(rpinfo.subpasses[0].depthstencilAttachment >= 0)
-              att = (uint32_t)rpinfo.subpasses[0].depthstencilAttachment;
-
-            if(att >= rpinfo.attachments.size())
-              continue;
-
-            VkImageAspectFlags clearAspects = 0;
-
-            // loadOp governs color, and depth
-            if(rpinfo.attachments[att].loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR)
-              clearAspects |= VK_IMAGE_ASPECT_COLOR_BIT | VK_IMAGE_ASPECT_DEPTH_BIT;
-            // stencilLoadOp governs the stencil
-            if(rpinfo.attachments[att].stencilLoadOp == VK_ATTACHMENT_LOAD_OP_CLEAR)
-              clearAspects |= VK_IMAGE_ASPECT_STENCIL_BIT;
-
-            // if any aspect is set to clear, go check it in more detail
-            if(clearAspects != 0)
-            {
-              VulkanCreationInfo::ImageView viewinfo = m_CreationInfo.m_ImageView[fbattachments[att]];
-              bool isMultiview = rpinfo.subpasses[0].multiviews.size() > 1;
-
-              VkClearRect rect = {unwrappedInfo.renderArea, 0,
-                                  isMultiview ? 1 : viewinfo.range.layerCount};
-              VkClearAttachment clear = {};
-              clear.aspectMask = FormatImageAspects(rpinfo.attachments[att].format) & clearAspects;
-              clear.colorAttachment = c;
-              if(att < unwrappedInfo.clearValueCount)
-                clear.clearValue = unwrappedInfo.pClearValues[att];
-              else
-                RDCWARN("Missing clear value for attachment %u", att);
-
-              // check that the actual aspects in the attachment overlap with those being cleared.
-              // In particular this means we ignore stencil load op being CLEAR for a color
-              // attachment - that doesn't mean we should clear the color. This also means we don't
-              // clear the stencil if it's not specified, even when clearing depth *is*
-              if(clear.aspectMask != 0)
-              {
-                clearrects.push_back(rect);
-                clearatts.push_back(clear);
-              }
-            }
-          }
-
-          if(!clearatts.empty())
-            ObjDisp(commandBuffer)
-                ->CmdClearAttachments(Unwrap(commandBuffer), (uint32_t)clearatts.size(),
-                                      clearatts.data(), (uint32_t)clearrects.size(),
-                                      clearrects.data());
-        }
-
-        if(eventId && m_ActionCallback->PostMisc(eventId, drawFlags, commandBuffer))
-        {
-          // Do not call vkCmdBeginRenderPass again.
-          m_ActionCallback->PostRemisc(eventId, drawFlags, commandBuffer);
-        }
-
-        GetResourceManager()->RecordBarriers(m_BakedCmdBufferInfo[m_LastCmdBufferID].imageStates,
-                                             FindCommandQueueFamily(m_LastCmdBufferID),
-                                             (uint32_t)imgBarriers.size(), imgBarriers.data());
+        DoPipelineBarrier(commandBuffer, imgBarriers.size(), imgBarriers.data());
       }
-    }
-    else
-    {
+
+      ActionFlags drawFlags = ActionFlags::PassBoundary | ActionFlags::BeginPass;
+      uint32_t eventId = !loading ? HandlePreCallback(commandBuffer, drawFlags) : 0;
+
       ObjDisp(commandBuffer)->CmdBeginRenderPass(Unwrap(commandBuffer), &unwrappedInfo, contents);
 
-      // track while reading, for fetching the right set of outputs in AddAction
-      m_BakedCmdBufferInfo[m_LastCmdBufferID].activeSubpass = 0;
-      m_BakedCmdBufferInfo[m_LastCmdBufferID].state.subpass = 0;
-      m_BakedCmdBufferInfo[m_LastCmdBufferID].state.SetRenderPass(
-          GetResID(RenderPassBegin.renderPass));
-
-      ResourceId fb = GetResID(RenderPassBegin.framebuffer);
-
-      // set framebuffer attachments - by default from the ones used to create it, but if it is
-      // imageless then look for the attachments in our pNext chain
+      if(replaySingleEvent)
       {
-        VulkanCreationInfo::Framebuffer fbinfo = m_CreationInfo.m_Framebuffer[fb];
-        rdcarray<ResourceId> attachments;
-        attachments.resize(fbinfo.attachments.size());
-
-        if(!fbinfo.imageless)
+        rdcarray<VkClearAttachment> clearatts;
+        rdcarray<VkClearRect> clearrects;
+        for(int32_t c = 0; c < rpinfo.subpasses[0].colorAttachments.count() + 1; c++)
         {
-          for(size_t i = 0; i < fbinfo.attachments.size(); i++)
-            attachments[i] = fbinfo.attachments[i].createdView;
-        }
-        else
-        {
-          const VkRenderPassAttachmentBeginInfo *attachmentsInfo =
-              (const VkRenderPassAttachmentBeginInfo *)FindNextStruct(
-                  &RenderPassBegin, VK_STRUCTURE_TYPE_RENDER_PASS_ATTACHMENT_BEGIN_INFO);
+          uint32_t att = ~0U;
 
-          for(size_t i = 0; i < fbinfo.attachments.size(); i++)
-            attachments[i] = GetResID(attachmentsInfo->pAttachments[i]);
+          if(c < rpinfo.subpasses[0].colorAttachments.count())
+            att = rpinfo.subpasses[0].colorAttachments[c];
+          else if(rpinfo.subpasses[0].depthstencilAttachment >= 0)
+            att = (uint32_t)rpinfo.subpasses[0].depthstencilAttachment;
+
+          if(att >= rpinfo.attachments.size())
+            continue;
+
+          VkImageAspectFlags clearAspects = 0;
+
+          // loadOp governs color, and depth
+          if(rpinfo.attachments[att].loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR)
+            clearAspects |= VK_IMAGE_ASPECT_COLOR_BIT | VK_IMAGE_ASPECT_DEPTH_BIT;
+          // stencilLoadOp governs the stencil
+          if(rpinfo.attachments[att].stencilLoadOp == VK_ATTACHMENT_LOAD_OP_CLEAR)
+            clearAspects |= VK_IMAGE_ASPECT_STENCIL_BIT;
+
+          // if any aspect is set to clear, go check it in more detail
+          if(clearAspects != 0)
+          {
+            VulkanCreationInfo::ImageView viewinfo = m_CreationInfo.m_ImageView[fbAttachments[att]];
+            bool isMultiview = rpinfo.subpasses[0].multiviews.size() > 1;
+
+            VkClearRect rect = {unwrappedInfo.renderArea, 0,
+                                isMultiview ? 1 : viewinfo.range.layerCount};
+            VkClearAttachment clear = {};
+            clear.aspectMask = FormatImageAspects(rpinfo.attachments[att].format) & clearAspects;
+            clear.colorAttachment = c;
+            if(att < unwrappedInfo.clearValueCount)
+              clear.clearValue = unwrappedInfo.pClearValues[att];
+            else
+              RDCWARN("Missing clear value for attachment %u", att);
+
+            // check that the actual aspects in the attachment overlap with those being cleared.
+            // In particular this means we ignore stencil load op being CLEAR for a color
+            // attachment - that doesn't mean we should clear the color. This also means we don't
+            // clear the stencil if it's not specified, even when clearing depth *is*
+            if(clear.aspectMask != 0)
+            {
+              clearrects.push_back(rect);
+              clearatts.push_back(clear);
+            }
+          }
         }
-        m_BakedCmdBufferInfo[m_LastCmdBufferID].state.SetFramebuffer(fb, attachments);
+
+        if(!clearatts.empty())
+          ObjDisp(commandBuffer)
+              ->CmdClearAttachments(Unwrap(commandBuffer), (uint32_t)clearatts.size(),
+                                    clearatts.data(), (uint32_t)clearrects.size(), clearrects.data());
       }
 
-      // Record image usage for images cleared in the beginning of the render pass.
-      const VulkanCreationInfo::RenderPass &rpinfo =
-          m_CreationInfo.m_RenderPass[GetResID(RenderPassBegin.renderPass)];
-      const rdcarray<ResourceId> &fbattachments =
-          m_BakedCmdBufferInfo[m_LastCmdBufferID].state.GetFramebufferAttachments();
-      for(size_t i = 0; i < rpinfo.attachments.size(); i++)
+      if(eventId && m_ActionCallback->PostMisc(eventId, drawFlags, commandBuffer))
       {
-        if(rpinfo.attachments[i].loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR ||
-           rpinfo.attachments[i].loadOp == VK_ATTACHMENT_LOAD_OP_DONT_CARE)
-        {
-          ResourceId image = m_CreationInfo.m_ImageView[fbattachments[i]].image;
-          m_BakedCmdBufferInfo[m_LastCmdBufferID].OLD_resourceUsage.push_back(make_rdcpair(
-              image, EventUsage(m_BakedCmdBufferInfo[m_LastCmdBufferID].OLD_curEventID,
-                                rpinfo.attachments[i].loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR
-                                    ? ResourceUsage::Clear
-                                    : ResourceUsage::Discard)));
-          m_LoadingEventNode.AddResourceUsage(
-              image, rpinfo.attachments[i].loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR
-                         ? ResourceUsage::Clear
-                         : ResourceUsage::Discard);
-        }
+        // Do not call vkCmdBeginRenderPass again.
+        m_ActionCallback->PostRemisc(eventId, drawFlags, commandBuffer);
       }
-
-      rdcarray<VkImageMemoryBarrier> imgBarriers = GetImplicitRenderPassBarriers();
 
       GetResourceManager()->RecordBarriers(m_BakedCmdBufferInfo[m_LastCmdBufferID].imageStates,
                                            FindCommandQueueFamily(m_LastCmdBufferID),
                                            (uint32_t)imgBarriers.size(), imgBarriers.data());
+      if(loading)
+      {
+        // EndRenderPass will add Unbind usage for the RenderPass, Framebuffer
+        m_LoadingEventNode.AddResourceUsage(fb, ResourceUsage::Bind);
+        m_LoadingEventNode.AddResourceUsage(rp, ResourceUsage::Bind);
 
-      AddEvent();
-      ActionDescription action;
-      action.customName =
-          StringFormat::Fmt("vkCmdBeginRenderPass(%s)", MakeRenderPassOpString(false).c_str());
-      action.flags |= ActionFlags::PassBoundary | ActionFlags::BeginPass;
+        // Record image usage for images cleared in the beginning of the render pass.
+        for(size_t i = 0; i < rpinfo.attachments.size(); i++)
+        {
+          if(rpinfo.attachments[i].loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR ||
+             rpinfo.attachments[i].loadOp == VK_ATTACHMENT_LOAD_OP_DONT_CARE)
+          {
+            ResourceId image = m_CreationInfo.m_ImageView[fbAttachments[i]].image;
+            m_BakedCmdBufferInfo[m_LastCmdBufferID].OLD_resourceUsage.push_back(make_rdcpair(
+                image, EventUsage(m_BakedCmdBufferInfo[m_LastCmdBufferID].OLD_curEventID,
+                                  rpinfo.attachments[i].loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR
+                                      ? ResourceUsage::Clear
+                                      : ResourceUsage::Discard)));
+            m_LoadingEventNode.AddResourceUsage(
+                image, rpinfo.attachments[i].loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR
+                           ? ResourceUsage::Clear
+                           : ResourceUsage::Discard);
+          }
+        }
 
-      AddAction(action);
+        AddEvent();
+        ActionDescription action;
+        action.customName =
+            StringFormat::Fmt("vkCmdBeginRenderPass(%s)", MakeRenderPassOpString(false).c_str());
+        action.flags |= ActionFlags::PassBoundary | ActionFlags::BeginPass;
+
+        AddAction(action);
+      }
     }
   }
 
@@ -2500,69 +2459,57 @@ bool WrappedVulkan::Serialise_vkCmdNextSubpass(SerialiserType &ser, VkCommandBuf
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    bool loading = IsLoading(m_State);
+    bool replaySingleEvent = !loading && (m_FirstEventID == m_LastEventID);
+    // don't do anything if we're executing a single draw, NextSubpass is meaningless (and invalid
+    // on a partial render pass)
+    if(InRerecordRange(m_LastCmdBufferID) && !replaySingleEvent)
     {
-      // don't do anything if we're executing a single draw, NextSubpass is meaningless (and invalid
-      // on a partial render pass)
-      if(InRerecordRange(m_LastCmdBufferID) && m_FirstEventID != m_LastEventID)
-      {
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          GetCmdRenderState().subpass++;
-          m_BakedCmdBufferInfo[m_LastCmdBufferID].activeSubpass++;
-        }
-
-        ActionFlags drawFlags =
-            ActionFlags::PassBoundary | ActionFlags::BeginPass | ActionFlags::EndPass;
-        uint32_t eventId = HandlePreCallback(commandBuffer, drawFlags);
-
-        ObjDisp(commandBuffer)->CmdNextSubpass(Unwrap(commandBuffer), contents);
-
-        if(eventId && m_ActionCallback->PostMisc(eventId, drawFlags, commandBuffer))
-        {
-          // Do not call vkCmdNextSubpass again.
-          m_ActionCallback->PostRemisc(eventId, drawFlags, commandBuffer);
-        }
-
-        rdcarray<VkImageMemoryBarrier> imgBarriers = GetImplicitRenderPassBarriers();
-
-        GetResourceManager()->RecordBarriers(m_BakedCmdBufferInfo[m_LastCmdBufferID].imageStates,
-                                             FindCommandQueueFamily(m_LastCmdBufferID),
-                                             (uint32_t)imgBarriers.size(), imgBarriers.data());
-      }
-      else if(IsRenderpassOpen(m_LastCmdBufferID) && m_FirstEventID != m_LastEventID)
       {
-        commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
-        ObjDisp(commandBuffer)->CmdNextSubpass(Unwrap(commandBuffer), contents);
-
+        GetCmdRenderState().subpass++;
         m_BakedCmdBufferInfo[m_LastCmdBufferID].activeSubpass++;
-        m_BakedCmdBufferInfo[m_LastCmdBufferID].endBarriers.append(GetImplicitRenderPassBarriers());
       }
-    }
-    else
-    {
+
+      ActionFlags drawFlags =
+          ActionFlags::PassBoundary | ActionFlags::BeginPass | ActionFlags::EndPass;
+      uint32_t eventId = !loading ? HandlePreCallback(commandBuffer, drawFlags) : 0;
+
       ObjDisp(commandBuffer)->CmdNextSubpass(Unwrap(commandBuffer), contents);
 
-      AddImplicitResolveResourceUsage();
-
-      // track while reading, for fetching the right set of outputs in AddAction
-      m_BakedCmdBufferInfo[m_LastCmdBufferID].state.subpass++;
-      m_BakedCmdBufferInfo[m_LastCmdBufferID].activeSubpass++;
+      if(eventId && m_ActionCallback->PostMisc(eventId, drawFlags, commandBuffer))
+      {
+        // Do not call vkCmdNextSubpass again.
+        m_ActionCallback->PostRemisc(eventId, drawFlags, commandBuffer);
+      }
 
       rdcarray<VkImageMemoryBarrier> imgBarriers = GetImplicitRenderPassBarriers();
 
       GetResourceManager()->RecordBarriers(m_BakedCmdBufferInfo[m_LastCmdBufferID].imageStates,
                                            FindCommandQueueFamily(m_LastCmdBufferID),
                                            (uint32_t)imgBarriers.size(), imgBarriers.data());
+      if(loading)
+      {
+        AddImplicitResolveResourceUsage();
 
-      AddEvent();
-      ActionDescription action;
-      action.customName = StringFormat::Fmt("vkCmdNextSubpass() => %u",
-                                            m_BakedCmdBufferInfo[m_LastCmdBufferID].state.subpass);
-      action.flags |= ActionFlags::PassBoundary | ActionFlags::BeginPass | ActionFlags::EndPass;
+        AddEvent();
+        ActionDescription action;
+        action.customName = StringFormat::Fmt(
+            "vkCmdNextSubpass() => %u", m_BakedCmdBufferInfo[m_LastCmdBufferID].state.subpass);
+        action.flags |= ActionFlags::PassBoundary | ActionFlags::BeginPass | ActionFlags::EndPass;
 
-      AddAction(action);
+        AddAction(action);
+      }
+    }
+    else if(IsRenderpassOpen(m_LastCmdBufferID) && m_FirstEventID != m_LastEventID)
+    {
+      commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
+      ObjDisp(commandBuffer)->CmdNextSubpass(Unwrap(commandBuffer), contents);
+
+      m_BakedCmdBufferInfo[m_LastCmdBufferID].activeSubpass++;
+      m_BakedCmdBufferInfo[m_LastCmdBufferID].endBarriers.append(GetImplicitRenderPassBarriers());
     }
   }
 
@@ -2601,115 +2548,109 @@ bool WrappedVulkan::Serialise_vkCmdEndRenderPass(SerialiserType &ser, VkCommandB
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    bool loading = IsLoading(m_State);
+
+    if(!loading)
+      commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
+
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
+      rdcarray<VkImageMemoryBarrier> imgBarriers = GetImplicitRenderPassBarriers(~0U);
+
+      // only if we're partially recording do we update this state
+      if(ShouldUpdateRenderpassActive(m_LastCmdBufferID, false))
       {
-        commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
-
-        rdcarray<VkImageMemoryBarrier> imgBarriers = GetImplicitRenderPassBarriers(~0U);
-
-        // only if we're partially recording do we update this state
-        if(ShouldUpdateRenderpassActive(m_LastCmdBufferID, false))
-        {
-          GetCommandBufferPartialSubmission(m_LastCmdBufferID)->renderPassActive =
-              m_BakedCmdBufferInfo[m_LastCmdBufferID].renderPassOpen = false;
-        }
-
-        rdcarray<ResourceId> attachments;
-        VkRect2D renderArea;
-
-        // save the renderpass that we were in here, so we can look up the rpinfo below
-        ResourceId currentRP = GetCmdRenderState().GetRenderPass();
-
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          attachments = GetCmdRenderState().GetFramebufferAttachments();
-          renderArea = GetCmdRenderState().renderArea;
-
-          renderstate.SetRenderPass(ResourceId());
-          renderstate.SetFramebuffer(ResourceId(), rdcarray<ResourceId>());
-          renderstate.subpassContents = VK_SUBPASS_CONTENTS_MAX_ENUM;
-        }
-
-        ActionFlags drawFlags = ActionFlags::PassBoundary | ActionFlags::EndPass;
-        uint32_t eventId = HandlePreCallback(commandBuffer, drawFlags);
-
-        ObjDisp(commandBuffer)->CmdEndRenderPass(Unwrap(commandBuffer));
-
-        if(eventId && m_ActionCallback->PostMisc(eventId, drawFlags, commandBuffer))
-        {
-          // Do not call vkCmdEndRenderPass again.
-          m_ActionCallback->PostRemisc(eventId, drawFlags, commandBuffer);
-        }
-
-        if(m_ReplayOptions.optimisation != ReplayOptimisationLevel::Fastest &&
-           !m_FeedbackRPs.contains(currentRP))
-        {
-          ApplyRPStoreDiscards(commandBuffer, renderArea, currentRP, attachments);
-        }
-
-        GetResourceManager()->RecordBarriers(m_BakedCmdBufferInfo[m_LastCmdBufferID].imageStates,
-                                             FindCommandQueueFamily(m_LastCmdBufferID),
-                                             (uint32_t)imgBarriers.size(), imgBarriers.data());
+        GetCommandBufferPartialSubmission(m_LastCmdBufferID)->renderPassActive =
+            m_BakedCmdBufferInfo[m_LastCmdBufferID].renderPassOpen = false;
       }
-      else if(IsRenderpassOpen(m_LastCmdBufferID))
+
+      rdcarray<ResourceId> attachments;
+      VkRect2D renderArea;
+
+      // save the renderpass that we were in here, so we can look up the rpinfo below
+      ResourceId currentRP = GetCmdRenderState().GetRenderPass();
+
       {
-        commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
-        ObjDisp(commandBuffer)->CmdEndRenderPass(Unwrap(commandBuffer));
-
-        m_BakedCmdBufferInfo[m_LastCmdBufferID].renderPassOpen = false;
-        m_BakedCmdBufferInfo[m_LastCmdBufferID].endBarriers.append(GetImplicitRenderPassBarriers(~0U));
-
-        ResourceId currentRP = GetCmdRenderState().GetRenderPass();
-
-        if(Vulkan_Hack_DisableRPNormalisation() && !m_FeedbackRPs.contains(currentRP))
+        VulkanRenderState &renderstate = GetCmdRenderState();
+        if(loading)
         {
-          ApplyRPStoreDiscards(commandBuffer, GetCmdRenderState().renderArea, currentRP,
-                               GetCmdRenderState().GetFramebufferAttachments());
+          // Track usage and action outputs before the renderstate is modified
+          AddImplicitResolveResourceUsage(~0U);
+
+          AddEvent();
+          ActionDescription action;
+          action.customName =
+              StringFormat::Fmt("vkCmdEndRenderPass(%s)", MakeRenderPassOpString(true).c_str());
+          action.flags |= ActionFlags::PassBoundary | ActionFlags::EndPass;
+
+          AddAction(action);
+
+          VulkanEventNode &eventNode = GetLastEventNode();
+          eventNode.AddResourceUsage(renderstate.GetFramebuffer(), ResourceUsage::UnBind);
+          eventNode.AddResourceUsage(renderstate.GetRenderPass(), ResourceUsage::UnBind);
         }
+
+        attachments = renderstate.GetFramebufferAttachments();
+        renderArea = renderstate.renderArea;
+
+        renderstate.SetRenderPass(ResourceId());
+        renderstate.SetFramebuffer(ResourceId(), rdcarray<ResourceId>());
+        renderstate.subpassContents = VK_SUBPASS_CONTENTS_MAX_ENUM;
       }
-    }
-    else
-    {
+
+      ActionFlags drawFlags = ActionFlags::PassBoundary | ActionFlags::EndPass;
+      uint32_t eventId = !loading ? HandlePreCallback(commandBuffer, drawFlags) : 0;
+
       ObjDisp(commandBuffer)->CmdEndRenderPass(Unwrap(commandBuffer));
 
-      // fetch any queued indirect readbacks here
-      for(const VkIndirectRecordData &indirectcopy :
-          m_BakedCmdBufferInfo[m_LastCmdBufferID].indirectCopies)
-        ExecuteIndirectReadback(commandBuffer, indirectcopy);
+      if(eventId && m_ActionCallback->PostMisc(eventId, drawFlags, commandBuffer))
+      {
+        // Do not call vkCmdEndRenderPass again.
+        m_ActionCallback->PostRemisc(eventId, drawFlags, commandBuffer);
+      }
 
-      // and deferred descriptor buffer versions here
-      for(const BakedCmdBufferInfo::DeferredDescBufCopy &descVersion :
-          m_BakedCmdBufferInfo[m_LastCmdBufferID].descBufDeferredCopies)
-        CopyVersionedDescriptorBuffer(commandBuffer, descVersion.unwrappedDstBuffer,
-                                      descVersion.copyOffsets);
-
-      m_BakedCmdBufferInfo[m_LastCmdBufferID].indirectCopies.clear();
-      m_BakedCmdBufferInfo[m_LastCmdBufferID].descBufDeferredCopies.clear();
-
-      rdcarray<VkImageMemoryBarrier> imgBarriers = GetImplicitRenderPassBarriers(~0U);
+      if(m_ReplayOptions.optimisation != ReplayOptimisationLevel::Fastest &&
+         !m_FeedbackRPs.contains(currentRP))
+      {
+        ApplyRPStoreDiscards(commandBuffer, renderArea, currentRP, attachments);
+      }
 
       GetResourceManager()->RecordBarriers(m_BakedCmdBufferInfo[m_LastCmdBufferID].imageStates,
                                            FindCommandQueueFamily(m_LastCmdBufferID),
                                            (uint32_t)imgBarriers.size(), imgBarriers.data());
 
-      AddImplicitResolveResourceUsage(~0U);
+      if(loading)
+      {
+        // After the renderpass is ended
+        // fetch any queued indirect readbacks
+        for(const VkIndirectRecordData &indirectcopy :
+            m_BakedCmdBufferInfo[m_LastCmdBufferID].indirectCopies)
+          ExecuteIndirectReadback(commandBuffer, indirectcopy);
 
-      AddEvent();
-      ActionDescription action;
-      action.customName =
-          StringFormat::Fmt("vkCmdEndRenderPass(%s)", MakeRenderPassOpString(true).c_str());
-      action.flags |= ActionFlags::PassBoundary | ActionFlags::EndPass;
+        // and deferred descriptor buffer versions here
+        for(const BakedCmdBufferInfo::DeferredDescBufCopy &descVersion :
+            m_BakedCmdBufferInfo[m_LastCmdBufferID].descBufDeferredCopies)
+          CopyVersionedDescriptorBuffer(commandBuffer, descVersion.unwrappedDstBuffer,
+                                        descVersion.copyOffsets);
 
-      AddAction(action);
+        m_BakedCmdBufferInfo[m_LastCmdBufferID].indirectCopies.clear();
+        m_BakedCmdBufferInfo[m_LastCmdBufferID].descBufDeferredCopies.clear();
+      }
+    }
+    else if(IsRenderpassOpen(m_LastCmdBufferID))
+    {
+      ObjDisp(commandBuffer)->CmdEndRenderPass(Unwrap(commandBuffer));
 
-      // track while reading, reset this to empty so AddAction sets no outputs,
-      // but only AFTER the above AddAction (we want it grouped together)
-      m_BakedCmdBufferInfo[m_LastCmdBufferID].state.SetRenderPass(ResourceId());
-      m_BakedCmdBufferInfo[m_LastCmdBufferID].state.SetFramebuffer(ResourceId(),
-                                                                   rdcarray<ResourceId>());
+      m_BakedCmdBufferInfo[m_LastCmdBufferID].renderPassOpen = false;
+      m_BakedCmdBufferInfo[m_LastCmdBufferID].endBarriers.append(GetImplicitRenderPassBarriers(~0U));
+
+      ResourceId currentRP = GetCmdRenderState().GetRenderPass();
+
+      if(Vulkan_Hack_DisableRPNormalisation() && !m_FeedbackRPs.contains(currentRP))
+      {
+        ApplyRPStoreDiscards(commandBuffer, GetCmdRenderState().renderArea, currentRP,
+                             GetCmdRenderState().GetFramebufferAttachments());
+      }
     }
   }
 
@@ -3441,377 +3382,356 @@ bool WrappedVulkan::Serialise_vkCmdBindPipeline(SerialiserType &ser, VkCommandBu
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        ResourceId id = GetResID(pipeline);
+      ResourceId id = GetResID(pipeline);
+      ResourceId prevPipeline;
 
+      {
+        VulkanRenderState &renderstate = GetCmdRenderState();
+        if(pipelineBindPoint == VK_PIPELINE_BIND_POINT_COMPUTE)
         {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-          if(pipelineBindPoint == VK_PIPELINE_BIND_POINT_COMPUTE)
-          {
-            renderstate.compute.pipeline = id;
-            renderstate.compute.shaderObject = false;
+          prevPipeline = renderstate.compute.pipeline;
+          renderstate.compute.pipeline = id;
+          renderstate.compute.shaderObject = false;
 
-            // disturb compute shader bound via vkCmdBindShadersEXT, if any
-            renderstate.shaderObjects[(uint32_t)ShaderStage::Compute] = ResourceId();
+          // disturb compute shader bound via vkCmdBindShadersEXT, if any
+          renderstate.shaderObjects[(uint32_t)ShaderStage::Compute] = ResourceId();
+        }
+        else if(pipelineBindPoint == VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR)
+        {
+          prevPipeline = renderstate.rt.pipeline;
+          renderstate.rt.pipeline = id;
+        }
+        else
+        {
+          prevPipeline = renderstate.graphics.pipeline;
+          renderstate.graphics.pipeline = id;
+          renderstate.graphics.shaderObject = false;
+
+          // disturb graphics shaders bound via vkCmdBindShadersEXT, if any
+          for(uint32_t i = 0; i < (uint32_t)ShaderStage::Count; i++)
+          {
+            if(i == (uint32_t)ShaderStage::Compute)
+              continue;
+            renderstate.shaderObjects[i] = ResourceId();
           }
-          else if(pipelineBindPoint == VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR)
+
+          const VulkanCreationInfo::Pipeline &pipeInfo = m_CreationInfo.m_Pipeline[id];
+
+          // any static state from the pipeline invalidates any dynamic state previously bound
+          for(uint32_t i = 0; i < VkDynamicCount; i++)
+            renderstate.dynamicStates[i] &= pipeInfo.dynamicStates[i];
+
+          if(!pipeInfo.dynamicStates[VkDynamicViewport] &&
+             !pipeInfo.dynamicStates[VkDynamicViewportCount])
           {
-            renderstate.rt.pipeline = id;
+            renderstate.views = pipeInfo.viewports;
           }
-          else
+          if(!pipeInfo.dynamicStates[VkDynamicScissor] &&
+             !pipeInfo.dynamicStates[VkDynamicScissorCount])
           {
-            renderstate.graphics.pipeline = id;
-            renderstate.graphics.shaderObject = false;
+            renderstate.scissors = pipeInfo.scissors;
+          }
 
-            // disturb graphics shaders bound via vkCmdBindShadersEXT, if any
-            for(uint32_t i = 0; i < (uint32_t)ShaderStage::Count; i++)
-            {
-              if(i == (uint32_t)ShaderStage::Compute)
-                continue;
-              renderstate.shaderObjects[i] = ResourceId();
-            }
+          if(!pipeInfo.dynamicStates[VkDynamicViewportCount])
+          {
+            renderstate.views.resize(RDCMIN(renderstate.views.size(), pipeInfo.viewports.size()));
+          }
+          if(!pipeInfo.dynamicStates[VkDynamicScissorCount])
+          {
+            renderstate.scissors.resize(RDCMIN(renderstate.scissors.size(), pipeInfo.scissors.size()));
+          }
 
-            const VulkanCreationInfo::Pipeline &pipeInfo = m_CreationInfo.m_Pipeline[id];
+          if(!pipeInfo.dynamicStates[VkDynamicLineWidth])
+          {
+            renderstate.lineWidth = pipeInfo.lineWidth;
+          }
+          if(!pipeInfo.dynamicStates[VkDynamicDepthBias])
+          {
+            renderstate.bias.depth = pipeInfo.depthBiasConstantFactor;
+            renderstate.bias.biasclamp = pipeInfo.depthBiasClamp;
+            renderstate.bias.slope = pipeInfo.depthBiasSlopeFactor;
+            renderstate.bias.exact = pipeInfo.depthBiasExact != VK_FALSE;
+            renderstate.bias.repr = pipeInfo.depthBiasRepresentation;
+          }
+          if(!pipeInfo.dynamicStates[VkDynamicBlendConstants])
+          {
+            memcpy(renderstate.blendConst, pipeInfo.blendConst, sizeof(float) * 4);
+          }
+          if(!pipeInfo.dynamicStates[VkDynamicDepthBounds])
+          {
+            renderstate.mindepth = pipeInfo.minDepthBounds;
+            renderstate.maxdepth = pipeInfo.maxDepthBounds;
+          }
+          if(!pipeInfo.dynamicStates[VkDynamicStencilCompareMask])
+          {
+            renderstate.front.compare = pipeInfo.front.compareMask;
+            renderstate.back.compare = pipeInfo.back.compareMask;
+          }
+          if(!pipeInfo.dynamicStates[VkDynamicStencilWriteMask])
+          {
+            renderstate.front.write = pipeInfo.front.writeMask;
+            renderstate.back.write = pipeInfo.back.writeMask;
+          }
+          if(!pipeInfo.dynamicStates[VkDynamicStencilReference])
+          {
+            renderstate.front.ref = pipeInfo.front.reference;
+            renderstate.back.ref = pipeInfo.back.reference;
+          }
+          if(!pipeInfo.dynamicStates[VkDynamicSampleLocationsEXT])
+          {
+            renderstate.sampleLocations.locations = pipeInfo.sampleLocations.locations;
+            renderstate.sampleLocations.gridSize = pipeInfo.sampleLocations.gridSize;
+            renderstate.sampleLocations.sampleCount = pipeInfo.rasterizationSamples;
+          }
+          if(!pipeInfo.dynamicStates[VkDynamicDiscardRectangleEXT])
+          {
+            renderstate.discardRectangles = pipeInfo.discardRectangles;
+          }
+          if(!pipeInfo.dynamicStates[VkDynamicShadingRateKHR])
+          {
+            renderstate.pipelineShadingRate = pipeInfo.shadingRate;
+            renderstate.shadingRateCombiners[0] = pipeInfo.shadingRateCombiners[0];
+            renderstate.shadingRateCombiners[1] = pipeInfo.shadingRateCombiners[1];
+          }
+          if(!pipeInfo.dynamicStates[VkDynamicLineStipple])
+          {
+            renderstate.stippleFactor = pipeInfo.stippleFactor;
+            renderstate.stipplePattern = pipeInfo.stipplePattern;
+          }
+          if(!pipeInfo.dynamicStates[VkDynamicCullMode])
+          {
+            renderstate.cullMode = pipeInfo.cullMode;
+          }
+          if(!pipeInfo.dynamicStates[VkDynamicFrontFace])
+          {
+            renderstate.frontFace = pipeInfo.frontFace;
+          }
+          if(!pipeInfo.dynamicStates[VkDynamicPrimitiveTopology])
+          {
+            renderstate.primitiveTopology = pipeInfo.topology;
+          }
+          if(!pipeInfo.dynamicStates[VkDynamicDepthTestEnable])
+          {
+            renderstate.depthTestEnable = pipeInfo.depthTestEnable;
+          }
+          if(!pipeInfo.dynamicStates[VkDynamicDepthWriteEnable])
+          {
+            renderstate.depthWriteEnable = pipeInfo.depthWriteEnable;
+          }
+          if(!pipeInfo.dynamicStates[VkDynamicDepthCompareOp])
+          {
+            renderstate.depthCompareOp = pipeInfo.depthCompareOp;
+          }
+          if(!pipeInfo.dynamicStates[VkDynamicDepthBoundsTestEnable])
+          {
+            renderstate.depthBoundsTestEnable = pipeInfo.depthBoundsEnable;
+          }
+          if(!pipeInfo.dynamicStates[VkDynamicStencilTestEnable])
+          {
+            renderstate.stencilTestEnable = pipeInfo.stencilTestEnable;
+          }
+          if(!pipeInfo.dynamicStates[VkDynamicStencilOp])
+          {
+            renderstate.front.passOp = pipeInfo.front.passOp;
+            renderstate.back.passOp = pipeInfo.back.passOp;
 
-            // any static state from the pipeline invalidates any dynamic state previously bound
-            for(uint32_t i = 0; i < VkDynamicCount; i++)
-              renderstate.dynamicStates[i] &= pipeInfo.dynamicStates[i];
+            renderstate.front.failOp = pipeInfo.front.failOp;
+            renderstate.back.failOp = pipeInfo.back.failOp;
 
-            if(!pipeInfo.dynamicStates[VkDynamicViewport] &&
-               !pipeInfo.dynamicStates[VkDynamicViewportCount])
-            {
-              renderstate.views = pipeInfo.viewports;
-            }
-            if(!pipeInfo.dynamicStates[VkDynamicScissor] &&
-               !pipeInfo.dynamicStates[VkDynamicScissorCount])
-            {
-              renderstate.scissors = pipeInfo.scissors;
-            }
+            renderstate.front.depthFailOp = pipeInfo.front.depthFailOp;
+            renderstate.back.depthFailOp = pipeInfo.back.depthFailOp;
 
-            if(!pipeInfo.dynamicStates[VkDynamicViewportCount])
+            renderstate.front.compareOp = pipeInfo.front.compareOp;
+            renderstate.back.compareOp = pipeInfo.back.compareOp;
+          }
+          if(!pipeInfo.dynamicStates[VkDynamicVertexInputBindingStride])
+          {
+            for(const VulkanCreationInfo::Pipeline::VertBinding &bind : pipeInfo.vertexBindings)
             {
-              renderstate.views.resize(RDCMIN(renderstate.views.size(), pipeInfo.viewports.size()));
+              renderstate.vbuffers.resize_for_index(bind.vbufferBinding);
+              renderstate.vbuffers[bind.vbufferBinding].stride = bind.bytestride;
             }
-            if(!pipeInfo.dynamicStates[VkDynamicScissorCount])
+          }
+          if(!pipeInfo.dynamicStates[VkDynamicColorWriteEXT])
+          {
+            renderstate.colorWriteEnable.resize(pipeInfo.attachments.size());
+            for(size_t i = 0; i < renderstate.colorWriteEnable.size(); i++)
+              renderstate.colorWriteEnable[i] = pipeInfo.attachments[i].channelWriteMask != 0;
+          }
+          if(!pipeInfo.dynamicStates[VkDynamicDepthBiasEnable])
+          {
+            renderstate.depthBiasEnable = pipeInfo.depthBiasEnable;
+          }
+          if(!pipeInfo.dynamicStates[VkDynamicLogicOpEXT])
+          {
+            renderstate.logicOp = pipeInfo.logicOp;
+          }
+          if(!pipeInfo.dynamicStates[VkDynamicControlPointsEXT])
+          {
+            renderstate.patchControlPoints = pipeInfo.patchControlPoints;
+          }
+          if(!pipeInfo.dynamicStates[VkDynamicPrimRestart])
+          {
+            renderstate.primRestartEnable = pipeInfo.primitiveRestartEnable;
+          }
+          if(!pipeInfo.dynamicStates[VkDynamicRastDiscard])
+          {
+            renderstate.rastDiscardEnable = pipeInfo.rasterizerDiscardEnable;
+          }
+          if(!pipeInfo.dynamicStates[VkDynamicVertexInputEXT])
+          {
+            renderstate.vertexAttributes.resize(pipeInfo.vertexAttrs.size());
+            for(size_t i = 0; i < renderstate.vertexAttributes.size(); i++)
             {
-              renderstate.scissors.resize(
-                  RDCMIN(renderstate.scissors.size(), pipeInfo.scissors.size()));
+              renderstate.vertexAttributes[i].sType =
+                  VK_STRUCTURE_TYPE_VERTEX_INPUT_ATTRIBUTE_DESCRIPTION_2_EXT;
+              renderstate.vertexAttributes[i].pNext = NULL;
+              renderstate.vertexAttributes[i].format = pipeInfo.vertexAttrs[i].format;
+              renderstate.vertexAttributes[i].binding = pipeInfo.vertexAttrs[i].binding;
+              renderstate.vertexAttributes[i].offset = pipeInfo.vertexAttrs[i].byteoffset;
+              renderstate.vertexAttributes[i].location = pipeInfo.vertexAttrs[i].location;
             }
-
-            if(!pipeInfo.dynamicStates[VkDynamicLineWidth])
+            renderstate.vertexBindings.resize(pipeInfo.vertexBindings.size());
+            for(size_t i = 0; i < renderstate.vertexBindings.size(); i++)
             {
-              renderstate.lineWidth = pipeInfo.lineWidth;
+              renderstate.vertexBindings[i].sType =
+                  VK_STRUCTURE_TYPE_VERTEX_INPUT_BINDING_DESCRIPTION_2_EXT;
+              renderstate.vertexBindings[i].pNext = NULL;
+              renderstate.vertexBindings[i].binding = pipeInfo.vertexBindings[i].vbufferBinding;
+              renderstate.vertexBindings[i].inputRate = pipeInfo.vertexBindings[i].perInstance
+                                                            ? VK_VERTEX_INPUT_RATE_INSTANCE
+                                                            : VK_VERTEX_INPUT_RATE_VERTEX;
+              renderstate.vertexBindings[i].stride = pipeInfo.vertexBindings[i].bytestride;
+              renderstate.vertexBindings[i].divisor = pipeInfo.vertexBindings[i].instanceDivisor;
             }
-            if(!pipeInfo.dynamicStates[VkDynamicDepthBias])
+          }
+          if(!pipeInfo.dynamicStates[VkDynamicAttachmentFeedbackLoopEnableEXT])
+          {
+            renderstate.feedbackAspects = VK_IMAGE_ASPECT_NONE;
+            if(pipeInfo.flags & VK_PIPELINE_CREATE_COLOR_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT)
+              renderstate.feedbackAspects |= VK_IMAGE_ASPECT_COLOR_BIT;
+            if(pipeInfo.flags & VK_PIPELINE_CREATE_DEPTH_STENCIL_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT)
+              renderstate.feedbackAspects |= VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
+          }
+          if(!pipeInfo.dynamicStates[VkDynamicAlphaToCoverageEXT])
+          {
+            renderstate.alphaToCoverageEnable = pipeInfo.alphaToCoverageEnable;
+          }
+          if(!pipeInfo.dynamicStates[VkDynamicAlphaToOneEXT])
+          {
+            renderstate.alphaToOneEnable = pipeInfo.alphaToOneEnable;
+          }
+          if(!pipeInfo.dynamicStates[VkDynamicColorBlendEnableEXT])
+          {
+            renderstate.colorBlendEnable.resize(pipeInfo.attachments.size());
+            for(size_t i = 0; i < renderstate.colorBlendEnable.size(); i++)
+              renderstate.colorBlendEnable[i] = pipeInfo.attachments[i].blendEnable;
+          }
+          if(!pipeInfo.dynamicStates[VkDynamicColorBlendEquationEXT])
+          {
+            renderstate.colorBlendEquation.resize(pipeInfo.attachments.size());
+            for(size_t i = 0; i < renderstate.colorBlendEquation.size(); i++)
             {
-              renderstate.bias.depth = pipeInfo.depthBiasConstantFactor;
-              renderstate.bias.biasclamp = pipeInfo.depthBiasClamp;
-              renderstate.bias.slope = pipeInfo.depthBiasSlopeFactor;
-              renderstate.bias.exact = pipeInfo.depthBiasExact != VK_FALSE;
-              renderstate.bias.repr = pipeInfo.depthBiasRepresentation;
+              renderstate.colorBlendEquation[i].srcColorBlendFactor =
+                  pipeInfo.attachments[i].blend.Source;
+              renderstate.colorBlendEquation[i].dstColorBlendFactor =
+                  pipeInfo.attachments[i].blend.Destination;
+              renderstate.colorBlendEquation[i].colorBlendOp =
+                  pipeInfo.attachments[i].blend.Operation;
+              renderstate.colorBlendEquation[i].srcAlphaBlendFactor =
+                  pipeInfo.attachments[i].alphaBlend.Source;
+              renderstate.colorBlendEquation[i].dstAlphaBlendFactor =
+                  pipeInfo.attachments[i].alphaBlend.Destination;
+              renderstate.colorBlendEquation[i].alphaBlendOp =
+                  pipeInfo.attachments[i].alphaBlend.Operation;
             }
-            if(!pipeInfo.dynamicStates[VkDynamicBlendConstants])
+          }
+          if(!pipeInfo.dynamicStates[VkDynamicColorWriteMaskEXT])
+          {
+            renderstate.colorWriteMask.resize(pipeInfo.attachments.size());
+            for(size_t i = 0; i < renderstate.colorWriteMask.size(); i++)
             {
-              memcpy(renderstate.blendConst, pipeInfo.blendConst, sizeof(float) * 4);
+              renderstate.colorWriteMask[i] = (uint32_t)pipeInfo.attachments[i].channelWriteMask;
             }
-            if(!pipeInfo.dynamicStates[VkDynamicDepthBounds])
-            {
-              renderstate.mindepth = pipeInfo.minDepthBounds;
-              renderstate.maxdepth = pipeInfo.maxDepthBounds;
-            }
-            if(!pipeInfo.dynamicStates[VkDynamicStencilCompareMask])
-            {
-              renderstate.front.compare = pipeInfo.front.compareMask;
-              renderstate.back.compare = pipeInfo.back.compareMask;
-            }
-            if(!pipeInfo.dynamicStates[VkDynamicStencilWriteMask])
-            {
-              renderstate.front.write = pipeInfo.front.writeMask;
-              renderstate.back.write = pipeInfo.back.writeMask;
-            }
-            if(!pipeInfo.dynamicStates[VkDynamicStencilReference])
-            {
-              renderstate.front.ref = pipeInfo.front.reference;
-              renderstate.back.ref = pipeInfo.back.reference;
-            }
-            if(!pipeInfo.dynamicStates[VkDynamicSampleLocationsEXT])
-            {
-              renderstate.sampleLocations.locations = pipeInfo.sampleLocations.locations;
-              renderstate.sampleLocations.gridSize = pipeInfo.sampleLocations.gridSize;
-              renderstate.sampleLocations.sampleCount = pipeInfo.rasterizationSamples;
-            }
-            if(!pipeInfo.dynamicStates[VkDynamicDiscardRectangleEXT])
-            {
-              renderstate.discardRectangles = pipeInfo.discardRectangles;
-            }
-            if(!pipeInfo.dynamicStates[VkDynamicShadingRateKHR])
-            {
-              renderstate.pipelineShadingRate = pipeInfo.shadingRate;
-              renderstate.shadingRateCombiners[0] = pipeInfo.shadingRateCombiners[0];
-              renderstate.shadingRateCombiners[1] = pipeInfo.shadingRateCombiners[1];
-            }
-            if(!pipeInfo.dynamicStates[VkDynamicLineStipple])
-            {
-              renderstate.stippleFactor = pipeInfo.stippleFactor;
-              renderstate.stipplePattern = pipeInfo.stipplePattern;
-            }
-            if(!pipeInfo.dynamicStates[VkDynamicCullMode])
-            {
-              renderstate.cullMode = pipeInfo.cullMode;
-            }
-            if(!pipeInfo.dynamicStates[VkDynamicFrontFace])
-            {
-              renderstate.frontFace = pipeInfo.frontFace;
-            }
-            if(!pipeInfo.dynamicStates[VkDynamicPrimitiveTopology])
-            {
-              renderstate.primitiveTopology = pipeInfo.topology;
-            }
-            if(!pipeInfo.dynamicStates[VkDynamicDepthTestEnable])
-            {
-              renderstate.depthTestEnable = pipeInfo.depthTestEnable;
-            }
-            if(!pipeInfo.dynamicStates[VkDynamicDepthWriteEnable])
-            {
-              renderstate.depthWriteEnable = pipeInfo.depthWriteEnable;
-            }
-            if(!pipeInfo.dynamicStates[VkDynamicDepthCompareOp])
-            {
-              renderstate.depthCompareOp = pipeInfo.depthCompareOp;
-            }
-            if(!pipeInfo.dynamicStates[VkDynamicDepthBoundsTestEnable])
-            {
-              renderstate.depthBoundsTestEnable = pipeInfo.depthBoundsEnable;
-            }
-            if(!pipeInfo.dynamicStates[VkDynamicStencilTestEnable])
-            {
-              renderstate.stencilTestEnable = pipeInfo.stencilTestEnable;
-            }
-            if(!pipeInfo.dynamicStates[VkDynamicStencilOp])
-            {
-              renderstate.front.passOp = pipeInfo.front.passOp;
-              renderstate.back.passOp = pipeInfo.back.passOp;
-
-              renderstate.front.failOp = pipeInfo.front.failOp;
-              renderstate.back.failOp = pipeInfo.back.failOp;
-
-              renderstate.front.depthFailOp = pipeInfo.front.depthFailOp;
-              renderstate.back.depthFailOp = pipeInfo.back.depthFailOp;
-
-              renderstate.front.compareOp = pipeInfo.front.compareOp;
-              renderstate.back.compareOp = pipeInfo.back.compareOp;
-            }
-            if(!pipeInfo.dynamicStates[VkDynamicVertexInputBindingStride])
-            {
-              for(const VulkanCreationInfo::Pipeline::VertBinding &bind : pipeInfo.vertexBindings)
-              {
-                renderstate.vbuffers.resize_for_index(bind.vbufferBinding);
-                renderstate.vbuffers[bind.vbufferBinding].stride = bind.bytestride;
-              }
-            }
-            if(!pipeInfo.dynamicStates[VkDynamicColorWriteEXT])
-            {
-              renderstate.colorWriteEnable.resize(pipeInfo.attachments.size());
-              for(size_t i = 0; i < renderstate.colorWriteEnable.size(); i++)
-                renderstate.colorWriteEnable[i] = pipeInfo.attachments[i].channelWriteMask != 0;
-            }
-            if(!pipeInfo.dynamicStates[VkDynamicDepthBiasEnable])
-            {
-              renderstate.depthBiasEnable = pipeInfo.depthBiasEnable;
-            }
-            if(!pipeInfo.dynamicStates[VkDynamicLogicOpEXT])
-            {
-              renderstate.logicOp = pipeInfo.logicOp;
-            }
-            if(!pipeInfo.dynamicStates[VkDynamicControlPointsEXT])
-            {
-              renderstate.patchControlPoints = pipeInfo.patchControlPoints;
-            }
-            if(!pipeInfo.dynamicStates[VkDynamicPrimRestart])
-            {
-              renderstate.primRestartEnable = pipeInfo.primitiveRestartEnable;
-            }
-            if(!pipeInfo.dynamicStates[VkDynamicRastDiscard])
-            {
-              renderstate.rastDiscardEnable = pipeInfo.rasterizerDiscardEnable;
-            }
-            if(!pipeInfo.dynamicStates[VkDynamicVertexInputEXT])
-            {
-              renderstate.vertexAttributes.resize(pipeInfo.vertexAttrs.size());
-              for(size_t i = 0; i < renderstate.vertexAttributes.size(); i++)
-              {
-                renderstate.vertexAttributes[i].sType =
-                    VK_STRUCTURE_TYPE_VERTEX_INPUT_ATTRIBUTE_DESCRIPTION_2_EXT;
-                renderstate.vertexAttributes[i].pNext = NULL;
-                renderstate.vertexAttributes[i].format = pipeInfo.vertexAttrs[i].format;
-                renderstate.vertexAttributes[i].binding = pipeInfo.vertexAttrs[i].binding;
-                renderstate.vertexAttributes[i].offset = pipeInfo.vertexAttrs[i].byteoffset;
-                renderstate.vertexAttributes[i].location = pipeInfo.vertexAttrs[i].location;
-              }
-              renderstate.vertexBindings.resize(pipeInfo.vertexBindings.size());
-              for(size_t i = 0; i < renderstate.vertexBindings.size(); i++)
-              {
-                renderstate.vertexBindings[i].sType =
-                    VK_STRUCTURE_TYPE_VERTEX_INPUT_BINDING_DESCRIPTION_2_EXT;
-                renderstate.vertexBindings[i].pNext = NULL;
-                renderstate.vertexBindings[i].binding = pipeInfo.vertexBindings[i].vbufferBinding;
-                renderstate.vertexBindings[i].inputRate = pipeInfo.vertexBindings[i].perInstance
-                                                              ? VK_VERTEX_INPUT_RATE_INSTANCE
-                                                              : VK_VERTEX_INPUT_RATE_VERTEX;
-                renderstate.vertexBindings[i].stride = pipeInfo.vertexBindings[i].bytestride;
-                renderstate.vertexBindings[i].divisor = pipeInfo.vertexBindings[i].instanceDivisor;
-              }
-            }
-            if(!pipeInfo.dynamicStates[VkDynamicAttachmentFeedbackLoopEnableEXT])
-            {
-              renderstate.feedbackAspects = VK_IMAGE_ASPECT_NONE;
-              if(pipeInfo.flags & VK_PIPELINE_CREATE_COLOR_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT)
-                renderstate.feedbackAspects |= VK_IMAGE_ASPECT_COLOR_BIT;
-              if(pipeInfo.flags & VK_PIPELINE_CREATE_DEPTH_STENCIL_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT)
-                renderstate.feedbackAspects |=
-                    VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
-            }
-            if(!pipeInfo.dynamicStates[VkDynamicAlphaToCoverageEXT])
-            {
-              renderstate.alphaToCoverageEnable = pipeInfo.alphaToCoverageEnable;
-            }
-            if(!pipeInfo.dynamicStates[VkDynamicAlphaToOneEXT])
-            {
-              renderstate.alphaToOneEnable = pipeInfo.alphaToOneEnable;
-            }
-            if(!pipeInfo.dynamicStates[VkDynamicColorBlendEnableEXT])
-            {
-              renderstate.colorBlendEnable.resize(pipeInfo.attachments.size());
-              for(size_t i = 0; i < renderstate.colorBlendEnable.size(); i++)
-                renderstate.colorBlendEnable[i] = pipeInfo.attachments[i].blendEnable;
-            }
-            if(!pipeInfo.dynamicStates[VkDynamicColorBlendEquationEXT])
-            {
-              renderstate.colorBlendEquation.resize(pipeInfo.attachments.size());
-              for(size_t i = 0; i < renderstate.colorBlendEquation.size(); i++)
-              {
-                renderstate.colorBlendEquation[i].srcColorBlendFactor =
-                    pipeInfo.attachments[i].blend.Source;
-                renderstate.colorBlendEquation[i].dstColorBlendFactor =
-                    pipeInfo.attachments[i].blend.Destination;
-                renderstate.colorBlendEquation[i].colorBlendOp =
-                    pipeInfo.attachments[i].blend.Operation;
-                renderstate.colorBlendEquation[i].srcAlphaBlendFactor =
-                    pipeInfo.attachments[i].alphaBlend.Source;
-                renderstate.colorBlendEquation[i].dstAlphaBlendFactor =
-                    pipeInfo.attachments[i].alphaBlend.Destination;
-                renderstate.colorBlendEquation[i].alphaBlendOp =
-                    pipeInfo.attachments[i].alphaBlend.Operation;
-              }
-            }
-            if(!pipeInfo.dynamicStates[VkDynamicColorWriteMaskEXT])
-            {
-              renderstate.colorWriteMask.resize(pipeInfo.attachments.size());
-              for(size_t i = 0; i < renderstate.colorWriteMask.size(); i++)
-              {
-                renderstate.colorWriteMask[i] = (uint32_t)pipeInfo.attachments[i].channelWriteMask;
-              }
-            }
-            if(!pipeInfo.dynamicStates[VkDynamicConservativeRastModeEXT])
-            {
-              renderstate.conservativeRastMode = pipeInfo.conservativeRasterizationMode;
-            }
-            if(!pipeInfo.dynamicStates[VkDynamicDepthClampEnableEXT])
-            {
-              renderstate.depthClampEnable = pipeInfo.depthClampEnable;
-            }
-            if(!pipeInfo.dynamicStates[VkDynamicDepthClipEnableEXT])
-            {
-              renderstate.depthClipEnable = pipeInfo.depthClipEnable;
-            }
-            if(!pipeInfo.dynamicStates[VkDynamicDepthClipNegativeOneEXT])
-            {
-              renderstate.negativeOneToOne = pipeInfo.negativeOneToOne;
-            }
-            if(!pipeInfo.dynamicStates[VkDynamicOverstimationSizeEXT])
-            {
-              renderstate.primOverestimationSize = pipeInfo.extraPrimitiveOverestimationSize;
-            }
-            if(!pipeInfo.dynamicStates[VkDynamicLineRastModeEXT])
-            {
-              renderstate.lineRasterMode = pipeInfo.lineRasterMode;
-            }
-            if(!pipeInfo.dynamicStates[VkDynamicLineStippleEnableEXT])
-            {
-              renderstate.stippledLineEnable = pipeInfo.stippleEnabled;
-            }
-            if(!pipeInfo.dynamicStates[VkDynamicLogicOpEnableEXT])
-            {
-              renderstate.logicOpEnable = pipeInfo.logicOpEnable;
-            }
-            if(!pipeInfo.dynamicStates[VkDynamicPolygonModeEXT])
-            {
-              renderstate.polygonMode = pipeInfo.polygonMode;
-            }
-            if(!pipeInfo.dynamicStates[VkDynamicProvokingVertexModeEXT])
-            {
-              renderstate.provokingVertexMode = pipeInfo.provokingVertex;
-            }
-            if(!pipeInfo.dynamicStates[VkDynamicRasterizationSamplesEXT])
-            {
-              renderstate.rastSamples = pipeInfo.rasterizationSamples;
-            }
-            if(!pipeInfo.dynamicStates[VkDynamicRasterizationStreamEXT])
-            {
-              renderstate.rasterStream = pipeInfo.rasterizationStream;
-            }
-            if(!pipeInfo.dynamicStates[VkDynamicSampleLocationsEnableEXT])
-            {
-              renderstate.sampleLocEnable = pipeInfo.sampleLocations.enabled;
-            }
-            if(!pipeInfo.dynamicStates[VkDynamicSampleMaskEXT])
-            {
-              renderstate.sampleMask[0] = pipeInfo.sampleMask;
-            }
-            if(!pipeInfo.dynamicStates[VkDynamicTessDomainOriginEXT])
-            {
-              renderstate.domainOrigin = pipeInfo.tessellationDomainOrigin;
-            }
+          }
+          if(!pipeInfo.dynamicStates[VkDynamicConservativeRastModeEXT])
+          {
+            renderstate.conservativeRastMode = pipeInfo.conservativeRasterizationMode;
+          }
+          if(!pipeInfo.dynamicStates[VkDynamicDepthClampEnableEXT])
+          {
+            renderstate.depthClampEnable = pipeInfo.depthClampEnable;
+          }
+          if(!pipeInfo.dynamicStates[VkDynamicDepthClipEnableEXT])
+          {
+            renderstate.depthClipEnable = pipeInfo.depthClipEnable;
+          }
+          if(!pipeInfo.dynamicStates[VkDynamicDepthClipNegativeOneEXT])
+          {
+            renderstate.negativeOneToOne = pipeInfo.negativeOneToOne;
+          }
+          if(!pipeInfo.dynamicStates[VkDynamicOverstimationSizeEXT])
+          {
+            renderstate.primOverestimationSize = pipeInfo.extraPrimitiveOverestimationSize;
+          }
+          if(!pipeInfo.dynamicStates[VkDynamicLineRastModeEXT])
+          {
+            renderstate.lineRasterMode = pipeInfo.lineRasterMode;
+          }
+          if(!pipeInfo.dynamicStates[VkDynamicLineStippleEnableEXT])
+          {
+            renderstate.stippledLineEnable = pipeInfo.stippleEnabled;
+          }
+          if(!pipeInfo.dynamicStates[VkDynamicLogicOpEnableEXT])
+          {
+            renderstate.logicOpEnable = pipeInfo.logicOpEnable;
+          }
+          if(!pipeInfo.dynamicStates[VkDynamicPolygonModeEXT])
+          {
+            renderstate.polygonMode = pipeInfo.polygonMode;
+          }
+          if(!pipeInfo.dynamicStates[VkDynamicProvokingVertexModeEXT])
+          {
+            renderstate.provokingVertexMode = pipeInfo.provokingVertex;
+          }
+          if(!pipeInfo.dynamicStates[VkDynamicRasterizationSamplesEXT])
+          {
+            renderstate.rastSamples = pipeInfo.rasterizationSamples;
+          }
+          if(!pipeInfo.dynamicStates[VkDynamicRasterizationStreamEXT])
+          {
+            renderstate.rasterStream = pipeInfo.rasterizationStream;
+          }
+          if(!pipeInfo.dynamicStates[VkDynamicSampleLocationsEnableEXT])
+          {
+            renderstate.sampleLocEnable = pipeInfo.sampleLocations.enabled;
+          }
+          if(!pipeInfo.dynamicStates[VkDynamicSampleMaskEXT])
+          {
+            renderstate.sampleMask[0] = pipeInfo.sampleMask;
+          }
+          if(!pipeInfo.dynamicStates[VkDynamicTessDomainOriginEXT])
+          {
+            renderstate.domainOrigin = pipeInfo.tessellationDomainOrigin;
           }
         }
-      }
-      else
-      {
-        commandBuffer = VK_NULL_HANDLE;
+        if(loading)
+        {
+          if(prevPipeline != ResourceId())
+            m_LoadingEventNode.AddResourceUsage(prevPipeline, ResourceUsage::UnBind);
+          m_LoadingEventNode.AddResourceUsage(id, ResourceUsage::Bind);
+        }
       }
     }
     else
     {
-      ResourceId id = GetResID(pipeline);
-
-      // track while reading, as we need to bind current topology & index byte width in AddAction
-      if(pipelineBindPoint == VK_PIPELINE_BIND_POINT_COMPUTE)
-      {
-        m_BakedCmdBufferInfo[m_LastCmdBufferID].state.compute.pipeline = id;
-        m_BakedCmdBufferInfo[m_LastCmdBufferID].state.compute.shaderObject = false;
-      }
-      else if(pipelineBindPoint == VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR)
-      {
-        m_BakedCmdBufferInfo[m_LastCmdBufferID].state.rt.pipeline = id;
-        m_BakedCmdBufferInfo[m_LastCmdBufferID].state.rt.shaderObject = false;
-      }
-      else
-      {
-        m_BakedCmdBufferInfo[m_LastCmdBufferID].state.graphics.pipeline = id;
-        m_BakedCmdBufferInfo[m_LastCmdBufferID].state.graphics.shaderObject = false;
-
-        const VulkanCreationInfo::Pipeline &pipeInfo = m_CreationInfo.m_Pipeline[id];
-
-        if(!pipeInfo.dynamicStates[VkDynamicPrimitiveTopology])
-        {
-          m_BakedCmdBufferInfo[m_LastCmdBufferID].state.primitiveTopology = pipeInfo.topology;
-        }
-      }
+      commandBuffer = VK_NULL_HANDLE;
     }
 
     if(commandBuffer != VK_NULL_HANDLE)
