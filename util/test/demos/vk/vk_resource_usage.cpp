@@ -451,6 +451,11 @@ RD_TEST(VK_Resource_Usage, VulkanGraphicsTest)
       draw_indirect_count = hasExt(VK_KHR_DRAW_INDIRECT_COUNT_EXTENSION_NAME);
     }
 
+    draw_indirect_count = true;
+    nestedSecondaries = true;
+    descBuffer = true;
+    meshShader = true;
+
     if(draw_indirect_count)
       TEST_LOG("Running tests with draw indirect count");
     if(nestedSecondaries)
