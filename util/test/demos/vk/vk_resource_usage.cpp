@@ -837,6 +837,18 @@ RD_TEST(VK_Resource_Usage, VulkanGraphicsTest)
       viewPort = {0.0f, 0.0f, sqSize, sqSize, 0.0f, 1.0f};
       setName(mainWindow->GetFB(), "Main Framebuffer");
 
+      vkh::updateDescriptorSets(
+          device,
+          {
+              vkh::WriteDescriptorSet(compWriteDataDescSet, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                                      {vkh::DescriptorBufferInfo(indirectData.buffer)}),
+              vkh::WriteDescriptorSet(compDescSet, 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                                      {vkh::DescriptorBufferInfo(compBufIn.buffer)}),
+              vkh::WriteDescriptorSet(
+                  descSet, 2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                  {vkh::DescriptorImageInfo(offimgRTV, VK_IMAGE_LAYOUT_GENERAL, linearSampler)}),
+          });
+
       VkCommandBuffer barrierSecCmd = GetCommandBuffer(VK_COMMAND_BUFFER_LEVEL_SECONDARY);
       vkBeginCommandBuffer(barrierSecCmd, vkh::CommandBufferBeginInfo(
                                               VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT,
