@@ -71,6 +71,8 @@ class VK_Resource_Usage(rdtest.TestCase):
         resetFencesEIDs = []
         descSetDrawEIDs = []
         descBufferDrawEIDs = []
+        beginRenderPassEIDs = []
+        endRenderPassEIDs = []
 
         markerGraphicsDescriptorSet = 0
         markerGraphicsSecondaryCommandBuffer = 0
@@ -133,6 +135,10 @@ class VK_Resource_Usage(rdtest.TestCase):
                     waitFencesEIDs.append(e.eventId)
                 if "vkResetFences" in eventName:
                     resetFencesEIDs.append(e.eventId)
+                if "vkCmdBeginRenderPass" in eventName:
+                    beginRenderPassEIDs.append(e.eventId)
+                if "vkCmdEndRenderPass" in eventName:
+                    endRenderPassEIDs.append(e.eventId)
 
         for eid in drawEIDs:
             if eid > markerGraphicsDescriptorSet and eid < markerGraphicsSecondaryCommandBuffer:
@@ -155,6 +161,8 @@ class VK_Resource_Usage(rdtest.TestCase):
         resetFencesEIDs.sort()
         descSetDrawEIDs.sort()
         descBufferDrawEIDs.sort()
+        beginRenderPassEIDs.sort()
+        endRenderPassEIDs.sort()
 
         action = self.find_action("Draw")
         self.controller.SetFrameEvent(action.eventId, False)
@@ -164,11 +172,12 @@ class VK_Resource_Usage(rdtest.TestCase):
             for res in resources:
                 expectedUsage = []
                 if res.type == rd.ResourceType.Device:
-                    expectedUsage = [(0,rd.ResourceUsage.Unused)]
+                    expectedUsage = []
                 elif res.type == rd.ResourceType.Queue:
-                    expectedUsage = [(0,rd.ResourceUsage.Unused)]
+                    for eid in submitEIDs:
+                        expectedUsage.append((eid,rd.ResourceUsage.Submit))
                 elif res.type == rd.ResourceType.Pool:
-                    expectedUsage = [(0,rd.ResourceUsage.Unused)]
+                    expectedUsage = []
                 elif res.type == rd.ResourceType.SwapchainImage:
                     # the swap chain image has usage, anything else does not
                     if res.resourceId == swapImage:
@@ -182,23 +191,131 @@ class VK_Resource_Usage(rdtest.TestCase):
                         for eid in meshDispatchEIDs:
                             expectedUsage.append((eid,rd.ResourceUsage.ColorTarget))
                         expectedUsage += [
-                                    (236+countDrawIndirectCount+countNested+countDescBuffer+countMeshShader,rd.ResourceUsage.Barrier)]
+                                    (236+countDrawIndirectCount+countNested+countDescBuffer+countMeshShader,rd.ResourceUsage.Barrier),
+                                    (344+countDrawIndirectCount+countNested+countDescBuffer+countMeshShader,rd.ResourceUsage.CopyDst)]
                     else:
                         expectedUsage = []
                 elif res.type == rd.ResourceType.RenderPass:
-                    expectedUsage = [(0,rd.ResourceUsage.Unused)]
+                    if res.name == "Main Framebuffer":
+                        for eid in beginRenderPassEIDs:
+                            expectedUsage.append((eid,rd.ResourceUsage.Bind))
+                        for eid in endRenderPassEIDs:
+                            expectedUsage.append((eid,rd.ResourceUsage.UnBind))
+                        for eid in drawEIDs:
+                            expectedUsage.append((eid,rd.ResourceUsage.Framebuffer))
+                        for eid in meshDispatchEIDs:
+                            expectedUsage.append((eid,rd.ResourceUsage.Framebuffer))
+                    if res.name == "Main Render Pass":
+                        for eid in beginRenderPassEIDs:
+                            expectedUsage.append((eid,rd.ResourceUsage.Bind))
+                        for eid in endRenderPassEIDs:
+                            expectedUsage.append((eid,rd.ResourceUsage.UnBind))
+                        for eid in drawEIDs:
+                            expectedUsage.append((eid,rd.ResourceUsage.RenderPass))
+                        for eid in meshDispatchEIDs:
+                            expectedUsage.append((eid,rd.ResourceUsage.RenderPass))
                 elif res.type == rd.ResourceType.Sync:
-                    expectedUsage = [(0,rd.ResourceUsage.Unused)]
+                    expectedUsage = []
+                    if res.name.startswith("Autotesting renderEndSemaphore"):
+                        expectedUsage = [(344+countDrawIndirectCount+countNested+countDescBuffer+countMeshShader,rd.ResourceUsage.Wait)]
+                    elif res.name.startswith("Autotesting fence"):
+                        expectedUsage = [(2,rd.ResourceUsage.Wait), 
+                                         (3,rd.ResourceUsage.Reset)]
+                    elif res.name == "Barrier Command Submit Fence":
+                        for eid in waitFencesEIDs:
+                            if eid > markerBarrierCommandSubmitFence:
+                                expectedUsage.append((eid,rd.ResourceUsage.Wait))
+                        for eid in resetFencesEIDs:
+                            if eid > markerBarrierCommandSubmitFence:
+                                expectedUsage.append((eid,rd.ResourceUsage.Reset))
+                        for eid in submitEIDs:
+                            if eid > markerBarrierCommandSubmitFence and eid < waitFencesEIDs[-1]:
+                                expectedUsage.append((eid,rd.ResourceUsage.Wait))
+                    elif res.name.startswith("Fence "):
+                        # Ignore anonymous fences
+                        continue
+                    else:
+                        expectedUsage = []
                 elif res.type == rd.ResourceType.View:
-                    expectedUsage = [(0,rd.ResourceUsage.Unused)]
+                    # Ignore swapchain image views
+                    if res.name.startswith("Main Swapchain ImageView"):
+                        continue
+                    if res.name == "Offscreen Image RTV":
+                        for eid in descSetDrawEIDs:
+                            expectedUsage.append((eid,rd.ResourceUsage.ImageView))
+                        for eid in descBufferDrawEIDs:
+                            expectedUsage.append((eid,rd.ResourceUsage.ImageView))
                 elif res.type == rd.ResourceType.Memory:
-                    expectedUsage = [(0,rd.ResourceUsage.Unused)]
+                    expectedUsage = []
                 elif res.type == rd.ResourceType.ShaderBinding:
-                    expectedUsage = [(0,rd.ResourceUsage.Unused)]
+                    if res.name == "Descriptor Set Pipeline Layout":
+                        for eid in descSetDrawEIDs:
+                            expectedUsage.append((eid,rd.ResourceUsage.PipelineLayout))
+                    elif res.name == "Compute Descriptor Set Pipeline Layout":
+                        for eid in dispatchEIDs:
+                            expectedUsage.append((eid,rd.ResourceUsage.PipelineLayout))
+                    else:
+                        continue
                 elif res.type == rd.ResourceType.Shader:
-                    expectedUsage = [(0,rd.ResourceUsage.Unused)]
+                    if res.name == "Descriptor Vertex Shader":
+                        for eid in descSetDrawEIDs:
+                            expectedUsage.append((eid,rd.ResourceUsage.VS_Shader))
+                        for eid in descBufferDrawEIDs:
+                            expectedUsage.append((eid,rd.ResourceUsage.VS_Shader))
+                    elif res.name == "Descriptor Pixel Shader":
+                        for eid in descSetDrawEIDs:
+                            expectedUsage.append((eid,rd.ResourceUsage.PS_Shader))
+                        for eid in descBufferDrawEIDs:
+                            expectedUsage.append((eid,rd.ResourceUsage.PS_Shader))
+                    elif res.name == "Descriptor Buffer Vertex Shader":
+                        for eid in drawEIDs:
+                            if descBuffer and eid > markerDescriptorBuffer:
+                                expectedUsage.append((eid,rd.ResourceUsage.VS_Shader))
+                    elif res.name == "Descriptor Buffer Pixel Shader":
+                        for eid in drawEIDs:
+                            if descBuffer and eid > markerDescriptorBuffer:
+                                expectedUsage.append((eid,rd.ResourceUsage.PS_Shader))
+                    elif res.name == "Mesh Mesh Shader":
+                        for eid in meshDispatchEIDs:
+                            expectedUsage.append((eid,rd.ResourceUsage.MS_Shader))
+                    elif res.name == "Mesh Pixel Shader":
+                        for eid in meshDispatchEIDs:
+                            expectedUsage.append((eid,rd.ResourceUsage.PS_Shader))
+                    elif res.name == "Descriptor Set Compute Shader":
+                        # All dispatches within "Compute" region
+                        # All dispatches within "Nested Secondary Command Buffer" region
+                        for eid in dispatchEIDs:
+                            if eid > markerComputeDescriptorSet and eid < markerIndirect:
+                                expectedUsage.append((eid,rd.ResourceUsage.CS_Shader))
+                            elif nestedSecondaries and eid > markerNestedSecondaryCommandBuffer and (not descBuffer or eid < markerDescriptorBuffer):
+                                expectedUsage.append((eid,rd.ResourceUsage.CS_Shader))
+                    elif res.name == "Descriptor Buffer Compute Shader":
+                        for eid in dispatchEIDs:
+                            if descBuffer and eid > markerDescriptorBuffer:
+                                expectedUsage.append((eid,rd.ResourceUsage.CS_Shader))
+                    else:
+                        continue
                 elif res.type == rd.ResourceType.PipelineState:
-                    expectedUsage = [(0,rd.ResourceUsage.Unused)]
+                    if res.name == "Compute Descriptor Set Pipeline":
+                        # All dispatches within "Compute" region
+                        for eid in dispatchEIDs:
+                            if eid > markerComputeDescriptorSet and eid < markerIndirect:
+                                expectedUsage.append((eid,rd.ResourceUsage.Pipeline))
+                            elif nestedSecondaries and eid > markerNestedSecondaryCommandBuffer and (not descBuffer or eid < markerDescriptorBuffer):
+                                expectedUsage.append((eid,rd.ResourceUsage.Pipeline))
+                    elif res.name == "Compute Descriptor Buffer Pipeline":
+                        for eid in dispatchEIDs:
+                            if descBuffer and eid > markerDescriptorBuffer:
+                                expectedUsage.append((eid,rd.ResourceUsage.Pipeline))
+                    elif res.name == "Descriptor Buffer Pipeline":
+                        for eid in drawEIDs:
+                            if descBuffer and eid > markerDescriptorBuffer:
+                                expectedUsage.append((eid,rd.ResourceUsage.Pipeline))
+                    elif res.name == "Descriptor Set":
+                        for eid in descSetDrawEIDs:
+                            expectedUsage.append((eid,rd.ResourceUsage.Pipeline))
+                    else:
+                        continue
                 elif res.type == rd.ResourceType.Buffer:
                     if res.name == "Vertex Buffer":
                         for eid in drawEIDs:
@@ -292,6 +409,15 @@ class VK_Resource_Usage(rdtest.TestCase):
                                         (239+countDrawIndirectCount,rd.ResourceUsage.Clear),
                                         (242+countDrawIndirectCount,rd.ResourceUsage.Barrier),
                                         (243+countDrawIndirectCount,rd.ResourceUsage.CopyDst)]
+                            for eid in drawEIDs:
+                                if eid > markerDescriptorBuffer:
+                                    expectedUsage.append((eid,rd.ResourceUsage.DescriptorBuffer))
+                            for eid in dispatchEIDs:
+                                if eid > markerDescriptorBuffer:
+                                    expectedUsage.append((eid,rd.ResourceUsage.DescriptorBuffer))
+                            for eid in meshDispatchEIDs:
+                                if eid > markerDescriptorBuffer:
+                                    expectedUsage.append((eid,rd.ResourceUsage.DescriptorBuffer))
                     if res.name == "Descriptor Backup Buffer":
                         if descBuffer:
                             expectedUsage = [(236+countDrawIndirectCount,rd.ResourceUsage.Barrier), 
@@ -313,10 +439,38 @@ class VK_Resource_Usage(rdtest.TestCase):
                             expectedUsage.append((eid,rd.ResourceUsage.PS_Resource))
                 elif res.type == rd.ResourceType.CommandBuffer:
                     expectedUsage = [(0,rd.ResourceUsage.Unused)]
+                    # TODO: need to pick carefully which command buffer to validate
+                    # TODO: check Baked Command Buffer and Command Buffer
+                    continue
                 elif res.type == rd.ResourceType.DescriptorStore:
-                    expectedUsage = [(0,rd.ResourceUsage.Unused)]
+                    expectedUsage = [(4,rd.ResourceUsage.CPUWrite)]
+                    if res.name == "Descriptor Set":
+                        for eid in descSetDrawEIDs:
+                            expectedUsage.append((eid,rd.ResourceUsage.DescriptorSet))
+                    if res.name == "Compute Descriptor Set":
+                        # All dispatches within "Compute" region
+                        # All dispatches within "Nested Secondary Command Buffer" region
+                        for eid in dispatchEIDs:
+                            if eid > markerComputeDescriptorSet and eid < markerIndirect:
+                                expectedUsage.append((eid,rd.ResourceUsage.DescriptorSet))
+                            elif nestedSecondaries and eid > markerNestedSecondaryCommandBuffer and (not descBuffer or eid < markerDescriptorBuffer):
+                                expectedUsage.append((eid,rd.ResourceUsage.DescriptorSet))
+                    if res.name == "Compute WriteData Descriptor Set":
+                        # Dispatch before Compute region
+                        # All the dispatch and indirect 
+                        # Dipatch within "Indirect" region
+                        for eid in dispatchEIDs:
+                            if eid < markerCompute:
+                                expectedUsage.append((eid,rd.ResourceUsage.DescriptorSet))
+                            elif eid in indirectEIDs:
+                                expectedUsage.append((eid,rd.ResourceUsage.DescriptorSet))
+                            elif eid > markerIndirect and eid < markerIndirectEnd:
+                                expectedUsage.append((eid,rd.ResourceUsage.DescriptorSet))
                 elif res.type == rd.ResourceType.Sampler:
-                    expectedUsage = [(0,rd.ResourceUsage.Unused)]
+                    for eid in descSetDrawEIDs:
+                        expectedUsage.append((eid,rd.ResourceUsage.Sampler))
+                    for eid in descBufferDrawEIDs:
+                        expectedUsage.append((eid,rd.ResourceUsage.Sampler))
                 else:
                     raise rdtest.TestFailureException(f"'{res.name}' {res.resourceId} Unexpected resource type {res.type.name}")
                 rdtest.log.print(f"Resource '{res.name}' type:{res.type.name} {res.resourceId} usages:{len(self.resourceUsages[res.resourceId])} expectedUsages:{len(expectedUsage)}")
