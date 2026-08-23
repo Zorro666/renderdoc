@@ -547,6 +547,7 @@ RD_TEST(VK_Resource_Usage, VulkanGraphicsTest)
 
     VkPipelineLayout meshShaderLayout = createPipelineLayout(
         vkh::PipelineLayoutCreateInfo({}, {vkh::PushConstantRange(VK_SHADER_STAGE_ALL, 0, 8)}));
+    setName(meshShaderLayout, "Mesh Shader Pipeline Layout");
 
     VkPipeline meshShaderPipe = VK_NULL_HANDLE;
     if(meshShader)
@@ -568,6 +569,7 @@ RD_TEST(VK_Resource_Usage, VulkanGraphicsTest)
       vkMeshShaderPipeCreateInfo->pInputAssemblyState = NULL;
 
       meshShaderPipe = createGraphicsPipeline(vkMeshShaderPipeCreateInfo);
+      setName(meshShaderPipe, "Mesh Shader Pipeline");
     }
 
     VkDescriptorSetLayout compDescSetLayout =
@@ -579,7 +581,7 @@ RD_TEST(VK_Resource_Usage, VulkanGraphicsTest)
 
     VkPipelineLayout compDescSetPipeLayout =
         createPipelineLayout(vkh::PipelineLayoutCreateInfo({compDescSetLayout}));
-    setName(compDescSetPipeLayout, "Compute Pipeline Layout");
+    setName(compDescSetPipeLayout, "Compute Descriptor Set Pipeline Layout");
 
     vkh::ComputePipelineCreateInfo compDescSetPipeCreateInfo(
         compDescSetPipeLayout,
@@ -612,7 +614,7 @@ RD_TEST(VK_Resource_Usage, VulkanGraphicsTest)
     if(descBuffer)
     {
       compDescBuffPipeLayout = createPipelineLayout(vkh::PipelineLayoutCreateInfo({descBuffLayout}));
-      setName(compDescSetPipeLayout, "Compute Descriptor Buffer Pipeline Layout");
+      setName(compDescBuffPipeLayout, "Compute Descriptor Buffer Pipeline Layout");
 
       vkh::ComputePipelineCreateInfo compDescBuffPipeCreateInfo(
           compDescBuffPipeLayout,
@@ -1263,10 +1265,9 @@ RD_TEST(VK_Resource_Usage, VulkanGraphicsTest)
                                        descSetPipeLayout, 0, {descSet}, {});
             vkh::cmdBindVertexBuffers(indirectDrawSecCmd, 0, {vb.buffer}, {0});
             vkCmdBindIndexBuffer(indirectDrawSecCmd, ib.buffer, 0, VK_INDEX_TYPE_UINT32);
-            vkCmdBindPipeline(indirectDrawSecCmd, VK_PIPELINE_BIND_POINT_GRAPHICS, descSetPipe);
 
             setMarker(indirectDrawSecCmd, "DrawIndirect: Single");
-
+            vkCmdBindPipeline(indirectDrawSecCmd, VK_PIPELINE_BIND_POINT_GRAPHICS, descSetPipe);
             vkCmdSetViewport(indirectDrawSecCmd, 0, 1, &viewPort);
             vkCmdDrawIndirect(indirectDrawSecCmd, indirectData.buffer, offset, 1, strideDraw);
             NextTest();
@@ -1309,9 +1310,9 @@ RD_TEST(VK_Resource_Usage, VulkanGraphicsTest)
                                    {descSet}, {});
         vkh::cmdBindVertexBuffers(cmd, 0, {vb.buffer}, {0});
         vkCmdBindIndexBuffer(cmd, ib.buffer, 0, VK_INDEX_TYPE_UINT32);
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, descSetPipe);
 
         setMarker(cmd, "DrawIndirect: Single");
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, descSetPipe);
         vkCmdSetViewport(cmd, 0, 1, &viewPort);
         size_t drawIndirectOffset = offset;
         vkCmdDrawIndirect(cmd, indirectData.buffer, drawIndirectOffset, 1, strideDraw);
