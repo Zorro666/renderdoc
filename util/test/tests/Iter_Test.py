@@ -1,3 +1,4 @@
+from modulefinder import test
 import rdtest
 import os
 import random
@@ -8,7 +9,10 @@ import renderdoc as rd
 
 class Iter_Test(rdtest.TestCase):
     slow_test = True
-
+    countMTTracesToCheck = 5
+    countSTTracesToCheck = 20
+    mtOption = rd.SetConfigSetting("Vulkan_Debug_EnableShaderDebugMT")
+    mtOption = rd.SetConfigSetting("D3D12_DXILShaderDebugger_EnableMT")
     def save_texture(self, texsave: rd.TextureSave):
         if texsave.resourceId == rd.ResourceId.Null():
             return
@@ -77,6 +81,41 @@ class Iter_Test(rdtest.TestCase):
             threadid[i] = random.randint(0, refl.dispatchThreadsDimension[i]-1)
 
         rdtest.log.print(f"Debug Thread Workgroup:{wgSize} groupid:{tuple(groupid)} threadid:{tuple(threadid)}")
+
+        self.mtOption.data.basic.b = False
+        rdtest.log.print(f'{self.mtOption.name} {self.mtOption.AsBool()}')
+        t: rd.ShaderDebugTrace = self.controller.DebugThread(tuple(groupid), tuple(threadid))
+        baseStates = self.generate_full_trace(t)
+        self.controller.FreeTrace(t)
+        mtDeterministic = True
+        self.mtOption.data.basic.b = True
+        rdtest.log.print(f'{self.mtOption.name} {self.mtOption.AsBool()}')
+        for i in range(self.countMTTracesToCheck):
+            t: rd.ShaderDebugTrace = self.controller.DebugThread(tuple(groupid), tuple(threadid))
+            newStates = self.generate_full_trace(t)
+            self.controller.FreeTrace(t)
+            if not self.compare_full_traces(baseStates, newStates, False):
+                mtDeterministic = False
+                break
+        if not mtDeterministic:
+            self.mtOption.data.basic.b = False
+            rdtest.log.print(f'{self.mtOption.name} {self.mtOption.AsBool()}')
+            t: rd.ShaderDebugTrace = self.controller.DebugThread(tuple(groupid), tuple(threadid))
+            baseStates = self.generate_full_trace(t)
+            self.controller.FreeTrace(t)
+            deterministic = True
+            for i in range(self.countSTTracesToCheck):
+                t: rd.ShaderDebugTrace = self.controller.DebugThread(tuple(groupid), tuple(threadid))
+                newStates = self.generate_full_trace(t)
+                self.controller.FreeTrace(t)
+                if not self.compare_full_traces(baseStates, newStates, False):
+                    deterministic = False
+                    break
+            if deterministic:
+                rdtest.log.error(f"Debug Thread Workgroup:{wgSize} groupid:{tuple(groupid)} threadid:{tuple(threadid)} multiple traces did not match")
+            else:
+                rdtest.log.error(f"Ignoring non-deterministic multi-threaded debug because single threaded is non-deterministic")
+
         trace: rd.ShaderDebugTrace = self.controller.DebugThread(tuple(groupid), tuple(threadid))
 
         if trace.debugger is None:
@@ -151,6 +190,38 @@ class Iter_Test(rdtest.TestCase):
         rdtest.log.print("Debugging vtx %d idx %d (inst %d)" % (vtx, idx, inst))
 
         postvs = self.get_postvs(action, rd.MeshDataStage.VSOut, first_index=vtx, num_indices=1, instance=inst)
+
+        self.mtOption.data.basic.b = True
+        rdtest.log.print(f'{self.mtOption.name} {self.mtOption.AsBool()}')
+        t: rd.ShaderDebugTrace = self.controller.DebugVertex(vtx, inst, idx, 0)
+        baseStates = self.generate_full_trace(t)
+        self.controller.FreeTrace(t)
+        mtDeterministic = True
+        for i in range(self.countMTTracesToCheck):
+            t: rd.ShaderDebugTrace = self.controller.DebugVertex(vtx, inst, idx, 0)
+            newStates = self.generate_full_trace(t)
+            self.controller.FreeTrace(t)
+            if not self.compare_full_traces(baseStates, newStates, False):
+                mtDeterministic = False
+                break
+        if not mtDeterministic:
+            self.mtOption.data.basic.b = False
+            rdtest.log.print(f'{self.mtOption.name} {self.mtOption.AsBool()}')
+            t: rd.ShaderDebugTrace = self.controller.DebugVertex(vtx, inst, idx, 0)
+            baseStates = self.generate_full_trace(t)
+            self.controller.FreeTrace(t)
+            deterministic = True
+            for i in range(self.countSTTracesToCheck):
+                t: rd.ShaderDebugTrace = self.controller.DebugVertex(vtx, inst, idx, 0)
+                newStates = self.generate_full_trace(t)
+                self.controller.FreeTrace(t)
+                if not self.compare_full_traces(baseStates, newStates, False):
+                    deterministic = False
+                    break
+            if deterministic:
+                rdtest.log.error(f"Debugging vtx {vtx} idx {idx} (inst {inst}) multiple traces did not match")
+            else:
+                rdtest.log.error(f"Ignoring non-deterministic multi-threaded debug because single threaded is non-deterministic")
 
         trace: rd.ShaderDebugTrace = self.controller.DebugVertex(vtx, inst, idx, 0)
 
@@ -318,8 +389,41 @@ class Iter_Test(rdtest.TestCase):
 
             inputs = rd.DebugPixelInputs()
             inputs.sample = 0
-            inputs.primitive = lastmod.primitiveID;
-            trace = self.controller.DebugPixel(x, y, inputs)
+            inputs.primitive = lastmod.primitiveID
+
+            self.mtOption.data.basic.b = True
+            rdtest.log.print(f'{self.mtOption.name} {self.mtOption.AsBool()}')
+            t: rd.ShaderDebugTrace = self.controller.DebugPixel(x, y, inputs)
+            baseStates = self.generate_full_trace(t)
+            self.controller.FreeTrace(t)
+            mtDeterministic = True
+            for i in range(self.countMTTracesToCheck):
+                t: rd.ShaderDebugTrace = self.controller.DebugPixel(x, y, inputs)
+                newStates = self.generate_full_trace(t)
+                self.controller.FreeTrace(t)
+                if not self.compare_full_traces(baseStates, newStates, False):
+                    mtDeterministic = False
+                    break
+            if not mtDeterministic:
+                self.mtOption.data.basic.b = False
+                rdtest.log.print(f'{self.mtOption.name} {self.mtOption.AsBool()}')
+                t: rd.ShaderDebugTrace = self.controller.DebugPixel(x, y, inputs)
+                baseStates = self.generate_full_trace(t)
+                self.controller.FreeTrace(t)
+                deterministic = True
+                for i in range(self.countSTTracesToCheck):
+                    t: rd.ShaderDebugTrace = self.controller.DebugPixel(x, y, inputs)
+                    newStates = self.generate_full_trace(t)
+                    self.controller.FreeTrace(t)
+                    if not self.compare_full_traces(baseStates, newStates, False):
+                        deterministic = False
+                        break
+                if deterministic:
+                    rdtest.log.error(f"Debugging pixel {x},{y} @ {lastmod.eventId}, primitive {lastmod.primitiveID} multiple traces did not match")
+                else:
+                    rdtest.log.error(f"Ignoring non-deterministic multi-threaded debug because single threaded is non-deterministic")
+
+            trace: rd.ShaderDebugTrace = self.controller.DebugPixel(x, y, inputs)
 
             if trace.debugger is None:
                 self.controller.FreeTrace(trace)
@@ -382,6 +486,7 @@ class Iter_Test(rdtest.TestCase):
                 else:
                     # This could be an application error - undefined but seen in the wild
                     rdtest.log.error("At EID {} No output variable declared for index {}".format(lastmod.eventId, output_index))
+                    self.controller.FreeTrace(trace)
 
             self.controller.SetFrameEvent(action.eventId, True)
 
@@ -438,6 +543,17 @@ class Iter_Test(rdtest.TestCase):
             'Pixel History & Debug': {'chance': do_pixel_debug, 'func': self.pixel_debug},
             'Mesh Output': {'chance': mesh_output, 'func': self.mesh_output},
             'Drawcall overlay': {'chance': drawcall_overlay, 'func': self.drawcall_overlay},
+        }
+
+        test_chance = 1.0       # Chance of doing anything at all
+        do_compute_debug = 1.0  # Chance of debugging a compute thread
+        do_vert_debug = 1.0     # Chance of debugging a vertex (if valid)
+        do_pixel_debug = 1.0    # Chance of doing pixel history at the current event and debugging a pixel (if valid)
+
+        event_tests = {
+            'Compute Debug': {'chance': do_compute_debug, 'func': self.compute_debug},
+            'Vertex Debug': {'chance': do_vert_debug, 'func': self.vert_debug},
+            'Pixel History & Debug': {'chance': do_pixel_debug, 'func': self.pixel_debug},
         }
 
         # To choose an action, if we're going to do one, we take random in range(0, choice_max) then check each action
