@@ -740,6 +740,8 @@ const APIEvent &WrappedID3D12CommandQueue::GetEvent(uint32_t eventId)
 
 bool WrappedID3D12CommandQueue::ProcessChunk(ReadSerialiser &ser, D3D12Chunk chunk)
 {
+  m_Cmd.OLD_m_AddedAction = false;
+
   if(IsLoading(m_State))
   {
     m_Cmd.m_AddedEventNode = false;
@@ -1133,10 +1135,13 @@ bool WrappedID3D12CommandQueue::ProcessChunk(ReadSerialiser &ser, D3D12Chunk chu
     }
     else
     {
+      RDCASSERTEQUAL(m_Cmd.OLD_m_AddedAction, m_Cmd.m_AddedEventNode);
       if(!m_Cmd.m_AddedEventNode)
         m_Cmd.AddEvent();
     }
   }
+
+  m_Cmd.OLD_m_AddedAction = false;
 
   return ret;
 }
@@ -1194,6 +1199,8 @@ RDResult WrappedID3D12CommandQueue::ReplayLog(CaptureState readType, uint32_t st
 
   ser.EndChunk();
 
+  m_Cmd.OLD_m_RootEvents.clear();
+
   if(IsLoading(m_State))
   {
     m_pDevice->ApplyInitialContents();
@@ -1208,6 +1215,7 @@ RDResult WrappedID3D12CommandQueue::ReplayLog(CaptureState readType, uint32_t st
   if(IsActiveReplaying(m_State))
   {
     APIEvent ev = GetEvent(startEventID);
+    m_Cmd.OLD_m_RootEventID = ev.eventId;
     m_Cmd.m_RootEventID = ev.eventId;
 
     // if not partial, we need to be sure to replay
@@ -1224,6 +1232,7 @@ RDResult WrappedID3D12CommandQueue::ReplayLog(CaptureState readType, uint32_t st
       {
         BakedCmdListInfo &cmdInfo = m_Cmd.m_BakedCmdListInfo[it->cmdList];
         cmdInfo.curEventID = it->relativeEID;
+        cmdInfo.OLD_curEventID = it->relativeEID;
       }
     }
 
@@ -1232,7 +1241,9 @@ RDResult WrappedID3D12CommandQueue::ReplayLog(CaptureState readType, uint32_t st
   }
   else
   {
+    m_Cmd.OLD_m_RootEventID = 1;
     m_Cmd.m_RootEventID = 1;
+    m_Cmd.OLD_m_RootActionID = 1;
     m_Cmd.m_FirstEventID = 0;
     m_Cmd.m_LastEventID = ~0U;
   }
@@ -1248,6 +1259,11 @@ RDResult WrappedID3D12CommandQueue::ReplayLog(CaptureState readType, uint32_t st
 
   for(;;)
   {
+    if(!IsLoading(m_State))
+    {
+      if(m_Cmd.m_RootEventID != m_Cmd.OLD_m_RootEventID)
+        RDCFATAL("RootEventID mismatch %u != %u", m_Cmd.m_RootEventID, m_Cmd.OLD_m_RootEventID);
+    }
     if(IsActiveReplaying(m_State) && m_Cmd.m_RootEventID > endEventID)
     {
       // we can just break out if we've done all the events desired.
@@ -1342,7 +1358,10 @@ RDResult WrappedID3D12CommandQueue::ReplayLog(CaptureState readType, uint32_t st
     if(m_Cmd.m_LastCmdListID == ResourceId() || startEventID > 1)
     {
       if(context != D3D12Chunk::SetQueueAnnotation)
+      {
+        m_Cmd.OLD_m_RootEventID++;
         m_Cmd.m_RootEventID++;
+      }
 
       if(startEventID > 1)
         ser.GetReader()->SetOffset(GetEvent(m_Cmd.m_RootEventID).fileOffset);
@@ -1352,8 +1371,15 @@ RDResult WrappedID3D12CommandQueue::ReplayLog(CaptureState readType, uint32_t st
       // these events are completely omitted, so don't increment the curEventID
       if(context != D3D12Chunk::List_Reset && context != D3D12Chunk::List_Close &&
          context != D3D12Chunk::SetCommandAnnotation)
+      {
+        m_Cmd.m_BakedCmdListInfo[m_Cmd.m_LastCmdListID].OLD_curEventID++;
         m_Cmd.m_BakedCmdListInfo[m_Cmd.m_LastCmdListID].curEventID++;
+      }
+      if(!IsLoading(m_State))
+        RDCASSERTEQUAL(m_Cmd.m_BakedCmdListInfo[m_Cmd.m_LastCmdListID].OLD_curEventID,
+                       m_Cmd.m_BakedCmdListInfo[m_Cmd.m_LastCmdListID].curEventID);
     }
+    RDCASSERT(m_Cmd.m_BakedCmdListInfo.find(ResourceId()) == m_Cmd.m_BakedCmdListInfo.end());
   }
 
   // swap the structure back now that we've accumulated the frame as well.
@@ -1364,6 +1390,7 @@ RDResult WrappedID3D12CommandQueue::ReplayLog(CaptureState readType, uint32_t st
 
   m_Cmd.m_RerecordCmds.clear();
 
+  RDCASSERT(m_Cmd.m_BakedCmdListInfo.find(ResourceId()) == m_Cmd.m_BakedCmdListInfo.end());
   return ResultCode::Succeeded;
 }
 
@@ -1756,6 +1783,49 @@ HRESULT STDMETHODCALLTYPE WrappedID3D12GraphicsCommandList::QueryInterface(REFII
   return m_RefCounter.QueryInterface("ID3D12GraphicsCommandList", riid, ppvObject);
 }
 
+void BakedCmdListInfo::OLD_ShiftForRemoved(uint32_t shiftActionID, uint32_t shiftEID, size_t idx)
+{
+  rdcarray<D3D12ActionTreeNode> &actions = OLD_action->children;
+
+  OLD_actionCount -= shiftActionID;
+  OLD_eventCount -= shiftEID;
+
+  if(idx < actions.size())
+  {
+    for(size_t i = idx; i < actions.size(); i++)
+    {
+      // should have no children as we don't push in for markers since they
+      // can cross command list boundaries.
+      RDCASSERT(actions[i].children.empty());
+
+      actions[i].action.eventId -= shiftEID;
+      actions[i].action.actionId -= shiftActionID;
+
+      for(APIEvent &ev : actions[i].action.events)
+        ev.eventId -= shiftEID;
+
+      for(size_t u = 0; u < actions[i].resourceUsage.size(); u++)
+        actions[i].resourceUsage[u].second.eventId -= shiftEID;
+    }
+
+    uint32_t lastEID = actions[idx].action.eventId;
+
+    // shift any resource usage for actions after the removed section
+
+    // patch any subsequent executes
+    for(size_t i = 0; i < OLD_executeEvents.size(); i++)
+    {
+      if(OLD_executeEvents[i].baseEvent >= lastEID)
+        OLD_executeEvents[i].baseEvent -= shiftEID;
+    }
+  }
+
+  for(size_t i = 0; i < OLD_curEvents.size(); i++)
+  {
+    OLD_curEvents[i].eventId -= shiftEID;
+  }
+}
+
 SubresourceStateVector BakedCmdListInfo::GetState(WrappedID3D12Device *device, ResourceId id)
 {
   std::map<ResourceId, SubresourceStateVector> data;
@@ -1790,7 +1860,9 @@ D3D12CommandData::D3D12CommandData()
 
   m_IndirectOffset = 0;
 
+  OLD_m_RootEventID = 1;
   m_RootEventID = 1;
+  OLD_m_RootActionID = 1;
   m_FirstEventID = 0;
   m_LastEventID = ~0U;
 
@@ -1800,7 +1872,10 @@ D3D12CommandData::D3D12CommandData()
 
   m_ActionCallback = NULL;
 
+  OLD_m_AddedAction = false;
   m_AddedEventNode = false;
+
+  OLD_m_RootActionStack.push_back(&OLD_m_ParentAction);
 }
 
 void D3D12CommandData::GetIndirectBuffer(size_t size, ID3D12Resource **buf, uint64_t *offs)
@@ -1971,6 +2046,9 @@ ID3D12GraphicsCommandListX *D3D12CommandData::RerecordCmdList(ResourceId cmdid,
 
 void D3D12CommandData::AddEvent()
 {
+  // JAKE TODO:
+  // RDCASSERT(IsLoading(m_State));
+
   rdcarray<D3D12EventNode> &eventNodes =
       (m_LastCmdListID != ResourceId() ? m_BakedCmdListInfo[m_LastCmdListID].eventNodes
                                        : m_EventNodes);
@@ -1999,6 +2077,54 @@ void D3D12CommandData::AddEvent()
   }
 
   m_AddedEventNode = true;
+
+  OLD_AddEvent();
+}
+
+void D3D12CommandData::OLD_AddEvent()
+{
+  APIEvent apievent;
+
+  apievent.fileOffset = m_CurChunkOffset;
+  apievent.eventId = m_LastCmdListID != ResourceId()
+                         ? m_BakedCmdListInfo[m_LastCmdListID].OLD_curEventID
+                         : OLD_m_RootEventID;
+
+  apievent.chunkIndex = uint32_t(m_StructuredFile->chunks.size() - 1);
+
+  // if we're using replay-time debug messages, fetch them now since we can do better to correlate
+  // to events on replay
+  if(m_pDevice->GetReplayOptions().apiValidation)
+    OLD_m_EventMessages = m_pDevice->GetDebugMessages();
+
+  for(size_t i = 0; i < OLD_m_EventMessages.size(); i++)
+    OLD_m_EventMessages[i].eventId = apievent.eventId;
+
+  if(m_LastCmdListID != ResourceId())
+  {
+    m_BakedCmdListInfo[m_LastCmdListID].OLD_curEvents.push_back(apievent);
+
+    rdcarray<DebugMessage> &msgs = m_BakedCmdListInfo[m_LastCmdListID].OLD_debugMessages;
+
+    msgs.append(OLD_m_EventMessages);
+  }
+  else
+  {
+    if(m_RootAnnotation)
+    {
+      apievent.annotations = m_RootAnnotation->Duplicate();
+      m_EventAnnotations.push_back(apievent.annotations);
+    }
+
+    OLD_m_RootEvents.push_back(apievent);
+    OLD_m_Events.resize_for_index(apievent.eventId);
+    OLD_m_Events[apievent.eventId] = apievent;
+
+    for(auto it = OLD_m_EventMessages.begin(); it != OLD_m_EventMessages.end(); ++it)
+      m_pDevice->OLD_AddDebugMessage(*it);
+  }
+
+  OLD_m_EventMessages.clear();
 }
 
 void D3D12CommandData::AddResourceUsage(D3D12EventNode &eventNode, ResourceId id, ResourceUsage usage)
@@ -2011,6 +2137,7 @@ void D3D12CommandData::AddResourceUsage(D3D12EventNode &eventNode, ResourceId id
 
 void D3D12CommandData::AddCPUUsage(ResourceId id, ResourceUsage usage)
 {
+  OLD_m_ResourceUses[id].push_back(EventUsage(OLD_m_RootEventID, usage));
   m_LoadingEventNode.resourceUsage.push_back(make_rdcpair<ResourceId, ResourceUsage>(id, usage));
 }
 
@@ -2319,6 +2446,328 @@ void D3D12CommandData::AddUsage(const D3D12RenderState &state, D3D12EventNode &e
   }
 }
 
+void D3D12CommandData::OLD_AddResourceUsage(D3D12ActionTreeNode &actionNode, ResourceId id,
+                                            uint32_t EID, ResourceUsage usage)
+{
+  if(id == ResourceId())
+    return;
+
+  actionNode.resourceUsage.push_back(make_rdcpair(id, EventUsage(EID, usage)));
+}
+
+void D3D12CommandData::OLD_AddUsageForBindInRootSig(const D3D12RenderState &state,
+                                                    D3D12ActionTreeNode &actionNode,
+                                                    const D3D12RenderState::RootSignature *rootsig,
+                                                    D3D12_DESCRIPTOR_RANGE_TYPE type, uint32_t space,
+                                                    uint32_t bind, uint32_t rangeSize)
+{
+  static bool hugeRangeWarned = false;
+
+  ActionDescription &a = actionNode.action;
+  uint32_t eid = a.eventId;
+
+  // use a 'clamped' range size to avoid annoying overflow issues
+  rangeSize = RDCMIN(rangeSize, 0x10000000U);
+
+  D3D12ResourceManager *rm = m_pDevice->GetResourceManager();
+
+  WrappedID3D12RootSignature *sig = rm->GetResAs<WrappedID3D12RootSignature>(rootsig->rootsig);
+
+  for(size_t rootEl = 0; rootEl < sig->sig.Parameters.size(); rootEl++)
+  {
+    if(rootEl >= rootsig->sigelems.size())
+      break;
+
+    const D3D12RootSignatureParameter &p = sig->sig.Parameters[rootEl];
+    const D3D12RenderState::SignatureElement &el = rootsig->sigelems[rootEl];
+
+    if(p.ParameterType == D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS)
+      continue;
+
+    ResourceUsage cb = ResourceUsage::CS_Constants;
+    ResourceUsage ro = ResourceUsage::CS_Resource;
+    ResourceUsage rw = ResourceUsage::CS_RWResource;
+
+    if(rootsig == &state.graphics)
+    {
+      if(p.ShaderVisibility == D3D12_SHADER_VISIBILITY_ALL)
+      {
+        cb = ResourceUsage::All_Constants;
+        ro = ResourceUsage::All_Resource;
+        rw = ResourceUsage::All_RWResource;
+      }
+      else
+      {
+        cb = CBUsage(p.ShaderVisibility - D3D12_SHADER_VISIBILITY_VERTEX);
+        ro = ResUsage(p.ShaderVisibility - D3D12_SHADER_VISIBILITY_VERTEX);
+        rw = RWResUsage(p.ShaderVisibility - D3D12_SHADER_VISIBILITY_VERTEX);
+      }
+    }
+
+    if(p.ParameterType == D3D12_ROOT_PARAMETER_TYPE_CBV && el.type == eRootCBV &&
+       type == D3D12_DESCRIPTOR_RANGE_TYPE_CBV && p.Descriptor.RegisterSpace == space &&
+       p.Descriptor.ShaderRegister >= bind && p.Descriptor.ShaderRegister < bind + rangeSize)
+    {
+      OLD_AddResourceUsage(actionNode, el.id, eid, cb);
+
+      // common case - root element matches 1:1 with a non-array shader bind, if so we can exit. If
+      // not we might have to continue since other parts of it might be mapped to a table, or
+      // another root element
+      if(rangeSize == 1)
+        return;
+    }
+    else if(p.ParameterType == D3D12_ROOT_PARAMETER_TYPE_SRV && el.type == eRootSRV &&
+            type == D3D12_DESCRIPTOR_RANGE_TYPE_SRV && p.Descriptor.RegisterSpace == space &&
+            p.Descriptor.ShaderRegister >= bind && p.Descriptor.ShaderRegister < bind + rangeSize)
+    {
+      OLD_AddResourceUsage(actionNode, el.id, eid, ro);
+
+      // common case - root element matches 1:1 with a non-array shader bind, if so we can exit. If
+      // not we might have to continue since other parts of it might be mapped to a table, or
+      // another root element
+      if(rangeSize == 1)
+        return;
+    }
+    else if(p.ParameterType == D3D12_ROOT_PARAMETER_TYPE_UAV && el.type == eRootUAV &&
+            type == D3D12_DESCRIPTOR_RANGE_TYPE_UAV && p.Descriptor.RegisterSpace == space &&
+            p.Descriptor.ShaderRegister >= bind && p.Descriptor.ShaderRegister < bind + rangeSize)
+    {
+      OLD_AddResourceUsage(actionNode, el.id, eid, rw);
+
+      // common case - root element matches 1:1 with a non-array shader bind, if so we can exit. If
+      // not we might have to continue since other parts of it might be mapped to a table, or
+      // another root element
+      if(rangeSize == 1)
+        return;
+    }
+    else if(p.ParameterType == D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE && el.type == eRootTable)
+    {
+      WrappedID3D12DescriptorHeap *heap =
+          m_pDevice->GetResourceManager()->GetResAs<WrappedID3D12DescriptorHeap>(el.id);
+
+      if(heap == NULL)
+        continue;
+
+      UINT prevTableOffset = 0;
+
+      for(size_t r = 0; r < p.ranges.size(); r++)
+      {
+        const D3D12_DESCRIPTOR_RANGE1 &range = p.ranges[r];
+
+        UINT offset = range.OffsetInDescriptorsFromTableStart;
+
+        if(range.OffsetInDescriptorsFromTableStart == D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND)
+          offset = prevTableOffset;
+
+        D3D12Descriptor *desc = (D3D12Descriptor *)heap->GetCPUDescriptorHandleForHeapStart().ptr;
+        desc += el.offset;
+        desc += offset;
+
+        UINT num = range.NumDescriptors;
+
+        if(num == UINT_MAX)
+        {
+          // find out how many descriptors are left after
+          num = heap->GetNumDescriptors() - offset - UINT(el.offset);
+        }
+
+        prevTableOffset = offset + num;
+
+        // skip ranges that aren't the type or register space we want
+        if(range.RangeType != type || range.RegisterSpace != space)
+          continue;
+
+        // skip ranges that don't overlap with the registers we are looking for at all
+        if(range.BaseShaderRegister + num <= bind || range.BaseShaderRegister >= bind + rangeSize)
+          continue;
+
+        if(num > 1000)
+        {
+          if(!hugeRangeWarned)
+            RDCWARN("Skipping large, most likely 'bindless', descriptor range");
+          hugeRangeWarned = true;
+
+          continue;
+        }
+
+        bool allInRange = (bind >= range.BaseShaderRegister && rangeSize <= range.NumDescriptors);
+
+        // move to the first descriptor in the range which is in the binding we want, if the binding
+        // is later on in the range.
+        //
+        // It's also possible that the range is later on in the binding (e.g. if the binding is at
+        // base register 5 and is 1000000 in length, the range could start at register 10. In that
+        // case we just consume as much of the range as still fits in the bind
+        if(bind > range.BaseShaderRegister)
+          desc += (bind - range.BaseShaderRegister);
+        if(range.BaseShaderRegister > bind)
+          rangeSize -= (range.BaseShaderRegister - bind);
+
+        if(range.RangeType == D3D12_DESCRIPTOR_RANGE_TYPE_CBV)
+        {
+          for(UINT i = 0; i < num && i < rangeSize; i++)
+          {
+            ResourceId id = WrappedID3D12Resource::GetResIDFromAddr(desc->GetCBV().BufferLocation);
+
+            OLD_AddResourceUsage(actionNode, id, eid, cb);
+
+            desc++;
+          }
+        }
+        else if(range.RangeType == D3D12_DESCRIPTOR_RANGE_TYPE_SRV ||
+                range.RangeType == D3D12_DESCRIPTOR_RANGE_TYPE_UAV)
+        {
+          ResourceUsage usage = range.RangeType == D3D12_DESCRIPTOR_RANGE_TYPE_SRV ? ro : rw;
+
+          for(UINT i = 0; i < num && i < rangeSize; i++)
+          {
+            OLD_AddResourceUsage(actionNode, desc->GetResResourceId(), eid, usage);
+
+            desc++;
+          }
+        }
+
+        // if this descriptor range fully covered the binding (which may be quite common) we can
+        // return now, other ranges/root elements won't overlap so don't bother looking at them
+        if(allInRange)
+          return;
+      }
+    }
+  }
+}
+
+void D3D12CommandData::OLD_AddUsage(const D3D12RenderState &state, D3D12ActionTreeNode &actionNode)
+{
+  ActionDescription &a = actionNode.action;
+
+  uint32_t eid = a.eventId;
+
+  ActionFlags DrawMask = ActionFlags::Drawcall | ActionFlags::MeshDispatch | ActionFlags::Dispatch;
+  if(!(a.flags & DrawMask))
+    return;
+
+  D3D12ResourceManager *rm = m_pDevice->GetResourceManager();
+
+  const D3D12RenderState::RootSignature *rootsig = NULL;
+
+  WrappedID3D12PipelineState *pipe = NULL;
+
+  if(state.pipe != ResourceId())
+    pipe = rm->GetResAs<WrappedID3D12PipelineState>(state.pipe);
+
+  const ShaderReflection *refls[NumShaderStages] = {};
+
+  if((a.flags & ActionFlags::Dispatch) && state.compute.rootsig != ResourceId())
+  {
+    rootsig = &state.compute;
+
+    if(pipe && pipe->IsCompute())
+    {
+      WrappedID3D12Shader *sh = (WrappedID3D12Shader *)pipe->compute->CS.pShaderBytecode;
+
+      refls[uint32_t(ShaderStage::Compute)] = &sh->GetDetails();
+    }
+  }
+  else if(state.graphics.rootsig != ResourceId())
+  {
+    rootsig = &state.graphics;
+
+    if(pipe && pipe->IsGraphics())
+    {
+      D3D12_SHADER_BYTECODE *srcArr[] = {
+          &pipe->graphics->VS,
+          &pipe->graphics->HS,
+          &pipe->graphics->DS,
+          &pipe->graphics->GS,
+          &pipe->graphics->PS,
+          // compute
+          NULL,
+          &pipe->graphics->AS,
+          &pipe->graphics->MS,
+      };
+      for(size_t stage = 0; stage < ARRAY_COUNT(srcArr); stage++)
+      {
+        if(!srcArr[stage])
+          continue;
+
+        WrappedID3D12Shader *sh = (WrappedID3D12Shader *)srcArr[stage]->pShaderBytecode;
+
+        if(sh)
+          refls[stage] = &sh->GetDetails();
+      }
+    }
+
+    if(a.flags & ActionFlags::Indexed && state.ibuffer.buf != ResourceId())
+      actionNode.resourceUsage.push_back(
+          make_rdcpair(state.ibuffer.buf, EventUsage(eid, ResourceUsage::IndexBuffer)));
+
+    if(a.flags & ActionFlags::Drawcall)
+    {
+      for(size_t i = 0; i < state.vbuffers.size(); i++)
+      {
+        if(state.vbuffers[i].buf != ResourceId())
+          actionNode.resourceUsage.push_back(
+              make_rdcpair(state.vbuffers[i].buf, EventUsage(eid, ResourceUsage::VertexBuffer)));
+      }
+
+      for(size_t i = 0; i < state.streamouts.size(); i++)
+      {
+        if(state.streamouts[i].buf != ResourceId())
+          actionNode.resourceUsage.push_back(
+              make_rdcpair(state.streamouts[i].buf, EventUsage(eid, ResourceUsage::StreamOut)));
+        if(state.streamouts[i].countbuf != ResourceId())
+          actionNode.resourceUsage.push_back(make_rdcpair(
+              state.streamouts[i].countbuf, EventUsage(eid, ResourceUsage::StreamOut)));
+      }
+    }
+
+    rdcarray<ResourceId> rts = state.GetRTVIDs();
+
+    for(size_t i = 0; i < rts.size(); i++)
+    {
+      if(rts[i] != ResourceId())
+        actionNode.resourceUsage.push_back(
+            make_rdcpair(rts[i], EventUsage(eid, ResourceUsage::ColorTarget)));
+    }
+
+    ResourceId id = state.GetDSVID();
+    if(id != ResourceId())
+      actionNode.resourceUsage.push_back(
+          make_rdcpair(id, EventUsage(eid, ResourceUsage::DepthStencilTarget)));
+  }
+
+  if(rootsig)
+  {
+    // iterate over each stage, looking at its used binds, then for each bind find it in the root
+    // signature. We have to do this kind of N:N lookup because of D3D12's bad design, but this
+    // should be a better way around to do it than iterating over the root signature and finding a
+    // bind for each element
+    for(size_t sh = 0; sh < ARRAY_COUNT(refls); sh++)
+    {
+      if(!refls[sh])
+        continue;
+
+      for(const ConstantBlock &b : refls[sh]->constantBlocks)
+      {
+        OLD_AddUsageForBindInRootSig(state, actionNode, rootsig, D3D12_DESCRIPTOR_RANGE_TYPE_CBV,
+                                     b.fixedBindSetOrSpace, b.fixedBindNumber, b.bindArraySize);
+      }
+
+      for(const ShaderResource &r : refls[sh]->readOnlyResources)
+      {
+        OLD_AddUsageForBindInRootSig(state, actionNode, rootsig, D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
+                                     r.fixedBindSetOrSpace, r.fixedBindNumber, r.bindArraySize);
+      }
+
+      for(const ShaderResource &r : refls[sh]->readWriteResources)
+      {
+        OLD_AddUsageForBindInRootSig(state, actionNode, rootsig, D3D12_DESCRIPTOR_RANGE_TYPE_UAV,
+                                     r.fixedBindSetOrSpace, r.fixedBindNumber, r.bindArraySize);
+      }
+    }
+  }
+}
+
 void D3D12CommandData::BakeEventNodes(ActionDescription &rootAction)
 {
   // EIDs start from 1
@@ -2433,6 +2882,9 @@ void D3D12CommandData::BakeEventNodes(ActionDescription &rootAction)
 
 void D3D12CommandData::AddAction(const ActionDescription &a)
 {
+  // JAKE TODO:
+  // RDCASSERT(IsLoading(m_State));
+
   RDCASSERT(m_AddedEventNode);
 
   D3D12EventNode &node = GetLastEventNode();
@@ -2467,6 +2919,74 @@ void D3D12CommandData::AddAction(const ActionDescription &a)
 
   if(m_LastCmdListID != ResourceId())
     AddUsage(m_BakedCmdListInfo[m_LastCmdListID].state, node);
+
+  OLD_AddAction(a);
+}
+
+void D3D12CommandData::OLD_AddAction(const ActionDescription &a)
+{
+  OLD_m_AddedAction = true;
+
+  ActionDescription action = a;
+  action.eventId = m_LastCmdListID != ResourceId()
+                       ? m_BakedCmdListInfo[m_LastCmdListID].OLD_curEventID
+                       : OLD_m_RootEventID;
+  action.actionId = m_LastCmdListID != ResourceId()
+                        ? m_BakedCmdListInfo[m_LastCmdListID].OLD_actionCount
+                        : OLD_m_RootActionID;
+
+  for(int i = 0; i < 8; i++)
+    action.outputs[i] = ResourceId();
+
+  action.depthOut = ResourceId();
+
+  if(m_LastCmdListID != ResourceId())
+  {
+    rdcarray<ResourceId> rts = m_BakedCmdListInfo[m_LastCmdListID].state.GetRTVIDs();
+
+    for(size_t i = 0; i < ARRAY_COUNT(action.outputs); i++)
+    {
+      if(i < rts.size())
+        action.outputs[i] = rts[i];
+      else
+        action.outputs[i] = ResourceId();
+    }
+
+    action.depthOut = m_BakedCmdListInfo[m_LastCmdListID].state.GetDSVID();
+  }
+
+  // markers don't increment action ID
+  ActionFlags MarkerMask = ActionFlags::SetMarker | ActionFlags::PushMarker |
+                           ActionFlags::PopMarker | ActionFlags::PassBoundary;
+  if(!(action.flags & MarkerMask))
+  {
+    if(m_LastCmdListID != ResourceId())
+      m_BakedCmdListInfo[m_LastCmdListID].OLD_actionCount++;
+    else
+      OLD_m_RootActionID++;
+  }
+
+  action.events.swap(m_LastCmdListID != ResourceId() ? m_BakedCmdListInfo[m_LastCmdListID].OLD_curEvents
+                                                     : OLD_m_RootEvents);
+
+  // should have at least the root action here, push this action
+  // onto the back's children list.
+  if(!OLD_GetActionStack().empty())
+  {
+    D3D12ActionTreeNode node(action);
+
+    if(m_LastCmdListID != ResourceId())
+    {
+      node.resourceUsage.swap(m_BakedCmdListInfo[m_LastCmdListID].OLD_resourceUsage);
+      OLD_AddUsage(m_BakedCmdListInfo[m_LastCmdListID].state, node);
+    }
+
+    for(const ActionDescription &child : action.children)
+      node.children.push_back(D3D12ActionTreeNode(child));
+    OLD_GetActionStack().back()->children.push_back(node);
+  }
+  else
+    RDCERR("Somehow lost action stack!");
 }
 
 SDObject *D3D12CommandData::InsertEventNodes(WrappedID3D12GraphicsCommandList *replayList,
@@ -2508,4 +3028,80 @@ SDObject *D3D12CommandData::InsertEventNodes(WrappedID3D12GraphicsCommandList *r
   cmdListInfo.eventCount = (uint32_t)eventNodes.size();
 
   return localAnnotations;
+}
+
+void D3D12CommandData::OLD_InsertActionsAndRefreshIDs(ResourceId cmd,
+                                                      const BakedCmdListInfo &cmdListInfo)
+{
+  const rdcarray<D3D12ActionTreeNode> &cmdBufNodes = cmdListInfo.OLD_action->children;
+
+  SDObject *localAnnotations = NULL;
+  if(m_RootAnnotation)
+    localAnnotations = m_RootAnnotation->Duplicate();
+
+  size_t curAnnot = 0;
+
+  // assign new action IDs
+  for(size_t i = 0; i < cmdBufNodes.size(); i++)
+  {
+    D3D12ActionTreeNode n = cmdBufNodes[i];
+    n.action.eventId += OLD_m_RootEventID;
+    n.action.actionId += OLD_m_RootActionID;
+
+    for(APIEvent &ev : n.action.events)
+    {
+      if(localAnnotations)
+      {
+        for(; curAnnot < cmdListInfo.OLD_annotations.size(); curAnnot++)
+        {
+          const PendingAnnotation &annot = cmdListInfo.OLD_annotations[curAnnot];
+          if(annot.eventId == ev.eventId)
+          {
+            if(annot.valueType == eRENDERDOC_Empty)
+              localAnnotations->EraseChildByKeyPath(annot.key);
+            else
+              WriteAnnotation(localAnnotations->CreateChildByKeyPath(annot.key), annot.valueType,
+                              annot.valueVectorWidth, annot.value);
+          }
+          else if(annot.eventId > ev.eventId)
+          {
+            break;
+          }
+        }
+
+        ev.annotations = localAnnotations->Duplicate();
+        m_EventAnnotations.push_back(ev.annotations);
+      }
+
+      ev.eventId += OLD_m_RootEventID;
+      OLD_m_Events.resize(ev.eventId + 1);
+      OLD_m_Events[ev.eventId] = ev;
+    }
+
+    ActionUse use(OLD_m_Events.back().fileOffset, n.action.eventId, cmd,
+                  cmdBufNodes[i].action.eventId);
+
+    // insert in sorted location
+    auto drawit = std::lower_bound(OLD_m_ActionUses.begin(), OLD_m_ActionUses.end(), use);
+    OLD_m_ActionUses.insert(drawit - OLD_m_ActionUses.begin(), use);
+
+    RDCASSERT(n.children.empty());
+
+    for(auto it = n.resourceUsage.begin(); it != n.resourceUsage.end(); ++it)
+    {
+      EventUsage u = it->second;
+      u.eventId += OLD_m_RootEventID;
+      OLD_m_ResourceUses[it->first].push_back(u);
+    }
+
+    OLD_GetActionStack().back()->children.push_back(n);
+
+    // if this is a push marker too, step down the action stack
+    if(cmdBufNodes[i].action.flags & ActionFlags::PushMarker)
+      OLD_GetActionStack().push_back(&OLD_GetActionStack().back()->children.back());
+
+    // similarly for a pop, but don't pop off the root
+    if((cmdBufNodes[i].action.flags & ActionFlags::PopMarker) && OLD_GetActionStack().size() > 1)
+      OLD_GetActionStack().pop_back();
+  }
 }
