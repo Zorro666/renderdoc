@@ -134,6 +134,18 @@ struct VulkanEventNode
 {
   VulkanEventNode() = default;
   ~VulkanEventNode() = default;
+  void AddResourceUsage(ResourceId id, ResourceUsage usage)
+  {
+    RDCASSERTNOTEQUAL(id, ResourceId());
+    resourceUsage.push_back(make_rdcpair(id, usage));
+  }
+  void AddUniqueResourceUsage(ResourceId id, ResourceUsage usage)
+  {
+    RDCASSERTNOTEQUAL(id, ResourceId());
+    if(resourceUsage.contains(make_rdcpair(id, usage)))
+      return;
+    resourceUsage.push_back(make_rdcpair(id, usage));
+  }
 
   // eventId is not used
   APIEvent event;
@@ -163,6 +175,84 @@ struct VulkanEventNode
   bool addSubmit = false;
   bool startChildExecute = false;
   bool endChildExecute = false;
+};
+
+struct VulkanActionTreeNode
+{
+  VulkanActionTreeNode() {}
+  explicit VulkanActionTreeNode(const ActionDescription &a) : action(a) {}
+  ActionDescription action;
+  rdcarray<VulkanActionTreeNode> children;
+
+  VkIndirectPatchData indirectPatch;
+
+  rdcarray<rdcpair<ResourceId, EventUsage>> resourceUsage;
+
+  rdcarray<ResourceId> executedCmds;
+
+  struct DeferredResourceUsage
+  {
+    uint32_t descBufVersionIdx;
+    ResourceId pipeline;
+    ResourceId shaderObjects[NumShaderStages];
+    rdcarray<VulkanStatePipeline::DescriptorAndOffsets> descSets;
+  };
+  rdcarray<DeferredResourceUsage> deferredResourceUsage;
+
+  VulkanActionTreeNode &operator=(const ActionDescription &a)
+  {
+    *this = VulkanActionTreeNode(a);
+    return *this;
+  }
+
+  void OLD_InsertAndUpdateIDs(const VulkanActionTreeNode &child, uint32_t baseEventID,
+                              uint32_t baseDrawID)
+  {
+    resourceUsage.reserve(child.resourceUsage.size());
+    for(size_t i = 0; i < child.resourceUsage.size(); i++)
+    {
+      resourceUsage.push_back(child.resourceUsage[i]);
+      resourceUsage.back().second.eventId += baseEventID;
+    }
+
+    children.reserve(child.children.size());
+    for(size_t i = 0; i < child.children.size(); i++)
+    {
+      children.push_back(child.children[i]);
+      children.back().OLD_UpdateIDs(baseEventID, baseDrawID);
+    }
+  }
+
+  void OLD_UpdateIDs(uint32_t baseEventID, uint32_t baseDrawID)
+  {
+    action.eventId += baseEventID;
+    action.actionId += baseDrawID;
+
+    for(APIEvent &ev : action.events)
+      ev.eventId += baseEventID;
+
+    for(size_t i = 0; i < resourceUsage.size(); i++)
+      resourceUsage[i].second.eventId += baseEventID;
+
+    for(size_t i = 0; i < children.size(); i++)
+      children[i].OLD_UpdateIDs(baseEventID, baseDrawID);
+  }
+
+  rdcarray<ActionDescription> OLD_Bake()
+  {
+    rdcarray<ActionDescription> ret;
+    if(children.empty())
+      return ret;
+
+    ret.resize(children.size());
+    for(size_t i = 0; i < children.size(); i++)
+    {
+      ret[i] = children[i].action;
+      ret[i].children = children[i].OLD_Bake();
+    }
+
+    return ret;
+  }
 };
 
 #define SERIALISE_TIME_CALL(...)                                                                \
@@ -292,7 +382,12 @@ private:
   ScopedDebugMessageSink *GetDebugMessageSink();
   void SetDebugMessageSink(ScopedDebugMessageSink *sink);
 
+  // the messages retrieved for the current event (filled in Serialise_vk...() and read in
+  // AddEvent())
+  rdcarray<DebugMessage> OLD_m_EventMessages;
+
   // list of all debug messages by EID in the frame
+  rdcarray<DebugMessage> OLD_m_DebugMessages;
   rdcarray<DebugMessage> m_DebugMessages;
   template <typename SerialiserType>
   void Serialise_DebugMessages(SerialiserType &ser);
@@ -747,6 +842,7 @@ private:
         delete child;
       }
     }
+    bool CheckNewToOld(const CommandBufferNode *old, bool recurse) const;
   };
 
   // CommandBufferExecuteInfo tracks the absolute position of the execution of a secondary command
@@ -758,19 +854,37 @@ private:
     uint32_t eid = 0;
   };
 
+  // CommandBufferExecuteInfo tracks the position of the execution of a secondary command buffer
+  // relative to the beginning of the parent command buffer. At the end of a replay's initial
+  // loading stage, these are used to build the tree of CommandBufferNodes that track a command
+  // buffer execution's absolute position in the frame.
+  struct OLD_CommandBufferExecuteInfo
+  {
+    ResourceId cmdId = ResourceId();
+    uint32_t relPos = 0;
+  };
+
   struct BakedCmdBufferInfo
   {
     BakedCmdBufferInfo()
         : eventCount(0),
           curEventID(0),
+          OLD_action(NULL),
+          OLD_eventCount(0),
+          OLD_curEventID(0),
+          OLD_actionCount(0),
           level(VK_COMMAND_BUFFER_LEVEL_PRIMARY),
           beginFlags(0),
           markerCount(0)
 
     {
     }
-    ~BakedCmdBufferInfo() {}
+    ~BakedCmdBufferInfo() { SAFE_DELETE(OLD_action); }
+    rdcarray<APIEvent> OLD_curEvents;
     rdcarray<APIEvent> curEvents;
+    rdcarray<DebugMessage> OLD_debugMessages;
+    rdcarray<VulkanActionTreeNode *> OLD_actionStack;
+    rdcarray<PendingAnnotation> OLD_annotations;
 
     rdcarray<VkIndirectRecordData> indirectCopies;
     rdcarray<VulkanEventNode> eventNodes;
@@ -786,6 +900,8 @@ private:
     bool inheritConditionalRendering = false;
 
     int markerCount;
+
+    rdcarray<rdcpair<ResourceId, EventUsage>> OLD_resourceUsage;
 
     VulkanRenderState state;
 
@@ -814,6 +930,11 @@ private:
 
     uint32_t eventCount;    // how many events are in this cmd buffer, for quick skipping
     uint32_t curEventID;    // current event ID while replaying, not used during loading
+
+    VulkanActionTreeNode *OLD_action;    // the root action to copy from when submitting
+    uint32_t OLD_eventCount;     // how many events are in this cmd buffer, for quick skipping
+    uint32_t OLD_curEventID;     // current event ID while reading or executing
+    uint32_t OLD_actionCount;    // similar to above
 
     // the index in m_DescriptorBufferVersions for the current GPUBuffer containing the descriptor buffer snapshot
     uint32_t descBufVersionIdx = ~0U;
@@ -858,6 +979,7 @@ private:
       return eventId < o.eventId;
     }
   };
+  rdcarray<ActionUse> OLD_m_ActionUses;
   rdcarray<ActionUse> m_ActionUses;
 
   // during active replay, command buffers may be partially-submitted if the selected event occurs
@@ -884,15 +1006,18 @@ private:
     // is enabled, these secondary nodes may also have child nodes, up to
     // maxCommandBufferNestingLevel returned in VkPhysicalDeviceNestedCommandBufferPropertiesEXT.
     // These trees are used during replay to update the partialStack.
+    rdcarray<CommandBufferNode *> OLD_commandTree;
     rdcarray<CommandBufferNode *> commandTree;
     // submitLookup maps a given command buffer ID to all the CommandBufferNodes representing
     // different submissions of the same command buffer in the frame.
+    rdcflatmap<ResourceId, rdcarray<CommandBufferNode *>> OLD_submitLookup;
     rdcflatmap<ResourceId, rdcarray<CommandBufferNode *>> submitLookup;
   } m_Partial;
 
   // tracks secondary command buffer executions during initial replay loading. At the end of
   // loading, these executions are rebased into the command nodes in PartialReplayData.
   rdcflatmap<ResourceId, rdcarray<CommandBufferExecuteInfo>> m_CommandBufferExecutes;
+  rdcflatmap<ResourceId, rdcarray<OLD_CommandBufferExecuteInfo>> OLD_m_CommandBufferExecutes;
 
   // in active replay, determines whether the given command buffer is partially submitted.
   // a command buffer is partially submitted if the last event in the replayed range lies within the command buffer.
@@ -912,6 +1037,7 @@ private:
 
   // helper function that determines whether a given event lies within the scope of a command buffer submission.
   bool IsEventInCommandBuffer(const CommandBufferNode *cmdNode, uint32_t ev, uint32_t eventCount);
+  bool OLD_IsEventInCommandBuffer(const CommandBufferNode *cmdNode, uint32_t ev, uint32_t eventCount);
 
   // in active replay, determines whether the given command buffer is the deepest nested partial command buffer.
   bool IsCommandBufferDeepestPartial(ResourceId cmdId);
@@ -926,6 +1052,12 @@ private:
 
   // determines whether we should track the open/close state of a renderpass.
   bool ShouldUpdateRenderpassActive(ResourceId cmdId, bool dynamicRendering = false);
+
+  // shifts the beginEvent of any command buffer nodes executed after targetEvent by eidShift.
+  // additionally updates the action and event counts for the corresponding BakedCmdBufferInfo.
+  // this function is used to account for events added by DrawIndirectCount calls
+  void OLD_ShiftSuccessiveCommandNodes(uint32_t targetEvent, uint32_t eidShift,
+                                       CommandBufferNode *current = NULL);
 
   // if we're replaying just a single action or a particular command
   // buffer subsection of command events, we don't go through the
@@ -1072,6 +1204,9 @@ private:
   std::map<uint32_t, EventFlags> m_EventFlags;
   rdcarray<ResourceId> m_FeedbackRPs;
 
+  std::map<ResourceId, rdcarray<EventUsage>> OLD_m_ResourceUses;
+  std::map<uint32_t, EventFlags> OLD_m_EventFlags;
+
   bytebuf m_MaskedMapData;
 
   Threading::CriticalSection m_PendingCmdBufferCallbacksLock;
@@ -1085,6 +1220,7 @@ private:
 
   Threading::CriticalSection m_AnnotationsLock;
   std::unordered_map<ResourceId, SDObject *> m_Annotations;
+  rdcarray<SDObject *> OLD_m_EventAnnotations;
   rdcarray<SDObject *> m_EventAnnotations;
 
   // on replay we may need to allocate several bits of temporary memory, so the single-region
@@ -1199,10 +1335,15 @@ private:
   rdcarray<VulkanEventNode> m_EventNodes;
   bool m_AddedEventNode;
 
+  rdcarray<APIEvent> OLD_m_RootEvents;
+  bool OLD_m_AddedAction;
+
+  rdcarray<APIEvent> OLD_m_Events;
   SDObject *m_RootAnnotation = NULL;
 
   uint64_t m_CurChunkOffset;
   SDChunkMetaData m_ChunkMetadata;
+  uint32_t OLD_m_RootEventID, OLD_m_RootActionID;
   uint32_t m_RootEventID;
   uint32_t m_FirstEventID, m_LastEventID;
   VulkanChunk m_LastChunk;
@@ -1218,6 +1359,8 @@ private:
   double m_DeferredTime = 0.0;
   RDResult m_FailedReplayResult = ResultCode::APIReplayFailed;
 
+  VulkanActionTreeNode OLD_m_ParentAction;
+
   bool m_LayersEnabled[VkCheckLayer_Max] = {};
 
   // in vk_<platform>.cpp
@@ -1228,6 +1371,7 @@ private:
                          uint32_t chunkIndex, ActionDescription &action, byte *&argptr, byte *argend);
   // insert the baked command buffer into the root events, resolving indirect and deferred actions
   SDObject *InsertEventNodes(BakedCmdBufferInfo &cmdBufInfo);
+  void OLD_InsertActionsAndRefreshIDs(BakedCmdBufferInfo &cmdBufInfo);
   void AddReferencesForSecondaries(VkResourceRecord *record,
                                    rdcarray<VkResourceRecord *> &cmdsWithReferences,
                                    std::unordered_set<ResourceId> &refdIDs);
@@ -1239,6 +1383,8 @@ private:
 
   void CopyInternalDescriptor(VkCommandBuffer unwrappedCmdBuf, VkBuffer unwrappedSrc, uint32_t size);
 
+  CommandBufferNode *OLD_BuildSubmitTree(ResourceId cmdId, uint32_t curEvent,
+                                         CommandBufferNode *rootNode = NULL);
   CommandBufferNode *BuildSubmitTree(ResourceId cmdId, uint32_t curEvent,
                                      CommandBufferNode *rootNode = NULL);
 
@@ -1247,6 +1393,16 @@ private:
                                 bool internalFlush, bool capframe);
 
   void DoSubmit(VkQueue queue, VkSubmitInfo2 submitInfo);
+
+  rdcarray<VulkanActionTreeNode *> OLD_m_ActionStack;
+
+  rdcarray<VulkanActionTreeNode *> &GetActionStack()
+  {
+    if(m_LastCmdBufferID != ResourceId())
+      return m_BakedCmdBufferInfo[m_LastCmdBufferID].OLD_actionStack;
+
+    return OLD_m_ActionStack;
+  }
 
   bool ProcessChunk(ReadSerialiser &ser, VulkanChunk chunk);
   RDResult ContextReplayLog(CaptureState readType, uint32_t startEventID, uint32_t endEventID,
@@ -1280,6 +1436,33 @@ private:
                              ResourceUsage usage);
 
   void AddFramebufferUsage(VulkanEventNode &eventNode, const VulkanRenderState &renderState);
+
+  void OLD_AddEvent();
+  void OLD_AddAction(const ActionDescription &a);
+
+  void OLD_AddUsage(VulkanActionTreeNode &actionNode, rdcarray<DebugMessage> &debugMessages);
+
+  void OLD_AddUsageForDescriptorSets(VulkanActionTreeNode &actionNode,
+                                     rdcarray<DebugMessage> &debugMessages);
+  void OLD_AddUsageForDescriptorSetBind(VulkanActionTreeNode &actionNode,
+                                        rdcarray<DebugMessage> &debugMessages, uint32_t bindset,
+                                        uint32_t bind, ResourceUsage usage);
+  void OLD_AddUsageForDescriptorBuffers(VulkanActionTreeNode &actionNode,
+                                        rdcarray<DebugMessage> &debugMessages,
+                                        const VulkanActionTreeNode::DeferredResourceUsage &def);
+  void OLD_AddUsageForDescriptorBufferBind(VulkanActionTreeNode &actionNode,
+                                           rdcarray<DebugMessage> &debugMessages,
+                                           const VulkanActionTreeNode::DeferredResourceUsage &def,
+                                           byte *descriptorBytes, size_t descriptorSize,
+                                           DescriptorType type, uint32_t bindset, uint32_t bind,
+                                           ResourceUsage usage);
+  void OLD_AddUsageForDescriptor(VulkanActionTreeNode &actionNode, const DescriptorSetSlot &slot,
+                                 ResourceUsage usage);
+
+  void OLD_AddFramebufferUsage(VulkanActionTreeNode &actionNode,
+                               const VulkanRenderState &renderState);
+  void OLD_AddFramebufferUsageAllChildren(VulkanActionTreeNode &actionNode,
+                                          const VulkanRenderState &renderState);
 
   // no copy semantics
   WrappedVulkan(const WrappedVulkan &) = delete;
@@ -1425,7 +1608,7 @@ public:
   ResourceId GetASFromAddr(VkDeviceAddress addr);
 
   EventFlags GetEventFlags(uint32_t eid) { return m_EventFlags[eid]; }
-  rdcarray<EventUsage> GetUsage(ResourceId id) { return m_ResourceUses[id]; }
+  rdcarray<EventUsage> GetUsage(ResourceId id);
   // return the pre-selected device and queue
   VkDevice GetDev()
   {

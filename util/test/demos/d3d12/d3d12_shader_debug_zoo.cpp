@@ -223,6 +223,7 @@ Texture2DMS<float> dimtexms : register(t4);
 Texture2D<float4> smiley : register(t5);
 Texture2D<int4> smileyint : register(t6);
 Texture2D<uint4> smileyuint : register(t7);
+Texture2D<float> smileyr32 : register(t8);
 RWByteAddressBuffer byterwtest : register(u1);
 RWStructuredBuffer<MyStruct> structrwtest : register(u2);
 RWByteAddressBuffer byterwtest2 : register(u3);
@@ -246,6 +247,7 @@ Buffer<float> narrowtypedsrv : register(t102);
 Buffer<float4> rgb_srv : register(t103);
 
 SamplerState linearclamp : register(s0);
+SamplerComparisonState linearcompare : register(s1);
 
 StructuredBuffer<MyStruct> rootsrv : register(t20);
 ByteAddressBuffer rootbytesrv : register(t21);
@@ -1089,9 +1091,10 @@ float4 main(v2f IN) : SV_Target0
   {
     float4 Color = float4(0,0,0,1);
     float2 uv = IN.s.xy / float2(2.0, 2.0);
-    uv.y += 0.187;
-    Color.x = smiley.CalculateLevelOfDetail(linearclamp, uv);
-    Color.y = smiley.CalculateLevelOfDetailUnclamped(linearclamp, uv);
+    uv.x += 0.6042;
+    uv.y += 0.4167;
+    Color.x = smileyr32.CalculateLevelOfDetail(linearclamp, uv);
+    Color.y = smileyr32.CalculateLevelOfDetailUnclamped(linearclamp, uv);
     return Color;
   }
 #if (SM_6_0 || SM_6_2 || SM_6_6)
@@ -1153,6 +1156,34 @@ float4 main(v2f IN) : SV_Target0
 
     return float4(asfloat(rootbytesrv.Load(z+0).x), asfloat(rootbytesrv.Load(z+4).x),
                   asfloat(rootbytesrv.Load(z+8).x), float(rootbytesrv.Load(z+12).x));
+  }
+)EOSHADER"
+                                    R"EOSHADER(
+  if(IN.tri == 113)
+  {
+    float2 uv = IN.s.xy / float2(2.0, 2.0);
+    uv.x += 0.6042;
+    uv.y += 0.4167;
+    return smiley.Sample(linearclamp, uv);
+  }
+  if(IN.tri == 114)
+  {
+    float2 uv = IN.s.xy / float2(2.0, 2.0);
+    uv.x += 0.6042;
+    uv.y += 0.4167;
+    return smiley.SampleBias(linearclamp, uv, 4.0);
+  }
+  if(IN.tri == 115)
+  {
+    float4 Color = float4(0,0,0,0);
+    float2 uv = IN.s.xy / float2(2.0, 2.0);
+    uv.x += 0.6042;
+    uv.y += 0.4167;
+    Color.x = smileyr32.SampleCmp(linearcompare, uv, 0.0);
+    Color.y = smileyr32.SampleCmp(linearcompare, uv, 0.1);
+    Color.z = smileyr32.SampleCmp(linearcompare, uv, 0.7);
+    Color.w = smileyr32.SampleCmp(linearcompare, uv, 1.0);
+    return Color;
   }
   if(IN.tri == 113)
   {
@@ -2059,6 +2090,14 @@ void main(uint3 inDTID : SV_DispatchThreadID, uint3 inGID : SV_GroupThreadID, ui
     staticSamp.AddressU = staticSamp.AddressV = staticSamp.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
     staticSamp.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
+    D3D12_STATIC_SAMPLER_DESC samplers[] = {staticSamp, staticSamp};
+    samplers[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+
+    samplers[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+    samplers[1].Filter = D3D12_FILTER_COMPARISON_MIN_MAG_MIP_LINEAR;
+    samplers[1].ComparisonFunc = D3D12_COMPARISON_FUNC_LESS;
+    samplers[1].ShaderRegister = 1;
+
     D3D12_DESCRIPTOR_RANGE1 multiRanges[4] = {
         {
             D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
@@ -2114,8 +2153,9 @@ void main(uint3 inDTID : SV_DispatchThreadID, uint3 inGID : SV_GroupThreadID, ui
             srvParam(D3D12_SHADER_VISIBILITY_PIXEL, 0, 20),
             tableParam(D3D12_SHADER_VISIBILITY_PIXEL, D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 0, 9, 3, 100),
             srvParam(D3D12_SHADER_VISIBILITY_PIXEL, 0, 21),
+            tableParam(D3D12_SHADER_VISIBILITY_PIXEL, D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 0, 8, 1, 64),
         },
-        D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT, 1, &staticSamp);
+        D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT, 2, samplers);
 
     const int numShaderModels = 5;    // 5.0, 5.1, 6.0, 6.2, 6.6
     ID3D12PipelineStatePtr psos[numShaderModels * 2] = {};
@@ -2417,6 +2457,8 @@ void main(uint3 inDTID : SV_DispatchThreadID, uint3 inGID : SV_GroupThreadID, ui
     ID3D12ResourcePtr smiley = MakeTexture(DXGI_FORMAT_R8G8B8A8_TYPELESS, 48, 48)
                                    .Mips(1)
                                    .InitialState(D3D12_RESOURCE_STATE_COPY_DEST);
+    ID3D12ResourcePtr smileyr32 =
+        MakeTexture(DXGI_FORMAT_R32_TYPELESS, 48, 48).Mips(5).InitialState(D3D12_RESOURCE_STATE_COPY_DEST);
 
     ID3D12ResourcePtr uploadBuf = MakeBuffer().Size(1024 * 1024).Upload();
     ID3D12ResourcePtr constBuf = MakeBuffer().Size(256).Upload();
@@ -2482,10 +2524,71 @@ void main(uint3 inDTID : SV_DispatchThreadID, uint3 inGID : SV_GroupThreadID, ui
       Submit({cmd});
       GPUSync();
     }
+    {
+      D3D12_PLACED_SUBRESOURCE_FOOTPRINT layout = {};
+
+      D3D12_RESOURCE_DESC desc = smileyr32->GetDesc();
+
+      dev->GetCopyableFootprints(&desc, 0, 1, 0, &layout, NULL, NULL, NULL);
+
+      uint32_t *srcptr = (uint32_t *)rgba8.data.data();
+      byte *mapptr = NULL;
+      uploadBuf->Map(0, NULL, (void **)&mapptr);
+
+      ID3D12GraphicsCommandListPtr cmd = GetCommandBuffer();
+
+      Reset(cmd);
+
+      {
+        D3D12_TEXTURE_COPY_LOCATION dst, src;
+
+        dst.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+        dst.pResource = smileyr32;
+        dst.SubresourceIndex = 0;
+
+        byte *dstptr = mapptr + layout.Offset;
+
+        for(UINT row = 0; row < rgba8.height; row++)
+        {
+          float *pix = (float *)dstptr;
+          for(UINT col = 0; col < rgba8.width; col++)
+          {
+            uint32_t texValue = *srcptr;
+            uint32_t red = texValue & 0xFF;
+            *pix = (float)red / 255.0f;
+            pix++;
+            srcptr++;
+          }
+          dstptr += layout.Footprint.RowPitch;
+        }
+
+        src.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+        src.pResource = uploadBuf;
+        src.PlacedFootprint = layout;
+
+        cmd->CopyTextureRegion(&dst, 0, 0, 0, &src, NULL);
+
+        D3D12_RESOURCE_BARRIER b = {};
+        b.Transition.pResource = smileyr32;
+        b.Transition.Subresource = 0;
+        b.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
+        b.Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE |
+                                  D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+        cmd->ResourceBarrier(1, &b);
+      }
+
+      cmd->Close();
+
+      uploadBuf->Unmap(0, NULL);
+
+      Submit({cmd});
+      GPUSync();
+    }
 
     MakeSRV(smiley).Format(DXGI_FORMAT_R8G8B8A8_UNORM).CreateGPU(5);
     MakeSRV(smiley).Format(DXGI_FORMAT_R8G8B8A8_SINT).CreateGPU(6);
     MakeSRV(smiley).Format(DXGI_FORMAT_R8G8B8A8_UINT).CreateGPU(7);
+    MakeSRV(smileyr32).Format(DXGI_FORMAT_R32_FLOAT).CreateGPU(64);
 
     ID3D12ResourcePtr rawBuf2 = MakeBuffer().Size(1024).UAV();
     rawBuf2->SetName(L"rawBuf2");
@@ -2754,12 +2857,6 @@ void main(uint3 inDTID : SV_DispatchThreadID, uint3 inGID : SV_GroupThreadID, ui
       computePSOs[2] = MakePSO().RootSig(sigCompute).CS(csblob);
     }
 
-    D3D12_STATIC_SAMPLER_DESC samplers[] = {staticSamp, staticSamp};
-    samplers[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
-    samplers[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
-    samplers[1].ComparisonFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
-    samplers[1].ShaderRegister = 1;
-
     ID3D12RootSignaturePtr sigComputeDerivs = MakeSig(
         {
             constParam(D3D12_SHADER_VISIBILITY_ALL, 0, 0, 1),
@@ -2935,6 +3032,7 @@ void main(uint3 inDTID : SV_DispatchThreadID, uint3 inGID : SV_GroupThreadID, ui
           cmd->SetGraphicsRootDescriptorTable(7, m_CBVUAVSRV->GetGPUDescriptorHandleForHeapStart());
           cmd->SetGraphicsRootShaderResourceView(
               8, rootbytesrv->GetGPUVirtualAddress() + renderDataSize);
+          cmd->SetGraphicsRootDescriptorTable(9, m_CBVUAVSRV->GetGPUDescriptorHandleForHeapStart());
 
           // Add a marker so we can easily locate this draw
           std::string markerName = markers[i];
