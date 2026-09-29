@@ -281,6 +281,19 @@ layout(set = 2, rgba32i, binding = 56) uniform iimageCubeArray storezoo_iCubeArr
 //layout(set = 2, rgba32i, binding = 58) uniform iimage2DMSArray storezoo_i2DMSArray;
 layout(set = 2, rgba32i, binding = 59) uniform iimageBuffer storezoo_iBuffer;
 
+layout(set = 3, binding = 22) uniform bindlessUniformType {
+  vec4 zeroes[16];
+  vec4 first;
+  ivec4 index;
+  vec4 padding[14];
+} bindless_ubo[];
+
+layout(set = 3, binding = 23) uniform sampler2D bindless_tex2d[];
+
+layout(set = 3, binding = 24, std430) buffer bindlessBufferType {
+  vec4 colour;
+} bindless_buffer[];
+
 #endif
 
 layout(push_constant) uniform PushData {
@@ -1685,6 +1698,28 @@ void main()
                    float(bitfieldExtract(a, 32, 0)), float(bitfieldExtract(b, 32, 0)));
       break;
     }
+#if TEST_DESC_INDEXING
+    case 188:
+    {
+      Color.x = float(bindless_ubo[zerou+1].index.x);
+      Color.y = float(bindless_ubo[zerou+2].index.y);
+      Color.z = float(bindless_ubo[zerou+3].index.z);
+      Color.w = float(bindless_ubo[zerou+4].index.w);
+      break;
+    }
+    case 189:
+    {
+      uint index = bindless_ubo[zerou+10].index.y;
+      Color = texture(bindless_tex2d[index], inpos.xy);
+      break;
+    }
+    case 190:
+    {
+      uint index = bindless_ubo[zerou+8].index.z;
+      Color = bindless_buffer[index].colour;
+      break;
+    }
+#endif
     default: break;
   }
 }
@@ -4779,6 +4814,7 @@ OpMemberDecorate %cbuffer_struct 17 Offset 216    ; double doublePackSource
     // non-uniformly access each of these
     VkDescriptorSetLayout setlayout1 = VK_NULL_HANDLE;
     VkDescriptorSetLayout setlayout2 = VK_NULL_HANDLE;
+    VkDescriptorSetLayout setlayout3 = VK_NULL_HANDLE;
 
     if(descIndexing)
     {
@@ -4864,8 +4900,15 @@ OpMemberDecorate %cbuffer_struct 17 Offset 216    ; double doublePackSource
           {59, VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT},
       }));
 
+      setlayout3 = createDescriptorSetLayout(vkh::DescriptorSetLayoutCreateInfo({
+          {22, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 14, VK_SHADER_STAGE_FRAGMENT_BIT},
+          {23, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 14, VK_SHADER_STAGE_FRAGMENT_BIT},
+          {24, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 14, VK_SHADER_STAGE_FRAGMENT_BIT},
+      }));
+
       setLayouts.push_back(setlayout1);
       setLayouts.push_back(setlayout2);
+      setLayouts.push_back(setlayout3);
     }
 
     VkPipelineLayout layout = createPipelineLayout(vkh::PipelineLayoutCreateInfo(
@@ -5271,11 +5314,13 @@ OpMemberDecorate %cbuffer_struct 17 Offset 216    ; double doublePackSource
     VkDescriptorSet descset0 = allocateDescriptorSet(setlayout0);
     VkDescriptorSet descset1 = VK_NULL_HANDLE;
     VkDescriptorSet descset2 = VK_NULL_HANDLE;
+    VkDescriptorSet descset3 = VK_NULL_HANDLE;
 
     if(descIndexing)
     {
       descset1 = allocateDescriptorSet(setlayout1);
       descset2 = allocateDescriptorSet(setlayout2);
+      descset3 = allocateDescriptorSet(setlayout3);
     }
 
     vkh::updateDescriptorSets(
@@ -5295,7 +5340,7 @@ OpMemberDecorate %cbuffer_struct 17 Offset 216    ; double doublePackSource
                 {vkh::DescriptorImageInfo(shadowview, VK_IMAGE_LAYOUT_GENERAL, VK_NULL_HANDLE)}),
         });
 
-    Vec4f cbufferdata[64] = {};
+    Vec4f cbufferdata[16 * 16] = {};
 
     AllocatedBuffer cb(
         this,
@@ -5321,7 +5366,13 @@ OpMemberDecorate %cbuffer_struct 17 Offset 216    ; double doublePackSource
     cbufferdata[11] = Vec4f(98.125f, 76.375f, 54.5625f, 32.78125f);
 
     uint32_t index = 4;
-    memcpy(&cbufferdata[1], &index, sizeof(index));
+    memcpy(&cbufferdata[1].x, &index, sizeof(index));
+    index = 2;
+    memcpy(&cbufferdata[1].y, &index, sizeof(index));
+    index = 3;
+    memcpy(&cbufferdata[1].z, &index, sizeof(index));
+    index = 5;
+    memcpy(&cbufferdata[1].w, &index, sizeof(index));
 
     Vec4u unpack = {};
 
@@ -5342,6 +5393,21 @@ OpMemberDecorate %cbuffer_struct 17 Offset 216    ; double doublePackSource
     // move to account for offset
     memmove(&cbufferdata[16], &cbufferdata[0], sizeof(Vec4f) * 16);
     memset(&cbufferdata[0], 0, sizeof(Vec4f) * 16);
+
+    for(size_t i = 2; i < 14; ++i)
+    {
+      size_t cbufIdx = i * 16;
+      memcpy(&cbufferdata[cbufIdx], &cbufferdata[16], sizeof(Vec4f) * 16);
+
+      index = (i + 0) % 14;
+      memcpy(&cbufferdata[cbufIdx + 1].x, &index, sizeof(index));
+      index = (i + 2) % 14;
+      memcpy(&cbufferdata[cbufIdx + 1].y, &index, sizeof(index));
+      index = (i + 3) % 14;
+      memcpy(&cbufferdata[cbufIdx + 1].z, &index, sizeof(index));
+      index = (i + 5) % 14;
+      memcpy(&cbufferdata[cbufIdx + 1].w, &index, sizeof(index));
+    }
 
     cb.upload(cbufferdata);
 
@@ -5626,6 +5692,23 @@ OpMemberDecorate %cbuffer_struct 17 Offset 216    ; double doublePackSource
                     {vkh::DescriptorImageInfo(queryTestMSView, VK_IMAGE_LAYOUT_GENERAL, mipsampler)}),
             });
       }
+      for(uint32_t i = 0; i < 14; i++)
+      {
+        vkh::updateDescriptorSets(
+            device,
+            {
+                vkh::WriteDescriptorSet(
+                    descset3, 22, i, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                    {vkh::DescriptorBufferInfo(cb.buffer, i * sizeof(Vec4f) * 16)}),
+                vkh::WriteDescriptorSet(
+                    descset3, 23, i, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                    {vkh::DescriptorImageInfo(smileyview, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                              linearsampler)}),
+                vkh::WriteDescriptorSet(
+                    descset3, 24, i, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                    {vkh::DescriptorBufferInfo(store_buffer.buffer, i * sizeof(Vec4f) * 16)}),
+            });
+      }
     }
 
     while(Running())
@@ -5748,6 +5831,7 @@ OpMemberDecorate %cbuffer_struct 17 Offset 216    ; double doublePackSource
       {
         descSets.push_back(descset1);
         descSets.push_back(descset2);
+        descSets.push_back(descset3);
       }
 
       vkh::cmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, descSets,
