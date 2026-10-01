@@ -3243,6 +3243,15 @@ QString ShaderViewer::getRegNames(const RDTreeWidgetItem *item, uint32_t swizzle
     return ret;
   }
 
+  if(mapping.type == VarType::ConstantBlock)
+  {
+    const ShaderVariable *reg = GetDebugVariable(mapping.variables[0]);
+    ShaderBindIndex bind = reg->GetBindIndex();
+    const ConstantBlock &cb = m_ShaderDetails->constantBlocks[bind.index];
+    if(cb.bindArraySize == ~0U)
+      return reg->name + lit("[unbounded]");
+  }
+
   if(mapping.type == VarType::Sampler || mapping.type == VarType::ReadOnlyResource ||
      mapping.type == VarType::ReadWriteResource)
   {
@@ -4131,9 +4140,22 @@ void ShaderViewer::updateDebugState()
     // sure we add any remainders here. Constants might be un-touched by reflection info
     for(int i = 0; i < m_Trace->constantBlocks.count(); i++)
     {
-      rdcstr name = m_Trace->constantBlocks[i].name;
+      const ShaderVariable &cb = m_Trace->constantBlocks[i];
+      const rdcstr &name = cb.name;
       if(varsMapped.contains(name))
         continue;
+
+      ShaderBindIndex bind = cb.GetBindIndex();
+      const ConstantBlock &res = m_ShaderDetails->constantBlocks[bind.index];
+
+      if(res.bindArraySize == ~0U)
+      {
+        RDTreeWidgetItem *node =
+            new RDTreeWidgetItem({res.name, name, lit("[unbounded]"), QString()});
+        node->setTag(QVariant::fromValue(VariableTag(DebugVariableType::Constant, name)));
+        ui->constants->addTopLevelItem(node);
+        continue;
+      }
 
       RDTreeWidgetItem *node = new RDTreeWidgetItem({name, name, lit("Constant"), QString()});
       node->setTag(QVariant::fromValue(VariableTag(DebugVariableType::Constant, name)));
@@ -5164,6 +5186,23 @@ RDTreeWidgetItem *ShaderViewer::makeSourceVariableNode(const SourceVariableMappi
 
             value = QString();
           }
+        }
+      }
+      else if(r.type == DebugVariableType::Constant)
+      {
+        const ShaderVariable *reg = GetDebugVariable(r);
+        if(reg == NULL)
+          continue;
+
+        if(reg->IsDirectAccess())
+          continue;
+
+        ShaderBindIndex bind = reg->GetBindIndex();
+        const ConstantBlock &cb = m_ShaderDetails->constantBlocks[bind.index];
+        if(cb.bindArraySize == ~0U)
+        {
+          typeName = lit("[unbounded]");
+          value = QString();
         }
       }
       else
