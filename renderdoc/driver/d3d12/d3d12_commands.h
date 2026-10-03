@@ -91,6 +91,80 @@ struct D3D12EventNode
   bool hasExecuteData = false;
 };
 
+struct D3D12ActionTreeNode
+{
+  D3D12ActionTreeNode() {}
+  explicit D3D12ActionTreeNode(const ActionDescription &a) : action(a) {}
+  D3D12ActionTreeNode(const D3D12ActionTreeNode &other) { *this = other; }
+  ~D3D12ActionTreeNode() { SAFE_DELETE(state); }
+  ActionDescription action;
+  rdcarray<D3D12ActionTreeNode> children;
+
+  D3D12RenderState *state = NULL;
+
+  rdcarray<rdcpair<ResourceId, EventUsage>> resourceUsage;
+
+  rdcarray<ResourceId> executedCmds;
+
+  D3D12ActionTreeNode &operator=(const ActionDescription &a)
+  {
+    *this = D3D12ActionTreeNode(a);
+    return *this;
+  }
+
+  D3D12ActionTreeNode &operator=(const D3D12ActionTreeNode &a)
+  {
+    action = a.action;
+    children = a.children;
+
+    if(a.state)
+      state = new D3D12RenderState(*a.state);
+    else
+      state = NULL;
+
+    resourceUsage = a.resourceUsage;
+
+    executedCmds = a.executedCmds;
+    return *this;
+  }
+
+  void OLD_InsertAndUpdateIDs(const D3D12ActionTreeNode &child, uint32_t baseEventID,
+                              uint32_t baseDrawID)
+  {
+    for(size_t i = 0; i < child.resourceUsage.size(); i++)
+    {
+      resourceUsage.push_back(child.resourceUsage[i]);
+      resourceUsage.back().second.eventId += baseEventID;
+    }
+
+    for(size_t i = 0; i < child.children.size(); i++)
+    {
+      children.push_back(child.children[i]);
+      children.back().action.eventId += baseEventID;
+      children.back().action.actionId += baseDrawID;
+
+      for(APIEvent &ev : children.back().action.events)
+        ev.eventId += baseEventID;
+    }
+  }
+
+  rdcarray<ActionDescription> OLD_Bake()
+  {
+    rdcarray<ActionDescription> ret;
+    if(children.empty())
+      return ret;
+
+    ret.resize(children.size());
+    for(size_t i = 0; i < children.size(); i++)
+    {
+      ret[i] = children[i].action;
+      ret[i].children = children[i].OLD_Bake();
+    }
+
+    return ret;
+  }
+};
+
 struct D3D12ActionCallback
 {
   // the three callbacks are used to allow the callback implementor to either
@@ -166,13 +240,34 @@ struct AccStructPatchInfo;
 
 struct BakedCmdListInfo
 {
-  ~BakedCmdListInfo() {}
+  ~BakedCmdListInfo() { SAFE_DELETE(OLD_action); }
+  void OLD_ShiftForRemoved(uint32_t shiftActionID, uint32_t shiftEID, size_t idx);
 
   SubresourceStateVector GetState(WrappedID3D12Device *device, ResourceId id);
+
+  struct OLD_ExecuteData
+  {
+    uint32_t baseEvent = 0;
+    ID3D12Resource *argBuf = NULL;
+    ID3D12Resource *countBuf = NULL;
+    uint64_t argOffs = 0;
+    uint64_t countOffs = 0;
+    WrappedID3D12CommandSignature *sig = NULL;
+    UINT maxCount = 0;
+  };
+
+  rdcarray<OLD_ExecuteData> OLD_executeEvents;
 
   rdcarray<D3D12EventNode> eventNodes;
 
   rdcarray<PendingAnnotation> pendingAnnotations;
+
+  rdcarray<APIEvent> OLD_curEvents;
+  rdcarray<DebugMessage> OLD_debugMessages;
+  rdcarray<D3D12ActionTreeNode *> OLD_actionStack;
+  rdcarray<PendingAnnotation> OLD_annotations;
+
+  rdcarray<rdcpair<ResourceId, EventUsage>> OLD_resourceUsage;
 
   struct PatchRaytracing
   {
@@ -214,6 +309,11 @@ struct BakedCmdListInfo
 
   uint32_t beginChunk = 0;
   uint32_t endChunk = 0;
+
+  D3D12ActionTreeNode *OLD_action = NULL;    // the root action to copy from when submitting
+  uint32_t OLD_eventCount;     // how many events are in this cmd list, for quick skipping
+  uint32_t OLD_curEventID;     // current event ID while reading or executing
+  uint32_t OLD_actionCount;    // similar to above
 
   uint32_t eventCount;    // how many events are in this cmd list, for quick skipping
   uint32_t curEventID;    // current event ID while replaying, not used during loading
@@ -283,6 +383,7 @@ struct D3D12CommandData
     // list of base events
     // Map from bakeID -> vector<baseEventID>
     std::map<ResourceId, rdcarray<uint32_t>> cmdListExecs;
+    std::map<ResourceId, rdcarray<uint32_t>> OLD_cmdListExecs;
 
     // This is just the baked ID of the parent command list that's partially replayed
     // If we are in the middle of a partial replay - allows fast checking in all CmdList chunks,
@@ -311,6 +412,8 @@ struct D3D12CommandData
   SDObject *InsertEventNodes(WrappedID3D12GraphicsCommandList *replayList, ResourceId cmd,
                              BakedCmdListInfo &cmdListInfo);
 
+  void OLD_InsertActionsAndRefreshIDs(ResourceId cmd, const BakedCmdListInfo &cmdListInfo);
+
   // this is a list of uint64_t file offset -> uint32_t EIDs of where each
   // action is used. E.g. the action at offset 873954 is EID 50. If a
   // command list is executed more than once, there may be more than
@@ -334,8 +437,9 @@ struct D3D12CommandData
     }
   };
   rdcarray<ActionUse> m_ActionUses;
+  rdcarray<ActionUse> OLD_m_ActionUses;
 
-  rdcarray<DebugMessage> m_EventMessages;
+  rdcarray<DebugMessage> OLD_m_EventMessages;
 
   std::map<ResourceId, ID3D12GraphicsCommandListX *> m_RerecordCmds;
   rdcarray<ID3D12GraphicsCommandListX *> m_RerecordCmdList;
@@ -345,8 +449,13 @@ struct D3D12CommandData
   rdcarray<D3D12EventNode> m_EventNodes;
   bool m_AddedEventNode;
 
+  rdcarray<APIEvent> OLD_m_RootEvents;
+  rdcarray<APIEvent> OLD_m_Events;
+  bool OLD_m_AddedAction;
+
   uint64_t m_CurChunkOffset;
   SDChunkMetaData m_ChunkMetadata;
+  uint32_t OLD_m_RootEventID, OLD_m_RootActionID;
   uint32_t m_RootEventID;
   uint32_t m_FirstEventID, m_LastEventID;
   D3D12Chunk m_LastChunk;
@@ -360,6 +469,11 @@ struct D3D12CommandData
   rdcarray<PatchedRayDispatch> m_RayDispatches;
 
   std::map<ResourceId, rdcarray<EventUsage>> m_ResourceUses;
+  std::map<ResourceId, rdcarray<EventUsage>> OLD_m_ResourceUses;
+
+  D3D12ActionTreeNode OLD_m_ParentAction;
+
+  rdcarray<D3D12ActionTreeNode *> OLD_m_RootActionStack;
 
   struct IndirectReplayData
   {
@@ -367,6 +481,14 @@ struct D3D12CommandData
     ID3D12Resource *argsBuffer = NULL;
     UINT64 argsOffset = 0;
   } m_IndirectData;
+
+  rdcarray<D3D12ActionTreeNode *> &OLD_GetActionStack()
+  {
+    if(m_LastCmdListID != ResourceId())
+      return m_BakedCmdListInfo[m_LastCmdListID].OLD_actionStack;
+
+    return OLD_m_RootActionStack;
+  }
 
   void GetIndirectBuffer(size_t size, ID3D12Resource **buf, uint64_t *offs);
 
@@ -402,5 +524,19 @@ struct D3D12CommandData
                                 uint32_t rangeSize);
 
   void AddResourceUsage(D3D12EventNode &eventNode, ResourceId id, ResourceUsage usage);
+
   void AddCPUUsage(ResourceId id, ResourceUsage usage);
+
+  void OLD_AddAction(const ActionDescription &a);
+  void OLD_AddEvent();
+
+  void OLD_AddUsage(const D3D12RenderState &state, D3D12ActionTreeNode &actionNode);
+
+  void OLD_AddUsageForBindInRootSig(const D3D12RenderState &state, D3D12ActionTreeNode &actionNode,
+                                    const D3D12RenderState::RootSignature *rootsig,
+                                    D3D12_DESCRIPTOR_RANGE_TYPE type, uint32_t space, uint32_t bind,
+                                    uint32_t rangeSize);
+
+  void OLD_AddResourceUsage(D3D12ActionTreeNode &actionNode, ResourceId id, uint32_t EID,
+                            ResourceUsage usage);
 };

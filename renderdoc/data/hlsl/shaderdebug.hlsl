@@ -80,6 +80,13 @@ void RENDERDOC_DebugSampleVS(uint id
   else
     uv = 0.0f.xxxx;
 
+  // 0, -4 : UV = uv + ddy * 2
+  // 0,  0 : UV = uv
+  // 4,  0 : UV = uv + ddx * 2
+  // pos = float4((id == 2) ? 4.0f : 0.0f, (id == 0) ? -4.0f : 0.0f, 0.5, 1.0);
+  // -1, -3 : UV = uv + ddy * 2
+  // -1,  1 : UV = uv
+  //  3,  1 : UV = uv + ddx * 2
   pos = float4((id == 2) ? 3.0f : -1.0f, (id == 0) ? -3.0f : 1.0f, 0.5, 1.0);
 }
 

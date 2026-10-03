@@ -463,11 +463,15 @@ bool WrappedID3D12CommandQueue::Serialise_ExecuteCommandLists(SerialiserType &se
       D3D12EventNode &eventNode = m_Cmd.m_LoadingEventNode;
       for(const DebugMessage &msg : DebugMessages)
         eventNode.debugMessages.push_back(msg);
+
+      for(const DebugMessage &msg : DebugMessages)
+        m_Cmd.OLD_m_EventMessages.push_back(msg);
     }
   }
 
   SERIALISE_CHECK_READ_ERRORS();
 
+  RDCASSERT(m_Cmd.m_BakedCmdListInfo.find(ResourceId()) == m_Cmd.m_BakedCmdListInfo.end());
   if(IsReplayingAndReading())
   {
     ID3D12CommandQueue *real = Unwrap(pQueue);
@@ -488,6 +492,10 @@ bool WrappedID3D12CommandQueue::Serialise_ExecuteCommandLists(SerialiserType &se
     {
       m_Cmd.AddEvent();
 
+      // we're adding multiple events, need to increment ourselves
+      m_Cmd.OLD_m_RootEventID++;
+
+      size_t oldSize = m_StructuredFile->chunks.size();
       for(uint32_t i = 0; i < NumCommandLists; i++)
       {
         ResourceId cmd = GetResID(ppCommandLists[i]);
@@ -498,6 +506,7 @@ bool WrappedID3D12CommandQueue::Serialise_ExecuteCommandLists(SerialiserType &se
           m_pDevice->DeviceWaitForIdle();
 
         BakedCmdListInfo &info = m_Cmd.m_BakedCmdListInfo[cmd];
+        RDCASSERT(m_Cmd.m_BakedCmdListInfo.find(ResourceId()) == m_Cmd.m_BakedCmdListInfo.end());
 
         if(D3D12_Debug_RT_Auditing())
         {
@@ -581,6 +590,8 @@ bool WrappedID3D12CommandQueue::Serialise_ExecuteCommandLists(SerialiserType &se
           }
         }
 
+        RDCASSERTEQUAL(info.hasExecuteDatas, !info.OLD_executeEvents.empty());
+
         if(info.hasExecuteDatas)
         {
           // ensure all GPU work has finished for readback of arguments
@@ -588,13 +599,19 @@ bool WrappedID3D12CommandQueue::Serialise_ExecuteCommandLists(SerialiserType &se
 
           if(m_pDevice->HasFatalError())
             return false;
+
+          // readback the patch buffer and update recorded events
+          for(size_t c = 0; c < info.OLD_executeEvents.size(); c++)
+            m_ReplayList->OLD_FinaliseExecuteIndirectEvents(info, info.OLD_executeEvents[c]);
         }
       }
+      m_StructuredFile->chunks.resize(oldSize);
 
       for(uint32_t i = 0; i < NumCommandLists; i++)
       {
         ResourceId cmd = GetResID(ppCommandLists[i]);
         m_pDevice->ApplyBarriers(m_Cmd.m_BakedCmdListInfo[cmd].barriers);
+        RDCASSERT(m_Cmd.m_BakedCmdListInfo.find(ResourceId()) == m_Cmd.m_BakedCmdListInfo.end());
       }
 
       rdcstr basename = StringFormat::Fmt("ExecuteCommandLists(%u)", NumCommandLists);
@@ -604,6 +621,7 @@ bool WrappedID3D12CommandQueue::Serialise_ExecuteCommandLists(SerialiserType &se
         ResourceId cmd = GetResID(ppCommandLists[c]);
 
         BakedCmdListInfo &cmdListInfo = m_Cmd.m_BakedCmdListInfo[cmd];
+        RDCASSERT(m_Cmd.m_BakedCmdListInfo.find(ResourceId()) == m_Cmd.m_BakedCmdListInfo.end());
 
         // add a fake marker
         ActionDescription action;
@@ -613,17 +631,77 @@ bool WrappedID3D12CommandQueue::Serialise_ExecuteCommandLists(SerialiserType &se
           action.flags = ActionFlags::CommandBufferBoundary | ActionFlags::PassBoundary |
                          ActionFlags::BeginPass;
           m_Cmd.AddEvent();
+          RDCASSERT(m_Cmd.m_BakedCmdListInfo.find(ResourceId()) == m_Cmd.m_BakedCmdListInfo.end());
+
+          m_Cmd.OLD_m_RootEvents.back().chunkIndex = cmdListInfo.beginChunk;
+          m_Cmd.OLD_m_Events.back().chunkIndex = cmdListInfo.beginChunk;
 
           m_Cmd.AddAction(action);
+          RDCASSERT(m_Cmd.m_BakedCmdListInfo.find(ResourceId()) == m_Cmd.m_BakedCmdListInfo.end());
+          m_Cmd.OLD_m_RootEventID++;
+
           D3D12EventNode &eventNode = m_Cmd.GetLastEventNode();
           eventNode.event.chunkIndex = cmdListInfo.beginChunk;
           eventNode.addActionUse = false;
           eventNode.addPrimaryExecute = true;
           eventNode.primaryCmdId = cmd;
         }
+        RDCASSERT(m_Cmd.m_BakedCmdListInfo.find(ResourceId()) == m_Cmd.m_BakedCmdListInfo.end());
+
+        // insert the baked command list in-line into this list of nodes, assigning new event and
+        // drawIDs
+        oldSize = m_StructuredFile->chunks.size();
+        RDCASSERT(m_Cmd.m_BakedCmdListInfo.find(ResourceId()) == m_Cmd.m_BakedCmdListInfo.end());
+        m_Cmd.OLD_InsertActionsAndRefreshIDs(cmd, cmdListInfo);
+        RDCASSERT(m_Cmd.m_BakedCmdListInfo.find(ResourceId()) == m_Cmd.m_BakedCmdListInfo.end());
+        m_StructuredFile->chunks.resize(oldSize);
 
         // insert the baked command buffer into the root events, resolving indirect actions
         SDObject *localAnnotations = m_Cmd.InsertEventNodes(m_ReplayList, cmd, cmdListInfo);
+
+        // JAKE TODO: BUILD THE SECONDARY SUBMIT TREE
+        for(size_t e = 0; e < cmdListInfo.OLD_action->executedCmds.size(); e++)
+        {
+          rdcarray<uint32_t> &submits =
+              m_Cmd.m_Partial[D3D12CommandData::Secondary]
+                  .OLD_cmdListExecs[cmdListInfo.OLD_action->executedCmds[e]];
+
+          for(size_t s = 0; s < submits.size(); s++)
+            submits[s] += m_Cmd.OLD_m_RootEventID;
+        }
+
+        for(size_t i = 0; i < cmdListInfo.OLD_debugMessages.size(); i++)
+        {
+          DebugMessage msg = cmdListInfo.OLD_debugMessages[i];
+          msg.eventId += m_Cmd.OLD_m_RootEventID;
+          m_pDevice->OLD_AddDebugMessage(msg);
+        }
+
+        // only primary command lists can be submitted
+        m_Cmd.m_Partial[D3D12CommandData::Primary].OLD_cmdListExecs[cmd].push_back(
+            m_Cmd.OLD_m_RootEventID);
+
+        // pull in any remaining events on the command buffer that weren't added to an action
+        for(size_t e = 0; e < cmdListInfo.OLD_curEvents.size(); e++)
+        {
+          APIEvent apievent = cmdListInfo.OLD_curEvents[e];
+          apievent.eventId += m_Cmd.OLD_m_RootEventID;
+
+          m_Cmd.OLD_m_RootEvents.push_back(apievent);
+          m_Cmd.OLD_m_Events.resize_for_index(apievent.eventId);
+          m_Cmd.OLD_m_Events[apievent.eventId] = apievent;
+        }
+
+        for(auto it = cmdListInfo.OLD_resourceUsage.begin();
+            it != cmdListInfo.OLD_resourceUsage.end(); ++it)
+        {
+          EventUsage u = it->second;
+          u.eventId += m_Cmd.OLD_m_RootEventID;
+          m_Cmd.OLD_m_ResourceUses[it->first].push_back(u);
+        }
+
+        m_Cmd.OLD_m_RootEventID += cmdListInfo.OLD_eventCount;
+        m_Cmd.OLD_m_RootActionID += cmdListInfo.OLD_actionCount;
 
         {
           action.customName =
@@ -632,7 +710,11 @@ bool WrappedID3D12CommandQueue::Serialise_ExecuteCommandLists(SerialiserType &se
               ActionFlags::CommandBufferBoundary | ActionFlags::PassBoundary | ActionFlags::EndPass;
           m_Cmd.AddEvent();
 
+          m_Cmd.OLD_m_RootEvents.back().chunkIndex = cmdListInfo.endChunk;
+          m_Cmd.OLD_m_Events.back().chunkIndex = cmdListInfo.endChunk;
+
           m_Cmd.AddAction(action);
+          m_Cmd.OLD_m_RootEventID++;
 
           D3D12EventNode &eventNode = m_Cmd.GetLastEventNode();
           eventNode.event.chunkIndex = cmdListInfo.endChunk;
@@ -652,16 +734,18 @@ bool WrappedID3D12CommandQueue::Serialise_ExecuteCommandLists(SerialiserType &se
             delete localAnnotations;
           }
         }
+        RDCASSERT(m_Cmd.m_BakedCmdListInfo.find(ResourceId()) == m_Cmd.m_BakedCmdListInfo.end());
       }
 
       // account for the outer loop thinking we've added one event and incrementing,
       // since we've done all the handling ourselves this will be off by one.
-      m_Cmd.m_RootEventID--;
+      m_Cmd.OLD_m_RootEventID--;
     }
     else
     {
       // account for the queue submit event
       m_Cmd.m_RootEventID++;
+      m_Cmd.OLD_m_RootEventID++;
 
       uint32_t startEID = m_Cmd.m_RootEventID;
 
@@ -671,15 +755,18 @@ bool WrappedID3D12CommandQueue::Serialise_ExecuteCommandLists(SerialiserType &se
         ResourceId cmd = GetResID(ppCommandLists[c]);
 
         m_Cmd.m_RootEventID += m_Cmd.m_BakedCmdListInfo[cmd].eventCount;
+        m_Cmd.OLD_m_RootEventID += m_Cmd.m_BakedCmdListInfo[cmd].OLD_eventCount;
 
         // 2 extra for the virtual labels around the command list
         {
           m_Cmd.m_RootEventID += 2;
+          m_Cmd.OLD_m_RootEventID += 2;
         }
       }
 
       // same accounting for the outer loop as above
       m_Cmd.m_RootEventID--;
+      m_Cmd.OLD_m_RootEventID--;
 
       if(NumCommandLists == 0)
       {
@@ -759,6 +846,7 @@ bool WrappedID3D12CommandQueue::Serialise_ExecuteCommandLists(SerialiserType &se
     }
   }
 
+  RDCASSERT(m_Cmd.m_BakedCmdListInfo.find(ResourceId()) == m_Cmd.m_BakedCmdListInfo.end());
   return true;
 }
 
@@ -1287,6 +1375,9 @@ bool WrappedID3D12CommandQueue::Serialise_BeginEvent(SerialiserType &ser, UINT M
 
       m_Cmd.AddEvent();
       m_Cmd.AddAction(action);
+
+      // now push the action stack
+      m_Cmd.OLD_GetActionStack().push_back(&m_Cmd.OLD_GetActionStack().back()->children.back());
     }
   }
 
@@ -1328,6 +1419,9 @@ bool WrappedID3D12CommandQueue::Serialise_EndEvent(SerialiserType &ser)
 
       m_Cmd.AddEvent();
       m_Cmd.AddAction(action);
+
+      if(m_Cmd.OLD_GetActionStack().size() > 1)
+        m_Cmd.OLD_GetActionStack().pop_back();
     }
   }
 

@@ -974,38 +974,6 @@ void Reflector::CheckDebuggable(bool &debuggable, rdcstr &debugStatus) const
     debugStatus += StringFormat::Fmt("Unsupported extended instruction set: '%s'\n", setname.c_str());
   }
 
-  // we don't currently support debugging unbounded arrays of cbuffers
-  for(const Variable &v : globals)
-  {
-    if(v.storage == StorageClass::Uniform)
-    {
-      const DataType &type = dataTypes[v.type];
-
-      // global variables should all be pointers into opaque storage
-      RDCASSERT(type.type == DataType::PointerType);
-
-      const DataType *innertype = &dataTypes[type.InnerType()];
-
-      if(innertype->type == DataType::ArrayType)
-      {
-        if(innertype->length == Id())
-        {
-          // unbounded SSBO is supported
-          const DataType *elementType = &dataTypes[innertype->InnerType()];
-          if(decorations[elementType->id].flags & Decorations::BufferBlock)
-            continue;
-
-          debuggable = false;
-          rdcstr name = strings[v.id];
-          if(name.empty())
-            name = GetRawName(v.id);
-          debugStatus +=
-              StringFormat::Fmt("Unsupported unbounded uniform buffer array: '%s'\n", name.c_str());
-        }
-      }
-    }
-  }
-
   debugStatus.trim();
 }
 
@@ -1547,29 +1515,32 @@ ShaderDebugTrace *Debugger::BeginDebug(DebugAPIWrapper *api, const ShaderStage s
             }
           };
 
-          if(isArray)
+          bool unbounded = isArray && (arraySize == ~0U);
+          if(!unbounded)
           {
-            if(arraySize == ~0U)
+            if(isArray)
             {
-              RDCERR("Unsupported runtime array of UBOs");
-              arraySize = 1;
+              var.members.reserve(arraySize);
+
+              for(uint32_t a = 0; a < arraySize; a++)
+              {
+                binding.arrayElement = a;
+                var.members.push_back(ShaderVariable());
+                var.members.back().name = StringFormat::Fmt("[%u]", a);
+                WalkVariable<ShaderVariable, true>(decorations[v.id], *innertype, 0U, false,
+                                                   var.members.back(), rdcstr(), cbufferCallback);
+              }
             }
-
-            var.members.reserve(arraySize);
-
-            for(uint32_t a = 0; a < arraySize; a++)
+            else
             {
-              binding.arrayElement = a;
-              var.members.push_back(ShaderVariable());
-              var.members.back().name = StringFormat::Fmt("[%u]", a);
-              WalkVariable<ShaderVariable, true>(decorations[v.id], *innertype, 0U, false,
-                                                 var.members.back(), rdcstr(), cbufferCallback);
+              WalkVariable<ShaderVariable, true>(decorations[v.id], *innertype, 0U, false, var,
+                                                 rdcstr(), cbufferCallback);
             }
           }
           else
           {
-            WalkVariable<ShaderVariable, true>(decorations[v.id], *innertype, 0U, false, var,
-                                               rdcstr(), cbufferCallback);
+            enablePointerFlags(var, PointerFlags::GlobalArrayBinding);
+            var.SetBindIndex(binding);
           }
 
           sourceVar.type = VarType::ConstantBlock;
@@ -2140,7 +2111,7 @@ ShaderDebugTrace *Debugger::BeginDebug(DebugAPIWrapper *api, const ShaderStage s
   ret->inputs = active.inputs;
 
   mtSimulation = apiWrapper->SimulateThreaded();
-  if(threadsInWorkgroup < 4)
+  if(threadsInWorkgroup < 1024)
     mtSimulation = false;
 
   AtomicStore(&atomic_simulationFinished, 0);

@@ -1526,6 +1526,32 @@ rdcarray<PixelModification> ReplayController::PixelHistory(ResourceId target, ui
       case ResourceUsage::ResolveSrc:
       case ResourceUsage::Barrier:
       case ResourceUsage::Indirect:
+      case ResourceUsage::Pipeline:
+      case ResourceUsage::PipelineLayout:
+      case ResourceUsage::DescriptorSet:
+      case ResourceUsage::DescriptorSetLayout:
+      case ResourceUsage::DescriptorBuffer:
+      case ResourceUsage::VS_Shader:
+      case ResourceUsage::HS_Shader:
+      case ResourceUsage::DS_Shader:
+      case ResourceUsage::GS_Shader:
+      case ResourceUsage::PS_Shader:
+      case ResourceUsage::CS_Shader:
+      case ResourceUsage::TS_Shader:
+      case ResourceUsage::MS_Shader:
+      case ResourceUsage::RenderPass:
+      case ResourceUsage::Framebuffer:
+      case ResourceUsage::Sampler:
+      case ResourceUsage::ImageView:
+      case ResourceUsage::BufferView:
+      case ResourceUsage::Bind:
+      case ResourceUsage::UnBind:
+      case ResourceUsage::Read:
+      case ResourceUsage::Reset:
+      case ResourceUsage::Signal:
+      case ResourceUsage::Wait:
+      case ResourceUsage::Submit:
+      case ResourceUsage::Used:
         // read-only, not a valid pixel history event
         continue;
 
