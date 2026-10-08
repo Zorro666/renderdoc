@@ -2140,7 +2140,7 @@ ShaderDebugTrace *Debugger::BeginDebug(DebugAPIWrapper *api, const ShaderStage s
   ret->inputs = active.inputs;
 
   mtSimulation = apiWrapper->SimulateThreaded();
-  if(threadsInWorkgroup < 4)
+  if(threadsInWorkgroup < 1024)
     mtSimulation = false;
 
   AtomicStore(&atomic_simulationFinished, 0);
