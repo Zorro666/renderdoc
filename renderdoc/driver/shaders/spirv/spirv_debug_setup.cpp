@@ -49,6 +49,7 @@ enum class PointerFlags
   SSBO = 0x2,
   GlobalArrayBinding = 0x4,
   DereferencedPhysical = 0x8,
+  StructArrayBinding = 0x10,
 };
 
 BITMASK_OPERATORS(PointerFlags);
@@ -974,38 +975,6 @@ void Reflector::CheckDebuggable(bool &debuggable, rdcstr &debugStatus) const
     debugStatus += StringFormat::Fmt("Unsupported extended instruction set: '%s'\n", setname.c_str());
   }
 
-  // we don't currently support debugging unbounded arrays of cbuffers
-  for(const Variable &v : globals)
-  {
-    if(v.storage == StorageClass::Uniform)
-    {
-      const DataType &type = dataTypes[v.type];
-
-      // global variables should all be pointers into opaque storage
-      RDCASSERT(type.type == DataType::PointerType);
-
-      const DataType *innertype = &dataTypes[type.InnerType()];
-
-      if(innertype->type == DataType::ArrayType)
-      {
-        if(innertype->length == Id())
-        {
-          // unbounded SSBO is supported
-          const DataType *elementType = &dataTypes[innertype->InnerType()];
-          if(decorations[elementType->id].flags & Decorations::BufferBlock)
-            continue;
-
-          debuggable = false;
-          rdcstr name = strings[v.id];
-          if(name.empty())
-            name = GetRawName(v.id);
-          debugStatus +=
-              StringFormat::Fmt("Unsupported unbounded uniform buffer array: '%s'\n", name.c_str());
-        }
-      }
-    }
-  }
-
   debugStatus.trim();
 }
 
@@ -1439,8 +1408,50 @@ ShaderDebugTrace *Debugger::BeginDebug(DebugAPIWrapper *api, const ShaderStage s
           var.rows = 1;
           var.columns = 1;
           var.type = VarType::ReadWriteResource;
+          enablePointerFlags(var, PointerFlags::SSBO);
 
           int32_t idx = patchData.rwInterface.indexOf(v.id);
+
+          // GL SSBO Arrays
+          if((api->GetGraphicsAPI() == GraphicsAPI::OpenGL) && isArray)
+          {
+            enablePointerFlags(var, PointerFlags::StructArrayBinding);
+            for(uint32_t i = 0; i < arraySize; ++i)
+            {
+              ShaderVariable member;
+
+              member.rows = 1;
+              member.columns = 1;
+              member.name = StringFormat::Fmt("[%u]", i);
+              member.type = VarType::ReadWriteResource;
+              enablePointerFlags(member, PointerFlags::SSBO);
+
+              // Bind to index "idx+i" because GL resource arrays are expanded in element order
+              if(idx >= 0)
+                member.SetBindIndex(
+                    ShaderBindIndex(DescriptorCategory::ReadWriteResource, idx + i, 0));
+              else
+                member.SetBindIndex(ShaderBindIndex());
+
+              var.members.push_back(member);
+
+              // Source mapping per array element because GL resource arrays are expanded
+              SourceVariableMapping srcVar;
+              srcVar.name = StringFormat::Fmt("%s[%u]", sourceName.c_str(), i);
+              srcVar.type = var.members[i].type;
+              srcVar.rows = 1;
+              srcVar.columns = 1;
+              srcVar.offset = 0;
+              srcVar.variables.push_back(
+                  DebugVariableReference(DebugVariableType::ReadWriteResource,
+                                         StringFormat::Fmt("%s[%u]", var.name.c_str(), i)));
+              ret->sourceVars.push_back(srcVar);
+            }
+
+            global.readWriteResources.push_back(var);
+            pointerIDs.push_back(GLOBAL_POINTER(v.id, readWriteResources));
+            continue;
+          }
 
           // on GL we may have buffers which are dead-code eliminated but remain part of the simulated
           // code. Because we base our interfaces off the GLSL reflected data it may not be present
@@ -1471,15 +1482,17 @@ ShaderDebugTrace *Debugger::BeginDebug(DebugAPIWrapper *api, const ShaderStage s
           ShaderBindIndex binding;
 
           binding.category = DescriptorCategory::ConstantBlock;
-          binding.index = patchData.cblockInterface.indexOf(v.id);
+          int32_t idx = patchData.cblockInterface.indexOf(v.id);
 
           // on GL we may have buffers which are dead-code eliminated but remain part of the simulated
           // code. Because we base our interfaces off the GLSL reflected data it may not be present
-          if(binding.index == ~0U)
+          if(idx >= 0)
+            binding.index = idx;
+          else
             binding = ShaderBindIndex();
 
           if(api->GetGraphicsAPI() == GraphicsAPI::Vulkan)
-            RDCASSERT(binding.index != ~0U);
+            RDCASSERT(idx >= 0);
 
           auto cbufferCallback = [this, &binding](
                                      ShaderVariable &var, const Decorations &curDecorations,
@@ -1547,29 +1560,56 @@ ShaderDebugTrace *Debugger::BeginDebug(DebugAPIWrapper *api, const ShaderStage s
             }
           };
 
-          if(isArray)
-          {
-            if(arraySize == ~0U)
-            {
-              RDCERR("Unsupported runtime array of UBOs");
-              arraySize = 1;
-            }
-
-            var.members.reserve(arraySize);
-
-            for(uint32_t a = 0; a < arraySize; a++)
-            {
-              binding.arrayElement = a;
-              var.members.push_back(ShaderVariable());
-              var.members.back().name = StringFormat::Fmt("[%u]", a);
-              WalkVariable<ShaderVariable, true>(decorations[v.id], *innertype, 0U, false,
-                                                 var.members.back(), rdcstr(), cbufferCallback);
-            }
-          }
-          else
+          if(!isArray)
           {
             WalkVariable<ShaderVariable, true>(decorations[v.id], *innertype, 0U, false, var,
                                                rdcstr(), cbufferCallback);
+          }
+          else
+          {
+            var.rows = 1;
+            var.columns = 1;
+            var.type = VarType::ConstantBlock;
+
+            // GL UBO Arrays
+            if((api->GetGraphicsAPI() == GraphicsAPI::OpenGL))
+            {
+              enablePointerFlags(var, PointerFlags::StructArrayBinding);
+              for(uint32_t i = 0; i < arraySize; ++i)
+              {
+                ShaderVariable member;
+
+                member.rows = 1;
+                member.columns = 1;
+                member.name = StringFormat::Fmt("[%u]", i);
+                member.type = VarType::ConstantBlock;
+
+                // Bind to index "idx+i" because GL resource arrays are expanded in element order
+                if(idx >= 0)
+                  member.SetBindIndex(ShaderBindIndex(DescriptorCategory::ConstantBlock, idx + i, 0));
+                else
+                  member.SetBindIndex(ShaderBindIndex());
+
+                var.members.push_back(member);
+
+                // Source mapping per array element because GL resource arrays are expanded
+                SourceVariableMapping srcVar;
+                srcVar.name = StringFormat::Fmt("%s[%u]", sourceName.c_str(), i);
+                srcVar.type = var.members[i].type;
+                srcVar.rows = 1;
+                srcVar.columns = 1;
+                srcVar.offset = 0;
+                srcVar.variables.push_back(DebugVariableReference(
+                    DebugVariableType::Constant, StringFormat::Fmt("%s[%u]", var.name.c_str(), i)));
+                ret->sourceVars.push_back(srcVar);
+              }
+
+              global.constantBlocks.push_back(var);
+              pointerIDs.push_back(GLOBAL_POINTER(v.id, constantBlocks));
+              continue;
+            }
+            enablePointerFlags(var, PointerFlags::GlobalArrayBinding);
+            var.SetBindIndex(binding);
           }
 
           sourceVar.type = VarType::ConstantBlock;
@@ -1706,7 +1746,7 @@ ShaderDebugTrace *Debugger::BeginDebug(DebugAPIWrapper *api, const ShaderStage s
           else if(memberType == VarType::ReadWriteResource)
             idx = patchData.rwInterface.indexOf(v.id);
 
-          uint32_t len = uintComp(GetActiveLane().ids[innertype->length], 0);
+          uint32_t len = EvaluateConstant(innertype->length, specInfo).value.u32v[0];
           for(uint32_t i = 0; i < len; ++i)
           {
             ShaderVariable member;
@@ -2140,7 +2180,7 @@ ShaderDebugTrace *Debugger::BeginDebug(DebugAPIWrapper *api, const ShaderStage s
   ret->inputs = active.inputs;
 
   mtSimulation = apiWrapper->SimulateThreaded();
-  if(threadsInWorkgroup < 4)
+  if(threadsInWorkgroup < 1024)
     mtSimulation = false;
 
   AtomicStore(&atomic_simulationFinished, 0);
@@ -3338,7 +3378,7 @@ ShaderVariable Debugger::MakeCompositePointer(const ShaderVariable &base, Id id,
   // We only take this if this is the FIRST dereference from the global pointer.
   // If the SPIR-V does something like structType *_1234 =
   if((leaf->type == VarType::ReadWriteResource || leaf->type == VarType::ReadOnlyResource ||
-      leaf->type == VarType::Sampler) &&
+      leaf->type == VarType::Sampler || leaf->type == VarType::ConstantBlock) &&
      checkPointerFlags(*leaf, PointerFlags::GlobalArrayBinding) &&
      getBufferTypeId(base) == rdcspv::Id())
   {
@@ -3346,11 +3386,13 @@ ShaderVariable Debugger::MakeCompositePointer(const ShaderVariable &base, Id id,
   }
 
   if((leaf->type == VarType::ReadWriteResource && checkPointerFlags(*leaf, PointerFlags::SSBO)) ||
-     physicalPointer)
+     physicalPointer || leaf->type == VarType::ConstantBlock)
   {
     ShaderVariable ret;
     uint64_t byteOffset = 0;
     const DataType *type = NULL;
+
+    bool isStructArray = checkPointerFlags(*leaf, PointerFlags::StructArrayBinding);
 
     if(physicalPointer)
     {
@@ -3369,13 +3411,24 @@ ShaderVariable Debugger::MakeCompositePointer(const ShaderVariable &base, Id id,
     }
     else
     {
-      ret = MakePointerVariable(id, leaf);
-
-      byteOffset = getByteOffset(base);
       type = &dataTypes[idTypes[id]];
 
       RDCASSERT(type->type == DataType::PointerType);
       type = &dataTypes[type->InnerType()];
+
+      if(isStructArray)
+      {
+        // TODO JAKE : DEFENSIVE CODE FOR INDEX 0
+        // First index is the member index into the struct_array
+        leaf = &leaf->members[indices[0]];
+
+        RDCASSERT(type->type == DataType::ArrayType);
+        type = &dataTypes[type->InnerType()];
+        id = type->id;
+      }
+      ret = MakePointerVariable(id, leaf);
+
+      byteOffset = getByteOffset(base);
     }
 
     setMatrixStride(ret, getMatrixStride(base));
@@ -3394,6 +3447,10 @@ ShaderVariable Debugger::MakeCompositePointer(const ShaderVariable &base, Id id,
     {
       setBindArrayIndex(ret, indices[i++]);
       type = &dataTypes[type->InnerType()];
+    }
+    else if(isStructArray)
+    {
+      i++;
     }
     else
     {
@@ -3670,7 +3727,8 @@ DeviceOpResult Debugger::ReadFromPointer(const ShaderVariable &ptr, ShaderVariab
       ret = ShaderVariable(ptr.name, 0, 0, 0, 0);
       return DeviceOpResult::Succeeded;
     }
-    if(inner->type == VarType::ReadWriteResource && checkPointerFlags(*inner, PointerFlags::SSBO))
+    if((inner->type == VarType::ReadWriteResource && checkPointerFlags(*inner, PointerFlags::SSBO)) ||
+       (inner->type == VarType::ConstantBlock))
     {
       typeId = getBufferTypeId(ptr);
       byteOffset = getByteOffset(ptr);
@@ -3799,7 +3857,7 @@ DeviceOpResult Debugger::ReadFromPointer(const ShaderVariable &ptr, ShaderVariab
   ret.name = ptr.name;
 
   if(inner->type == VarType::ReadOnlyResource || inner->type == VarType::ReadWriteResource ||
-     inner->type == VarType::Sampler)
+     inner->type == VarType::Sampler || inner->type == VarType::ConstantBlock)
   {
     bind = ret.GetBindIndex();
     bind.arrayElement = getBindArrayIndex(ptr);
@@ -3880,7 +3938,7 @@ bool Debugger::IsOpaquePointer(const ShaderVariable &ptr) const
 
   const ShaderVariable *inner = getPointer(ptr);
   return inner->type == VarType::ReadOnlyResource || inner->type == VarType::Sampler ||
-         inner->type == VarType::ReadWriteResource;
+         inner->type == VarType::ReadWriteResource || inner->type == VarType::ConstantBlock;
 }
 
 bool Debugger::IsPhysicalPointer(const ShaderVariable &ptr) const

@@ -2510,32 +2510,35 @@ bool ThreadState::ExecuteInstruction(const rdcarray<ThreadState> &workgroup)
             const ResourceReference *resRef = m_Program.GetResourceReference(resultId);
             if(resRef)
             {
-              const rdcarray<ShaderVariable> *list = NULL;
-              // a static known handle which should be in the global resources container
-              switch(resRef->resourceBase.resClass)
-              {
-                case ResourceClass::CBuffer: list = &m_GlobalState.constantBlocks; break;
-                case ResourceClass::SRV: list = &m_GlobalState.readOnlyResources; break;
-                case ResourceClass::UAV: list = &m_GlobalState.readWriteResources; break;
-                case ResourceClass::Sampler: list = &m_GlobalState.samplers; break;
-                default:
-                  RDCERR("Invalid ResourceClass %u", (uint32_t)resRef->resourceBase.resClass);
-                  break;
-              };
-              RDCASSERT(list);
-
               rdcstr resName = Debugger::GetResourceBaseName(&m_Program, resRef->resourceBase);
-
-              const rdcarray<ShaderVariable> &resources = *list;
-              result.name.clear();
               size_t constantBlockIndex = ~0U;
-              for(uint32_t i = 0; i < resources.size(); ++i)
+              result.name.clear();
+
+              // Non-arrayed resource : a static known handle which should be in the global resources container
+              if(resRef->resourceBase.regCount == 1)
               {
-                if(resources[i].name == resName)
+                const rdcarray<ShaderVariable> *list = NULL;
+                switch(resRef->resourceBase.resClass)
                 {
-                  constantBlockIndex = i;
-                  result = resources[i];
-                  break;
+                  case ResourceClass::CBuffer: list = &m_GlobalState.constantBlocks; break;
+                  case ResourceClass::SRV: list = &m_GlobalState.readOnlyResources; break;
+                  case ResourceClass::UAV: list = &m_GlobalState.readWriteResources; break;
+                  case ResourceClass::Sampler: list = &m_GlobalState.samplers; break;
+                  default:
+                    RDCERR("Invalid ResourceClass %u", (uint32_t)resRef->resourceBase.resClass);
+                    break;
+                };
+                RDCASSERT(list);
+
+                const rdcarray<ShaderVariable> &resources = *list;
+                for(uint32_t i = 0; i < resources.size(); ++i)
+                {
+                  if(resources[i].name == resName)
+                  {
+                    constantBlockIndex = i;
+                    result = resources[i];
+                    break;
+                  }
                 }
               }
               if(result.name.isEmpty())
@@ -2553,11 +2556,23 @@ bool ThreadState::ExecuteInstruction(const rdcarray<ThreadState> &workgroup)
                     uint32_t arrayIndex = arg.value.u32v[0];
                     RDCASSERT(arrayIndex >= resRef->resourceBase.regBase);
                     arrayIndex -= resRef->resourceBase.regBase;
-                    bool isSRV = (resRef->resourceBase.resClass == ResourceClass::SRV);
-                    DescriptorCategory category = isSRV ? DescriptorCategory::ReadOnlyResource
-                                                        : DescriptorCategory::ReadWriteResource;
+                    DescriptorCategory category = DescriptorCategory::Unknown;
+                    if(resRef->resourceBase.resClass == ResourceClass::SRV)
+                    {
+                      category = DescriptorCategory::ReadOnlyResource;
+                      result.type = VarType::ReadOnlyResource;
+                    }
+                    else if(resRef->resourceBase.resClass == ResourceClass::UAV)
+                    {
+                      category = DescriptorCategory::ReadWriteResource;
+                      result.type = VarType::ReadWriteResource;
+                    }
+                    else if(resRef->resourceBase.resClass == ResourceClass::Sampler)
+                    {
+                      category = DescriptorCategory::Sampler;
+                      result.type = VarType::Sampler;
+                    }
                     result.SetBindIndex(ShaderBindIndex(category, resRef->resourceIndex, arrayIndex));
-                    result.type = isSRV ? VarType::ReadOnlyResource : VarType::ReadWriteResource;
                     // Default to unannotated handle
                     ClearAnnotatedHandle(result);
                   }
@@ -9316,9 +9331,6 @@ ShaderDebugTrace *Debugger::BeginDebug(DebugAPIWrapper *apiWrapper, uint32_t eve
     for(uint32_t i = 0; i < list.resources.size(); i++)
     {
       const ShaderResource &res = list.resources[i];
-      // Ignore arrays the debugger execution will mark specific array elements used
-      if(res.bindArraySize > 1)
-        continue;
 
       // Fetch the resource name
       BindingSlot slot(res.fixedBindNumber, res.fixedBindSetOrSpace);
