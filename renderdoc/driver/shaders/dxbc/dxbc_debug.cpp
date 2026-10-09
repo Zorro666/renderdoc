@@ -4008,6 +4008,10 @@ void ThreadState::StepNext(ShaderDebugState *state, DebugAPIWrapper *apiWrapper,
         {
           samplerMode = decl.samplerMode;
           samplerBinding = GetBindingSlotForDeclaration(*program, decl);
+
+          // With SM5.1 sampler arrays need to offset the shader register by the array index
+          if(program->IsShaderModel51())
+            samplerBinding.shaderRegister = srcOpers[2].value.u32v[1];
         }
         if(op.operation == OPCODE_LD && decl.declaration == OPCODE_DCL_RESOURCE &&
            decl.resource.dim == RESOURCE_DIMENSION_BUFFER &&
