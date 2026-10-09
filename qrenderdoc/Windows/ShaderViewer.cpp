@@ -5139,19 +5139,18 @@ RDTreeWidgetItem *ShaderViewer::makeSourceVariableNode(const SourceVariableMappi
         ShaderBindIndex bind = reg->GetBindIndex();
         int32_t bindIdx = samplers.indexOf(bind);
 
-        if(bindIdx < 0)
+        Descriptor desc = samplers[bindIdx].descriptor;
+        rdcarray<UsedDescriptor> descriptors;
+        for(const UsedDescriptor &a : samplers)
+          if(CategoryForDescriptorType(a.access.type) == bind.category && a.access.index == bind.index)
+            descriptors.push_back(a);
+
+        if(descriptors.empty())
         {
           value = ToQStr(ResourceId());
         }
         else
         {
-          Descriptor desc = samplers[bindIdx].descriptor;
-          rdcarray<UsedDescriptor> descriptors;
-          for(const UsedDescriptor &a : samplers)
-            if(CategoryForDescriptorType(a.access.type) == bind.category &&
-               a.access.index == bind.index)
-              descriptors.push_back(a);
-
           const ShaderSampler &samp = m_ShaderDetails->samplers[bind.index];
 
           if(samp.bindArraySize == 1)
