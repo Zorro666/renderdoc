@@ -134,6 +134,17 @@ struct VulkanEventNode
 {
   VulkanEventNode() = default;
   ~VulkanEventNode() = default;
+  void AddResourceUsage(ResourceId id, ResourceUsage usage)
+  {
+    resourceUsage.push_back(make_rdcpair(id, usage));
+  }
+  void AddUniqueResourceUsage(ResourceId id, ResourceUsage usage)
+  {
+    RDCASSERTNOTEQUAL(id, ResourceId());
+    if(resourceUsage.contains(make_rdcpair(id, usage)))
+      return;
+    resourceUsage.push_back(make_rdcpair(id, usage));
+  }
 
   // eventId is not used
   APIEvent event;
