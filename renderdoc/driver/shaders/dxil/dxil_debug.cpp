@@ -10260,6 +10260,11 @@ rdcarray<ShaderDebugState> Debugger::ContinueDebug()
   rdcarray<ShaderDebugState> ret;
   m_ShaderChangesReturn = NULL;
 
+  const int maxDeltaSteps = 100000;
+  // 100000
+  if(m_Steps > maxDeltaSteps)
+    return ret;
+
   // initialise the first ShaderDebugState if we haven't stepped yet
   if(m_Steps == 0)
   {
@@ -10326,11 +10331,14 @@ rdcarray<ShaderDebugState> Debugger::ContinueDebug()
   m_ShaderChangesReturn = &ret;
 
   // continue stepping until we have 1000000 target steps completed in a chunk.
-  for(int stepEnd = m_Steps + 1000000; m_Steps < stepEnd;)
+  for(int stepEnd = m_Steps + maxDeltaSteps; m_Steps < stepEnd;)
   {
     allStepsCompleted = true;
     if(active.Finished() && !active.IsSimulationStepActive())
       break;
+
+    if((m_Steps % 10000) == 0)
+      RDCLOG("m_Steps:%d", m_Steps);
 
     // Execute the threads in each active tangle
     ThreadExecutionStates threadExecutionStates;
