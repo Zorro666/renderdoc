@@ -2458,6 +2458,8 @@ void WrappedVulkan::ReplayDescriptorSetWrite(VkDevice device, const VkWriteDescr
       }
     }
   }
+  if(IsLoading(m_State))
+    m_LoadingEventNode.AddResourceUsage(GetResID(writeDesc.dstSet), ResourceUsage::CPUWrite);
 }
 
 void WrappedVulkan::ReplayDescriptorSetCopy(VkDevice device, const VkCopyDescriptorSet &copyDesc)
@@ -2533,6 +2535,11 @@ void WrappedVulkan::ReplayDescriptorSetCopy(VkDevice device, const VkCopyDescrip
       (*dstbind)[curDstIdx] = (*srcbind)[curSrcIdx];
     }
   }
+  if(IsLoading(m_State))
+  {
+    m_LoadingEventNode.AddResourceUsage(srcSetId, ResourceUsage::CopySrc);
+    m_LoadingEventNode.AddResourceUsage(dstSetId, ResourceUsage::CopyDst);
+  }
 }
 
 template <typename SerialiserType>
@@ -2563,20 +2570,6 @@ bool WrappedVulkan::Serialise_vkUpdateDescriptorSets(SerialiserType &ser, VkDevi
 
     for(uint32_t i = 0; i < copyCount; i++)
       ReplayDescriptorSetCopy(device, pDescriptorCopies[i]);
-  }
-  if(IsLoading(m_State))
-  {
-    for(uint32_t i = 0; i < writeCount; i++)
-      m_LoadingEventNode.AddResourceUsage(GetResID(pDescriptorWrites[i].dstSet),
-                                          ResourceUsage::CPUWrite);
-
-    for(uint32_t i = 0; i < copyCount; i++)
-    {
-      m_LoadingEventNode.AddResourceUsage(GetResID(pDescriptorCopies[i].srcSet),
-                                          ResourceUsage::CopySrc);
-      m_LoadingEventNode.AddResourceUsage(GetResID(pDescriptorCopies[i].dstSet),
-                                          ResourceUsage::CopyDst);
-    }
   }
 
   return true;
