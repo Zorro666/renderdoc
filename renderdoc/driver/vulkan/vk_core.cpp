@@ -4487,6 +4487,7 @@ bool WrappedVulkan::ContextProcessChunk(ReadSerialiser &ser, VulkanChunk chunk)
     {
       if(!m_AddedEventNode)
         AddEvent();
+      RDCASSERT(!GetLastEventNode().resourceUsage.empty());
     }
   }
 
