@@ -795,6 +795,9 @@ private:
     rdcarray<PendingAnnotation> pendingAnnotations;
     rdcarray<ResourceId> executedCmds;
 
+    // the serialised command buffer not the baked command buffer
+    ResourceId commandBuffer;
+
     uint32_t beginChunk = 0;
     uint32_t endChunk = 0;
 
