@@ -146,6 +146,13 @@ struct VulkanEventNode
       return;
     resourceUsage.push_back(make_rdcpair(id, usage));
   }
+  void AddResourceBind(ResourceId prev, ResourceId cur)
+  {
+    if(prev != ResourceId())
+      AddUniqueResourceUsage(prev, ResourceUsage::UnBind);
+    if(cur != ResourceId())
+      AddUniqueResourceUsage(cur, ResourceUsage::Bind);
+  }
 
   // eventId is not used
   APIEvent event;
