@@ -5188,6 +5188,7 @@ bool WrappedVulkan::ProcessChunk(ReadSerialiser &ser, VulkanChunk chunk)
         action.copyDestination = m_LastPresentedImage;
 
         AddAction(action);
+        GetLastEventNode().AddResourceUsage(m_LastPresentedImage, ResourceUsage::CopyDst);
       }
 
       return true;
@@ -6959,6 +6960,9 @@ void WrappedVulkan::AddEvent()
     if(m_RootAnnotation)
       apievent.annotations = m_RootAnnotation->Duplicate();
   }
+
+  if(m_LastCmdBufferID != ResourceId())
+    node.AddResourceUsage(m_LastCmdBufferID, ResourceUsage::Used);
 
   m_AddedEventNode = true;
 }
