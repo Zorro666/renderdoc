@@ -966,6 +966,12 @@ bool WrappedVulkan::Serialise_vkQueuePresentKHR(SerialiserType &ser, VkQueue que
     AddAction(action);
     VulkanEventNode &eventNode = GetLastEventNode();
     eventNode.AddResourceUsage(PresentedImage, ResourceUsage::CopyDst);
+    for(uint32_t i = 0; i < PresentInfo.waitSemaphoreCount; i++)
+    {
+      VkSemaphore sema = PresentInfo.pWaitSemaphores[i];
+      if(sema != VK_NULL_HANDLE)
+        eventNode.AddResourceUsage(GetResID(sema), ResourceUsage::Wait);
+    }
   }
 
   return true;

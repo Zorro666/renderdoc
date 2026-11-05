@@ -2458,6 +2458,9 @@ void WrappedVulkan::ReplayDescriptorSetWrite(VkDevice device, const VkWriteDescr
       }
     }
   }
+  if(IsLoading(m_State))
+    m_LoadingEventNode.AddResourceUsage(GetResID(writeDesc.dstSet),
+                                        ResourceUsage::DescriptorSetWrite);
 }
 
 void WrappedVulkan::ReplayDescriptorSetCopy(VkDevice device, const VkCopyDescriptorSet &copyDesc)
