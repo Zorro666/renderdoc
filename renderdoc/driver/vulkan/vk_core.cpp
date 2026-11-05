@@ -4487,6 +4487,14 @@ bool WrappedVulkan::ContextProcessChunk(ReadSerialiser &ser, VulkanChunk chunk)
     {
       if(!m_AddedEventNode)
         AddEvent();
+      if(GetLastEventNode().resourceUsage.empty())
+      {
+        if(chunk != VulkanChunk::vkUpdateDescriptorSets)
+        {
+          RDCASSERT(!GetLastEventNode().resourceUsage.empty());
+          RDCFATAL("EMPTY RESOURCE USAGE");
+        }
+      }
     }
   }
 
