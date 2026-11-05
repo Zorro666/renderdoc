@@ -1547,6 +1547,8 @@ bool WrappedVulkan::Serialise_vkBeginCommandBuffer(SerialiserType &ser, VkComman
         m_BakedCmdBufferInfo[BakedCommandBuffer].activeSubpass = 0;
     m_BakedCmdBufferInfo[CommandBuffer].endBarriers.clear();
     m_BakedCmdBufferInfo[BakedCommandBuffer].endBarriers.clear();
+    m_BakedCmdBufferInfo[CommandBuffer].commandBuffer = CommandBuffer;
+    m_BakedCmdBufferInfo[BakedCommandBuffer].commandBuffer = CommandBuffer;
 
     VkCommandBufferBeginInfo unwrappedBeginInfo = BeginInfo;
     VkCommandBufferInheritanceInfo unwrappedInheritInfo;
