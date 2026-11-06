@@ -964,6 +964,8 @@ bool WrappedVulkan::Serialise_vkQueuePresentKHR(SerialiserType &ser, VkQueue que
     m_LastPresentedImage = action.copyDestination = PresentedImage;
 
     AddAction(action);
+    VulkanEventNode &eventNode = GetLastEventNode();
+    eventNode.AddResourceUsage(PresentedImage, ResourceUsage::CopyDst);
   }
 
   return true;
