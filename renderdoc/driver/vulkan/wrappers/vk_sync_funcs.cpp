@@ -622,18 +622,16 @@ bool WrappedVulkan::Serialise_vkCmdSetEvent(SerialiserType &ser, VkCommandBuffer
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    // see top of this file for current event/fence handling
-
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
-      else
-        commandBuffer = VK_NULL_HANDLE;
-    }
 
-    // if(commandBuffer != VK_NULL_HANDLE)
-    //   ObjDisp(commandBuffer)->CmdSetEvent(Unwrap(commandBuffer), Unwrap(event), stageMask);
+      // see top of this file for current event/fence handling
+      // if(commandBuffer != VK_NULL_HANDLE)
+      //   ObjDisp(commandBuffer)->CmdSetEvent(Unwrap(commandBuffer), Unwrap(event), stageMask);
+    }
   }
 
   return true;
@@ -679,12 +677,11 @@ bool WrappedVulkan::Serialise_vkCmdResetEvent(SerialiserType &ser, VkCommandBuff
 
     // see top of this file for current event/fence handling
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
-      else
-        commandBuffer = VK_NULL_HANDLE;
     }
 
     if(commandBuffer != VK_NULL_HANDLE)
@@ -1134,18 +1131,15 @@ bool WrappedVulkan::Serialise_vkCmdSetEvent2(SerialiserType &ser, VkCommandBuffe
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    // see top of this file for current event/fence handling
-
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
-      else
-        commandBuffer = VK_NULL_HANDLE;
-    }
 
-    // if(commandBuffer != VK_NULL_HANDLE)
-    //  ObjDisp(commandBuffer)->CmdSetEvent2(Unwrap(commandBuffer), Unwrap(event), &DependencyInfo);
+      // if(commandBuffer != VK_NULL_HANDLE)
+      //  ObjDisp(commandBuffer)->CmdSetEvent2(Unwrap(commandBuffer), Unwrap(event), &DependencyInfo);
+    }
   }
 
   return true;
@@ -1197,21 +1191,18 @@ bool WrappedVulkan::Serialise_vkCmdResetEvent2(SerialiserType &ser, VkCommandBuf
 
   if(IsReplayingAndReading())
   {
-    m_LastCmdBufferID = GetResID(commandBuffer);
-
     // see top of this file for current event/fence handling
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
-      else
-        commandBuffer = VK_NULL_HANDLE;
-    }
 
-    if(commandBuffer != VK_NULL_HANDLE)
-    {
-      // ObjDisp(commandBuffer)->CmdResetEvent2(Unwrap(commandBuffer), Unwrap(event), stageMask);
+      if(commandBuffer != VK_NULL_HANDLE)
+      {
+        // ObjDisp(commandBuffer)->CmdResetEvent2(Unwrap(commandBuffer), Unwrap(event), stageMask);
+      }
     }
   }
 
@@ -1263,6 +1254,8 @@ bool WrappedVulkan::Serialise_vkCmdWaitEvents2(SerialiserType &ser, VkCommandBuf
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
+    bool loading = IsLoading(m_State);
+
     rdcarray<VkImageMemoryBarrier2> imgBarriers;
     rdcarray<VkBufferMemoryBarrier2> bufBarriers;
 
@@ -1313,7 +1306,8 @@ bool WrappedVulkan::Serialise_vkCmdWaitEvents2(SerialiserType &ser, VkCommandBuf
         else
           commandBuffer = VK_NULL_HANDLE;
       }
-      else
+
+      if(loading)
       {
         for(uint32_t i = 0; i < depInfo.imageMemoryBarrierCount; i++)
         {
@@ -1328,7 +1322,7 @@ bool WrappedVulkan::Serialise_vkCmdWaitEvents2(SerialiserType &ser, VkCommandBuf
 
       if(commandBuffer != VK_NULL_HANDLE)
       {
-        if(IsLoading(m_State) && evIdx == 0)
+        if(loading && evIdx == 0)
         {
           bool descBarrier = false;
 
@@ -1376,8 +1370,8 @@ bool WrappedVulkan::Serialise_vkCmdWaitEvents2(SerialiserType &ser, VkCommandBuf
             continue;
           }
 
-          if(!IsLoading(m_State) && (barrier.oldLayout == VK_IMAGE_LAYOUT_PREINITIALIZED ||
-                                     barrier.oldLayout == VK_IMAGE_LAYOUT_ZERO_INITIALIZED_EXT))
+          if(!loading && (barrier.oldLayout == VK_IMAGE_LAYOUT_PREINITIALIZED ||
+                          barrier.oldLayout == VK_IMAGE_LAYOUT_ZERO_INITIALIZED_EXT))
           {
             // This is a transition from PRENITIALIZED, but we've already done this barrier once
             // (when loading); Since we couldn't transition back to PREINITIALIZED, we instead left
