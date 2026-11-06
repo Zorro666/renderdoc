@@ -2533,6 +2533,11 @@ void WrappedVulkan::ReplayDescriptorSetCopy(VkDevice device, const VkCopyDescrip
       (*dstbind)[curDstIdx] = (*srcbind)[curSrcIdx];
     }
   }
+  if(IsLoading(m_State))
+  {
+    m_LoadingEventNode.AddResourceUsage(srcSetId, ResourceUsage::CopySrc);
+    m_LoadingEventNode.AddResourceUsage(dstSetId, ResourceUsage::CopyDst);
+  }
 }
 
 template <typename SerialiserType>
