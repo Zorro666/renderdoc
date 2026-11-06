@@ -4122,8 +4122,10 @@ RDResult WrappedVulkan::ContextReplayLog(CaptureState readType, uint32_t startEv
 
   uint64_t startOffset = ser.GetReader()->GetOffset();
 
+  RDCASSERT(m_BakedCmdBufferInfo.find(ResourceId()) == m_BakedCmdBufferInfo.end());
   for(;;)
   {
+    RDCASSERT(m_BakedCmdBufferInfo.find(ResourceId()) == m_BakedCmdBufferInfo.end());
     if(IsActiveReplaying(m_State) && m_RootEventID > endEventID)
     {
       // we can just break out if we've done all the events desired.
@@ -4215,6 +4217,7 @@ RDResult WrappedVulkan::ContextReplayLog(CaptureState readType, uint32_t startEv
          chunktype != VulkanChunk::SetCommandAnnotation)
         m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID++;
     }
+    RDCASSERT(m_BakedCmdBufferInfo.find(ResourceId()) == m_BakedCmdBufferInfo.end());
   }
 
   if(!partial && !IsStructuredExporting(m_State))
@@ -4264,6 +4267,7 @@ RDResult WrappedVulkan::ContextReplayLog(CaptureState readType, uint32_t startEv
 
   m_RerecordCmds.clear();
 
+  RDCASSERT(m_BakedCmdBufferInfo.find(ResourceId()) == m_BakedCmdBufferInfo.end());
   return ResultCode::Succeeded;
 }
 
@@ -4483,6 +4487,7 @@ bool WrappedVulkan::ContextProcessChunk(ReadSerialiser &ser, VulkanChunk chunk)
     {
       if(!m_AddedEventNode)
         AddEvent();
+      RDCASSERT(!GetLastEventNode().resourceUsage.empty());
     }
   }
 
@@ -5184,6 +5189,7 @@ bool WrappedVulkan::ProcessChunk(ReadSerialiser &ser, VulkanChunk chunk)
         action.copyDestination = m_LastPresentedImage;
 
         AddAction(action);
+        GetLastEventNode().AddResourceUsage(m_LastPresentedImage, ResourceUsage::CopyDst);
       }
 
       return true;
@@ -6030,6 +6036,10 @@ bool WrappedVulkan::IsPartialRenderPassActiveUnsuspended()
 
 bool WrappedVulkan::ShouldUpdateRenderpassActive(ResourceId cmdId, bool dynamicRendering)
 {
+  // loading will replay all events
+  if(IsLoading(m_State))
+    return false;
+
   if(m_OutsideCmdBuffer != VK_NULL_HANDLE)
     return true;
 
@@ -6043,6 +6053,10 @@ bool WrappedVulkan::ShouldUpdateRenderpassActive(ResourceId cmdId, bool dynamicR
 
 bool WrappedVulkan::InRerecordRange(ResourceId cmdid)
 {
+  // loading will replay all events
+  if(IsLoading(m_State))
+    return true;
+
   // if we have an outside command buffer, assume the range is valid and we're replaying all events
   // onto it.
   if(m_OutsideCmdBuffer != VK_NULL_HANDLE)
@@ -6357,25 +6371,19 @@ void WrappedVulkan::AddUsage(VulkanEventNode &eventNode)
   if(action.flags & ActionFlags::Drawcall)
   {
     if(action.flags & ActionFlags::Indexed && state.ibuffer.buf != ResourceId())
-      eventNode.resourceUsage.push_back(make_rdcpair(state.ibuffer.buf, ResourceUsage::IndexBuffer));
+      eventNode.AddResourceUsage(state.ibuffer.buf, ResourceUsage::IndexBuffer);
 
     for(size_t i = 0; i < state.vbuffers.size(); i++)
     {
       if(state.vbuffers[i].buf != ResourceId())
-      {
-        eventNode.resourceUsage.push_back(
-            make_rdcpair(state.vbuffers[i].buf, ResourceUsage::VertexBuffer));
-      }
+        eventNode.AddResourceUsage(state.vbuffers[i].buf, ResourceUsage::VertexBuffer);
     }
 
     for(uint32_t i = state.firstxfbcounter;
         i < state.firstxfbcounter + state.xfbcounters.size() && i < state.xfbbuffers.size(); i++)
     {
       if(state.xfbbuffers[i].buf != ResourceId())
-      {
-        eventNode.resourceUsage.push_back(
-            make_rdcpair(state.xfbbuffers[i].buf, ResourceUsage::StreamOut));
-      }
+        eventNode.AddResourceUsage(state.xfbbuffers[i].buf, ResourceUsage::StreamOut);
     }
   }
 
@@ -6389,8 +6397,44 @@ void WrappedVulkan::AddUsage(VulkanEventNode &eventNode)
 
   const VulkanStatePipeline &pipeState = (compute ? state.compute : state.graphics);
 
+  VulkanCreationInfo &c = m_CreationInfo;
+
+  //////////////////////////////
+  // Pipeline
+  bool shaderObject = pipeState.shaderObject;
+
+  ResourceId pipe = pipeState.pipeline;
+  if(!shaderObject)
+  {
+    eventNode.AddResourceUsage(pipe, ResourceUsage::Pipeline);
+
+    const VulkanCreationInfo::Pipeline &p = c.m_Pipeline[pipe];
+    if(compute)
+    {
+      eventNode.AddResourceUsage(p.compLayout, ResourceUsage::PipelineLayout);
+    }
+    else
+    {
+      eventNode.AddUniqueResourceUsage(p.vertLayout, ResourceUsage::PipelineLayout);
+      eventNode.AddUniqueResourceUsage(p.fragLayout, ResourceUsage::PipelineLayout);
+    }
+  }
+
   //////////////////////////////
   // Shaders
+
+  rdcarray<int> shaderStages = ShaderStagesForAction(action.flags);
+
+  for(int shad : shaderStages)
+  {
+    VulkanCreationInfo::ShaderEntry &sh = shaderObject
+                                              ? c.m_ShaderObject[state.shaderObjects[shad]].shad
+                                              : c.m_Pipeline[pipe].shaders[shad];
+    if(sh.module == ResourceId())
+      continue;
+
+    eventNode.AddResourceUsage(sh.module, ResourceUsage(uint32_t(ResourceUsage::VS_Shader) + shad));
+  }
 
   if(pipeState.UsingDescBufs())
   {
@@ -6460,7 +6504,6 @@ void WrappedVulkan::AddUsageForDescriptorBuffers(VulkanEventNode &eventNode,
     if(sh.module == ResourceId())
       continue;
 
-    ResourceId origPipe = pipe;
     ResourceId origShad = sh.module;
 
     for(const ConstantBlock &constantBlock : sh.refl->constantBlocks)
@@ -6529,7 +6572,10 @@ void WrappedVulkan::AddUsageForDescriptorBufferBind(VulkanEventNode &eventNode,
 
   const VulkanCreationInfo::PipelineLayout &pipeLayout =
       c.m_PipelineLayout[descSets[bindset].pipeLayout];
-  const DescSetLayout &layout = c.m_DescSetLayout[pipeLayout.descSetLayouts[bindset]];
+  ResourceId descSetLayoutId = pipeLayout.descSetLayouts[bindset];
+  const DescSetLayout &layout = c.m_DescSetLayout[descSetLayoutId];
+
+  eventNode.AddUniqueResourceUsage(descSetLayoutId, ResourceUsage::DescriptorSetLayout);
 
   if(layout.bindings.empty())
   {
@@ -6592,7 +6638,6 @@ void WrappedVulkan::AddUsageForDescriptorSets(VulkanEventNode &eventNode)
     if(sh.module == ResourceId())
       continue;
 
-    ResourceId origPipe = pipe;
     ResourceId origShad = sh.module;
 
     for(const ConstantBlock &constantBlock : sh.refl->constantBlocks)
@@ -6650,8 +6695,13 @@ void WrappedVulkan::AddUsageForDescriptorSetBind(VulkanEventNode &eventNode, uin
   if(descSets[bindset].descBufferIdx != ~0U)
     return;
 
-  const DescriptorSetInfo &descset = m_DescriptorSetState[descSets[bindset].descSet];
-  const DescSetLayout &layout = c.m_DescSetLayout[descset.layout];
+  ResourceId descSetId = descSets[bindset].descSet;
+  const DescriptorSetInfo &descset = m_DescriptorSetState[descSetId];
+  ResourceId descSetLayoutId = descset.layout;
+  const DescSetLayout &layout = c.m_DescSetLayout[descSetLayoutId];
+
+  eventNode.AddUniqueResourceUsage(descSetId, ResourceUsage::DescriptorSet);
+  eventNode.AddUniqueResourceUsage(descSetLayoutId, ResourceUsage::DescriptorSetLayout);
 
   if(layout.bindings.empty())
   {
@@ -6719,10 +6769,6 @@ void WrappedVulkan::AddUsageForDescriptor(VulkanEventNode &eventNode, const Desc
   if(slot.type == DescriptorSlotType::Unwritten)
     return;
 
-  // we don't mark samplers with usage
-  if(slot.type == DescriptorSlotType::Sampler)
-    return;
-
   ResourceId id;
 
   switch(slot.type)
@@ -6731,27 +6777,35 @@ void WrappedVulkan::AddUsageForDescriptor(VulkanEventNode &eventNode, const Desc
     case DescriptorSlotType::SampledImage:
     case DescriptorSlotType::StorageImage:
       if(slot.resource != ResourceId())
+      {
+        eventNode.AddResourceUsage(slot.resource, ResourceUsage::ImageView);
         id = c.m_ImageView[slot.resource].image;
+      }
+      if(slot.sampler != ResourceId())
+        eventNode.AddResourceUsage(slot.sampler, ResourceUsage::Sampler);
       break;
     case DescriptorSlotType::UniformTexelBuffer:
     case DescriptorSlotType::StorageTexelBuffer:
-      id = slot.resource;
       if(c.m_BufferView.find(slot.resource) != c.m_BufferView.end())
+      {
+        eventNode.AddResourceUsage(slot.resource, ResourceUsage::BufferView);
         id = c.m_BufferView[slot.resource].buffer;
+      }
       break;
     case DescriptorSlotType::UniformBuffer:
     case DescriptorSlotType::UniformBufferDynamic:
     case DescriptorSlotType::StorageBuffer:
     case DescriptorSlotType::StorageBufferDynamic:
-    case DescriptorSlotType::AccelerationStructure:
-      if(slot.resource != ResourceId())
-        id = slot.resource;
+    case DescriptorSlotType::AccelerationStructure: id = slot.resource; break;
+    case DescriptorSlotType::Sampler:
+      if(slot.sampler != ResourceId())
+        eventNode.AddResourceUsage(slot.sampler, ResourceUsage::Sampler);
       break;
     default: RDCERR("Unexpected type %d", slot.type); break;
   }
 
   if(id != ResourceId())
-    eventNode.resourceUsage.push_back(make_rdcpair(id, usage));
+    eventNode.AddResourceUsage(id, usage);
 }
 
 void WrappedVulkan::AddFramebufferUsage(VulkanEventNode &eventNode,
@@ -6773,6 +6827,8 @@ void WrappedVulkan::AddFramebufferUsage(VulkanEventNode &eventNode,
   if(renderPass != ResourceId() && framebuffer != ResourceId())
   {
     const VulkanCreationInfo::RenderPass &rp = c.m_RenderPass[renderPass];
+    eventNode.AddResourceUsage(renderPass, ResourceUsage::RenderPass);
+    eventNode.AddResourceUsage(framebuffer, ResourceUsage::Framebuffer);
 
     if(subpass >= rp.subpasses.size())
     {
@@ -6788,8 +6844,8 @@ void WrappedVulkan::AddFramebufferUsage(VulkanEventNode &eventNode,
         uint32_t att = sub.inputAttachments[i];
         if(att == VK_ATTACHMENT_UNUSED)
           continue;
-        eventNode.resourceUsage.push_back(
-            make_rdcpair(c.m_ImageView[fbattachments[att]].image, ResourceUsage::InputTarget));
+        eventNode.AddResourceUsage(c.m_ImageView[fbattachments[att]].image,
+                                   ResourceUsage::InputTarget);
       }
 
       for(size_t i = 0; i < sub.colorAttachments.size(); i++)
@@ -6797,16 +6853,16 @@ void WrappedVulkan::AddFramebufferUsage(VulkanEventNode &eventNode,
         uint32_t att = sub.colorAttachments[i];
         if(att == VK_ATTACHMENT_UNUSED)
           continue;
-        eventNode.resourceUsage.push_back(make_rdcpair(
+        eventNode.AddResourceUsage(
             c.m_ImageView[fbattachments[att]].image,
-            sub.customResolve ? ResourceUsage::ResolveDst : ResourceUsage::ColorTarget));
+            sub.customResolve ? ResourceUsage::ResolveDst : ResourceUsage::ColorTarget);
       }
 
       if(sub.depthstencilAttachment >= 0)
       {
         int32_t att = sub.depthstencilAttachment;
-        eventNode.resourceUsage.push_back(make_rdcpair(c.m_ImageView[fbattachments[att]].image,
-                                                       ResourceUsage::DepthStencilTarget));
+        eventNode.AddResourceUsage(c.m_ImageView[fbattachments[att]].image,
+                                   ResourceUsage::DepthStencilTarget);
       }
     }
   }
@@ -6823,15 +6879,15 @@ void WrappedVulkan::AddFramebufferUsage(VulkanEventNode &eventNode,
                              (dyn.color[i].resolveMode & VK_RESOLVE_MODE_CUSTOM_BIT_EXT);
       if(!isCustomResolve)
       {
-        eventNode.resourceUsage.push_back(make_rdcpair(
-            c.m_ImageView[GetResID(dyn.color[i].imageView)].image, ResourceUsage::ColorTarget));
+        eventNode.AddResourceUsage(c.m_ImageView[GetResID(dyn.color[i].imageView)].image,
+                                   ResourceUsage::ColorTarget);
       }
       else
       {
-        eventNode.resourceUsage.push_back(make_rdcpair(
-            c.m_ImageView[GetResID(dyn.color[i].imageView)].image, ResourceUsage::InputTarget));
-        eventNode.resourceUsage.push_back(make_rdcpair(
-            c.m_ImageView[GetResID(dyn.color[i].resolveImageView)].image, ResourceUsage::ResolveDst));
+        eventNode.AddResourceUsage(c.m_ImageView[GetResID(dyn.color[i].imageView)].image,
+                                   ResourceUsage::InputTarget);
+        eventNode.AddResourceUsage(c.m_ImageView[GetResID(dyn.color[i].resolveImageView)].image,
+                                   ResourceUsage::ResolveDst);
       }
     }
 
@@ -6841,15 +6897,15 @@ void WrappedVulkan::AddFramebufferUsage(VulkanEventNode &eventNode,
                              (dyn.depth.resolveMode & VK_RESOLVE_MODE_CUSTOM_BIT_EXT);
       if(!isCustomResolve)
       {
-        eventNode.resourceUsage.push_back(make_rdcpair(
-            c.m_ImageView[GetResID(dyn.depth.imageView)].image, ResourceUsage::DepthStencilTarget));
+        eventNode.AddResourceUsage(c.m_ImageView[GetResID(dyn.depth.imageView)].image,
+                                   ResourceUsage::DepthStencilTarget);
       }
       else
       {
-        eventNode.resourceUsage.push_back(make_rdcpair(
-            c.m_ImageView[GetResID(dyn.depth.imageView)].image, ResourceUsage::InputTarget));
-        eventNode.resourceUsage.push_back(make_rdcpair(
-            c.m_ImageView[GetResID(dyn.depth.resolveImageView)].image, ResourceUsage::ResolveDst));
+        eventNode.AddResourceUsage(c.m_ImageView[GetResID(dyn.depth.imageView)].image,
+                                   ResourceUsage::InputTarget);
+        eventNode.AddResourceUsage(c.m_ImageView[GetResID(dyn.depth.resolveImageView)].image,
+                                   ResourceUsage::ResolveDst);
       }
     }
 
@@ -6860,17 +6916,22 @@ void WrappedVulkan::AddFramebufferUsage(VulkanEventNode &eventNode,
       if(!isCustomResolve)
 
       {
-        eventNode.resourceUsage.push_back(make_rdcpair(
-            c.m_ImageView[GetResID(dyn.stencil.imageView)].image, ResourceUsage::DepthStencilTarget));
+        eventNode.AddResourceUsage(c.m_ImageView[GetResID(dyn.stencil.imageView)].image,
+                                   ResourceUsage::DepthStencilTarget);
       }
       else
       {
-        eventNode.resourceUsage.push_back(make_rdcpair(
-            c.m_ImageView[GetResID(dyn.stencil.imageView)].image, ResourceUsage::InputTarget));
-        eventNode.resourceUsage.push_back(make_rdcpair(
-            c.m_ImageView[GetResID(dyn.stencil.resolveImageView)].image, ResourceUsage::ResolveDst));
+        eventNode.AddResourceUsage(c.m_ImageView[GetResID(dyn.stencil.imageView)].image,
+                                   ResourceUsage::InputTarget);
+        eventNode.AddResourceUsage(c.m_ImageView[GetResID(dyn.stencil.resolveImageView)].image,
+                                   ResourceUsage::ResolveDst);
       }
     }
+  }
+  for(const ResourceId &att : fbattachments)
+  {
+    if(att != ResourceId())
+      eventNode.AddResourceUsage(att, ResourceUsage::ImageView);
   }
 }
 
@@ -6900,6 +6961,9 @@ void WrappedVulkan::AddEvent()
     if(m_RootAnnotation)
       apievent.annotations = m_RootAnnotation->Duplicate();
   }
+
+  if(m_LastCmdBufferID != ResourceId())
+    node.AddResourceUsage(m_LastCmdBufferID, ResourceUsage::Used);
 
   m_AddedEventNode = true;
 }

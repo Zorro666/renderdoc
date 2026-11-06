@@ -280,6 +280,18 @@ void WrappedVulkan::ReplayQueueSubmit(VkQueue queue, VkSubmitInfo2 submitInfo, r
 
   if(IsLoading(m_State))
   {
+    for(uint32_t i = 0; i < submitInfo.waitSemaphoreInfoCount; ++i)
+    {
+      VkSemaphore sema = submitInfo.pWaitSemaphoreInfos[i].semaphore;
+      if(sema != VK_NULL_HANDLE)
+        m_LoadingEventNode.AddResourceUsage(GetResID(sema), ResourceUsage::Wait);
+    }
+    for(uint32_t i = 0; i < submitInfo.signalSemaphoreInfoCount; ++i)
+    {
+      VkSemaphore sema = submitInfo.pSignalSemaphoreInfos[i].semaphore;
+      if(sema != VK_NULL_HANDLE)
+        m_LoadingEventNode.AddResourceUsage(GetResID(sema), ResourceUsage::Signal);
+    }
     AddEvent();
 
     uint32_t numCmds = submitInfo.commandBufferInfoCount;
@@ -335,6 +347,8 @@ void WrappedVulkan::ReplayQueueSubmit(VkQueue queue, VkSubmitInfo2 submitInfo, r
         eventNode.addActionUse = false;
         eventNode.addSubmit = true;
         eventNode.cmdBufId = cmd;
+        eventNode.AddResourceUsage(cmd, ResourceUsage::Reset);
+        eventNode.AddResourceUsage(cmdBufInfo.commandBuffer, ResourceUsage::Reset);
       }
 
       // insert the baked command buffer into the root events, resolving indirect and deferred actions
@@ -352,6 +366,8 @@ void WrappedVulkan::ReplayQueueSubmit(VkQueue queue, VkSubmitInfo2 submitInfo, r
         VulkanEventNode &eventNode = GetLastEventNode();
         eventNode.event.chunkIndex = cmdBufInfo.endChunk;
         eventNode.addActionUse = false;
+        eventNode.AddResourceUsage(cmd, ResourceUsage::Submit);
+        eventNode.AddResourceUsage(cmdBufInfo.commandBuffer, ResourceUsage::Submit);
         if(localAnnotations)
         {
           // Modify using the annotations stored in the event node
@@ -1368,12 +1384,18 @@ bool WrappedVulkan::Serialise_vkQueueSubmit(SerialiserType &ser, VkQueue queue, 
 
       rdcstr basename = StringFormat::Fmt("vkQueueSubmit(%u)", submitInfo.commandBufferInfoCount);
 
+      m_LoadingEventNode.AddResourceUsage(GetResID(queue), ResourceUsage::Submit);
+      if(fence != VK_NULL_HANDLE)
+        m_LoadingEventNode.AddResourceUsage(GetResID(fence), ResourceUsage::Wait);
       ReplayQueueSubmit(queue, submitInfo, basename);
     }
     if(submitCount == 0)
     {
       if(IsLoading(m_State))
       {
+        m_LoadingEventNode.AddResourceUsage(GetResID(queue), ResourceUsage::Submit);
+        if(fence != VK_NULL_HANDLE)
+          m_LoadingEventNode.AddResourceUsage(GetResID(fence), ResourceUsage::Wait);
         AddEvent();
 
         ObjDisp(queue)->QueueSubmit(Unwrap(queue), 0, NULL, VK_NULL_HANDLE);
@@ -1559,12 +1581,18 @@ bool WrappedVulkan::Serialise_vkQueueSubmit2(SerialiserType &ser, VkQueue queue,
     {
       rdcstr basename = StringFormat::Fmt("vkQueueSubmit2(%u)", pSubmits[sub].commandBufferInfoCount);
 
+      m_LoadingEventNode.AddResourceUsage(GetResID(queue), ResourceUsage::Submit);
+      if(fence != VK_NULL_HANDLE)
+        m_LoadingEventNode.AddResourceUsage(GetResID(fence), ResourceUsage::Wait);
       ReplayQueueSubmit(queue, pSubmits[sub], basename);
     }
     if(submitCount == 0)
     {
       if(IsLoading(m_State))
       {
+        m_LoadingEventNode.AddResourceUsage(GetResID(queue), ResourceUsage::Submit);
+        if(fence != VK_NULL_HANDLE)
+          m_LoadingEventNode.AddResourceUsage(GetResID(fence), ResourceUsage::Wait);
         AddEvent();
 
         ObjDisp(queue)->QueueSubmit2(Unwrap(queue), 0, NULL, VK_NULL_HANDLE);
@@ -1720,6 +1748,41 @@ bool WrappedVulkan::Serialise_vkQueueBindSparse(SerialiserType &ser, VkQueue que
 
   if(IsReplayingAndReading())
   {
+    if(IsLoading(m_State))
+    {
+      m_LoadingEventNode.AddResourceUsage(GetResID(queue), ResourceUsage::SparseBindingUpdate);
+      for(uint32_t b = 0; b < bindInfoCount; ++b)
+      {
+        const VkBindSparseInfo &bindInfo = pBindInfo[b];
+        for(uint32_t i = 0; i < bindInfo.bufferBindCount; ++i)
+        {
+          if(bindInfo.pBufferBinds[i].buffer != VK_NULL_HANDLE)
+            m_LoadingEventNode.AddResourceUsage(GetResID(bindInfo.pBufferBinds[i].buffer),
+                                                ResourceUsage::SparseBindingUpdate);
+        }
+        for(uint32_t i = 0; i < bindInfo.imageBindCount; ++i)
+        {
+          if(bindInfo.pImageBinds[i].image != VK_NULL_HANDLE)
+            m_LoadingEventNode.AddResourceUsage(GetResID(bindInfo.pImageBinds[i].image),
+                                                ResourceUsage::SparseBindingUpdate);
+        }
+        for(uint32_t i = 0; i < bindInfo.imageOpaqueBindCount; ++i)
+        {
+          if(bindInfo.pImageOpaqueBinds[i].image != VK_NULL_HANDLE)
+            m_LoadingEventNode.AddResourceUsage(GetResID(bindInfo.pImageOpaqueBinds[i].image),
+                                                ResourceUsage::SparseBindingUpdate);
+        }
+        for(uint32_t s = 0; s < bindInfo.signalSemaphoreCount; ++s)
+          m_LoadingEventNode.AddResourceUsage(GetResID(bindInfo.pSignalSemaphores[s]),
+                                              ResourceUsage::Signal);
+        for(uint32_t s = 0; s < bindInfo.waitSemaphoreCount; ++s)
+          m_LoadingEventNode.AddResourceUsage(GetResID(bindInfo.pWaitSemaphores[s]),
+                                              ResourceUsage::Wait);
+      }
+      if(fence != VK_NULL_HANDLE)
+        m_LoadingEventNode.AddResourceUsage(GetResID(fence), ResourceUsage::Signal);
+    }
+
     // similar to vkQueueSubmit we don't need semaphores at all, just whether we waited on any.
     // For waiting semaphores, since we don't track state we have to just conservatively
     // wait for queue idle. Since we do that, there's equally no point in signalling semaphores
@@ -1754,14 +1817,17 @@ bool WrappedVulkan::Serialise_vkQueueBindSparse(SerialiserType &ser, VkQueue que
         else
         {
           if(IsLoading(m_State))
+          {
             m_SparseBindResources.insert(GetResID(buf[i].buffer));
-
-          buf[i].buffer = Unwrap(buf[i].buffer);
-
-          VkSparseMemoryBind *binds = (VkSparseMemoryBind *)buf[i].pBinds;
-          for(uint32_t b = 0; b < buf[i].bindCount; b++)
-            binds[b].memory = Unwrap(binds[b].memory);
+            m_LoadingEventNode.AddResourceUsage(GetResID(buf[i].buffer), ResourceUsage::Bind);
+          }
         }
+
+        buf[i].buffer = Unwrap(buf[i].buffer);
+
+        VkSparseMemoryBind *binds = (VkSparseMemoryBind *)buf[i].pBinds;
+        for(uint32_t b = 0; b < buf[i].bindCount; b++)
+          binds[b].memory = Unwrap(binds[b].memory);
       }
 
       VkSparseImageOpaqueMemoryBindInfo *imopaque =
@@ -1776,7 +1842,10 @@ bool WrappedVulkan::Serialise_vkQueueBindSparse(SerialiserType &ser, VkQueue que
         else
         {
           if(IsLoading(m_State))
+          {
             m_SparseBindResources.insert(GetResID(imopaque[i].image));
+            m_LoadingEventNode.AddResourceUsage(GetResID(imopaque[i].image), ResourceUsage::Bind);
+          }
 
           imopaque[i].image = Unwrap(imopaque[i].image);
 
@@ -1797,7 +1866,10 @@ bool WrappedVulkan::Serialise_vkQueueBindSparse(SerialiserType &ser, VkQueue que
         else
         {
           if(IsLoading(m_State))
+          {
             m_SparseBindResources.insert(GetResID(im[i].image));
+            m_LoadingEventNode.AddResourceUsage(GetResID(im[i].image), ResourceUsage::Bind);
+          }
 
           im[i].image = Unwrap(im[i].image);
 
@@ -2005,6 +2077,8 @@ bool WrappedVulkan::Serialise_vkQueueWaitIdle(SerialiserType &ser, VkQueue queue
   if(IsReplayingAndReading())
   {
     ObjDisp(queue)->QueueWaitIdle(Unwrap(queue));
+    if(IsLoading(m_State))
+      m_LoadingEventNode.AddResourceUsage(GetResID(queue), ResourceUsage::Wait);
   }
 
   return true;
@@ -2056,6 +2130,8 @@ bool WrappedVulkan::Serialise_vkQueueBeginDebugUtilsLabelEXT(SerialiserType &ser
 
       AddEvent();
       AddAction(action);
+      VulkanEventNode &eventNode = GetLastEventNode();
+      eventNode.AddResourceUsage(GetResID(queue), ResourceUsage::Used);
     }
   }
 
@@ -2101,6 +2177,8 @@ bool WrappedVulkan::Serialise_vkQueueEndDebugUtilsLabelEXT(SerialiserType &ser, 
 
       AddEvent();
       AddAction(action);
+      VulkanEventNode &eventNode = GetLastEventNode();
+      eventNode.AddResourceUsage(GetResID(queue), ResourceUsage::Used);
     }
   }
 
@@ -2153,6 +2231,8 @@ bool WrappedVulkan::Serialise_vkQueueInsertDebugUtilsLabelEXT(SerialiserType &se
 
       AddEvent();
       AddAction(action);
+      VulkanEventNode &eventNode = GetLastEventNode();
+      eventNode.AddResourceUsage(GetResID(queue), ResourceUsage::Used);
     }
   }
 
