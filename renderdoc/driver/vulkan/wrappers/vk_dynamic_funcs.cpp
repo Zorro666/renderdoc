@@ -44,33 +44,28 @@ bool WrappedVulkan::Serialise_vkCmdSetViewport(SerialiserType &ser, VkCommandBuf
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicViewport] = true;
-
-          if(renderstate.views.size() < firstViewport + viewportCount)
-            renderstate.views.resize(firstViewport + viewportCount);
-
-          for(uint32_t i = 0; i < viewportCount; i++)
-            renderstate.views[firstViewport + i] = pViewports[i];
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)
-          ->CmdSetViewport(Unwrap(commandBuffer), firstViewport, viewportCount, pViewports);
+        renderstate.dynamicStates[VkDynamicViewport] = true;
+
+        if(renderstate.views.size() < firstViewport + viewportCount)
+          renderstate.views.resize(firstViewport + viewportCount);
+
+        for(uint32_t i = 0; i < viewportCount; i++)
+          renderstate.views[firstViewport + i] = pViewports[i];
+      }
+
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)
+            ->CmdSetViewport(Unwrap(commandBuffer), firstViewport, viewportCount, pViewports);
+    }
   }
 
   return true;
@@ -116,23 +111,18 @@ bool WrappedVulkan::Serialise_vkCmdSetViewportWithCount(SerialiserType &ser,
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicViewportCount] = true;
-
-          renderstate.views.assign(pViewports, viewportCount);
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
+        VulkanRenderState &renderstate = GetCmdRenderState();
+
+        renderstate.dynamicStates[VkDynamicViewportCount] = true;
+
+        renderstate.views.assign(pViewports, viewportCount);
       }
     }
 
@@ -182,32 +172,28 @@ bool WrappedVulkan::Serialise_vkCmdSetScissor(SerialiserType &ser, VkCommandBuff
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicScissor] = true;
-
-          if(renderstate.scissors.size() < firstScissor + scissorCount)
-            renderstate.scissors.resize(firstScissor + scissorCount);
-
-          for(uint32_t i = 0; i < scissorCount; i++)
-            renderstate.scissors[firstScissor + i] = pScissors[i];
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)->CmdSetScissor(Unwrap(commandBuffer), firstScissor, scissorCount, pScissors);
+        renderstate.dynamicStates[VkDynamicScissor] = true;
+
+        if(renderstate.scissors.size() < firstScissor + scissorCount)
+          renderstate.scissors.resize(firstScissor + scissorCount);
+
+        for(uint32_t i = 0; i < scissorCount; i++)
+          renderstate.scissors[firstScissor + i] = pScissors[i];
+      }
+
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)
+            ->CmdSetScissor(Unwrap(commandBuffer), firstScissor, scissorCount, pScissors);
+    }
   }
 
   return true;
@@ -253,28 +239,23 @@ bool WrappedVulkan::Serialise_vkCmdSetScissorWithCount(SerialiserType &ser,
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicScissorCount] = true;
-
-          renderstate.scissors.assign(pScissors, scissorCount);
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)->CmdSetScissorWithCount(Unwrap(commandBuffer), scissorCount, pScissors);
+        renderstate.dynamicStates[VkDynamicScissorCount] = true;
+
+        renderstate.scissors.assign(pScissors, scissorCount);
+      }
+
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)->CmdSetScissorWithCount(Unwrap(commandBuffer), scissorCount, pScissors);
+    }
   }
 
   return true;
@@ -316,27 +297,22 @@ bool WrappedVulkan::Serialise_vkCmdSetLineWidth(SerialiserType &ser, VkCommandBu
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicLineWidth] = true;
-          renderstate.lineWidth = lineWidth;
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)->CmdSetLineWidth(Unwrap(commandBuffer), lineWidth);
+        renderstate.dynamicStates[VkDynamicLineWidth] = true;
+        renderstate.lineWidth = lineWidth;
+      }
+
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)->CmdSetLineWidth(Unwrap(commandBuffer), lineWidth);
+    }
   }
 
   return true;
@@ -379,41 +355,36 @@ bool WrappedVulkan::Serialise_vkCmdSetDepthBias(SerialiserType &ser, VkCommandBu
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicDepthBias] = true;
-
-          renderstate.bias.depth = depthBias;
-          renderstate.bias.biasclamp = depthBiasClamp;
-          renderstate.bias.slope = slopeScaledDepthBias;
-
-          // Calling this function is equivalent to calling vkCmdSetDepthBias2EXT without a
-          // VkDepthBiasRepresentationInfoEXT in the pNext chain of VkDepthBiasInfoEXT.
-          // +
-          // If pNext does not contain a VkDepthBiasRepresentationInfoEXT structure, then this
-          // command is equivalent to including a VkDepthBiasRepresentationInfoEXT with
-          // depthBiasExact set to VK_FALSE and depthBiasRepresentation set to
-          // VK_DEPTH_BIAS_REPRESENTATION_LEAST_REPRESENTABLE_VALUE_FORMAT_EXT.
-          renderstate.bias.exact = false;
-          renderstate.bias.repr = VK_DEPTH_BIAS_REPRESENTATION_LEAST_REPRESENTABLE_VALUE_FORMAT_EXT;
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)
-          ->CmdSetDepthBias(Unwrap(commandBuffer), depthBias, depthBiasClamp, slopeScaledDepthBias);
+        renderstate.dynamicStates[VkDynamicDepthBias] = true;
+
+        renderstate.bias.depth = depthBias;
+        renderstate.bias.biasclamp = depthBiasClamp;
+        renderstate.bias.slope = slopeScaledDepthBias;
+
+        // Calling this function is equivalent to calling vkCmdSetDepthBias2EXT without a
+        // VkDepthBiasRepresentationInfoEXT in the pNext chain of VkDepthBiasInfoEXT.
+        // +
+        // If pNext does not contain a VkDepthBiasRepresentationInfoEXT structure, then this
+        // command is equivalent to including a VkDepthBiasRepresentationInfoEXT with
+        // depthBiasExact set to VK_FALSE and depthBiasRepresentation set to
+        // VK_DEPTH_BIAS_REPRESENTATION_LEAST_REPRESENTABLE_VALUE_FORMAT_EXT.
+        renderstate.bias.exact = false;
+        renderstate.bias.repr = VK_DEPTH_BIAS_REPRESENTATION_LEAST_REPRESENTABLE_VALUE_FORMAT_EXT;
+      }
+
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)
+            ->CmdSetDepthBias(Unwrap(commandBuffer), depthBias, depthBiasClamp, slopeScaledDepthBias);
+    }
   }
 
   return true;
@@ -457,28 +428,23 @@ bool WrappedVulkan::Serialise_vkCmdSetBlendConstants(SerialiserType &ser,
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicBlendConstants] = true;
-
-          memcpy(renderstate.blendConst, blendConst, sizeof(renderstate.blendConst));
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)->CmdSetBlendConstants(Unwrap(commandBuffer), blendConst);
+        renderstate.dynamicStates[VkDynamicBlendConstants] = true;
+
+        memcpy(renderstate.blendConst, blendConst, sizeof(renderstate.blendConst));
+      }
+
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)->CmdSetBlendConstants(Unwrap(commandBuffer), blendConst);
+    }
   }
 
   return true;
@@ -519,29 +485,24 @@ bool WrappedVulkan::Serialise_vkCmdSetDepthBounds(SerialiserType &ser, VkCommand
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicDepthBounds] = true;
-
-          renderstate.mindepth = minDepthBounds;
-          renderstate.maxdepth = maxDepthBounds;
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)->CmdSetDepthBounds(Unwrap(commandBuffer), minDepthBounds, maxDepthBounds);
+        renderstate.dynamicStates[VkDynamicDepthBounds] = true;
+
+        renderstate.mindepth = minDepthBounds;
+        renderstate.maxdepth = maxDepthBounds;
+      }
+
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)->CmdSetDepthBounds(Unwrap(commandBuffer), minDepthBounds, maxDepthBounds);
+    }
   }
 
   return true;
@@ -586,31 +547,26 @@ bool WrappedVulkan::Serialise_vkCmdSetStencilCompareMask(SerialiserType &ser,
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicStencilCompareMask] = true;
-
-          if(faceMask & VK_STENCIL_FACE_FRONT_BIT)
-            renderstate.front.compare = compareMask;
-          if(faceMask & VK_STENCIL_FACE_BACK_BIT)
-            renderstate.back.compare = compareMask;
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)->CmdSetStencilCompareMask(Unwrap(commandBuffer), faceMask, compareMask);
+        renderstate.dynamicStates[VkDynamicStencilCompareMask] = true;
+
+        if(faceMask & VK_STENCIL_FACE_FRONT_BIT)
+          renderstate.front.compare = compareMask;
+        if(faceMask & VK_STENCIL_FACE_BACK_BIT)
+          renderstate.back.compare = compareMask;
+      }
+
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)->CmdSetStencilCompareMask(Unwrap(commandBuffer), faceMask, compareMask);
+    }
   }
 
   return true;
@@ -655,31 +611,26 @@ bool WrappedVulkan::Serialise_vkCmdSetStencilWriteMask(SerialiserType &ser,
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicStencilWriteMask] = true;
-
-          if(faceMask & VK_STENCIL_FACE_FRONT_BIT)
-            renderstate.front.write = writeMask;
-          if(faceMask & VK_STENCIL_FACE_BACK_BIT)
-            renderstate.back.write = writeMask;
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)->CmdSetStencilWriteMask(Unwrap(commandBuffer), faceMask, writeMask);
+        renderstate.dynamicStates[VkDynamicStencilWriteMask] = true;
+
+        if(faceMask & VK_STENCIL_FACE_FRONT_BIT)
+          renderstate.front.write = writeMask;
+        if(faceMask & VK_STENCIL_FACE_BACK_BIT)
+          renderstate.back.write = writeMask;
+      }
+
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)->CmdSetStencilWriteMask(Unwrap(commandBuffer), faceMask, writeMask);
+    }
   }
 
   return true;
@@ -724,31 +675,26 @@ bool WrappedVulkan::Serialise_vkCmdSetStencilReference(SerialiserType &ser,
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicStencilReference] = true;
-
-          if(faceMask & VK_STENCIL_FACE_FRONT_BIT)
-            renderstate.front.ref = reference;
-          if(faceMask & VK_STENCIL_FACE_BACK_BIT)
-            renderstate.back.ref = reference;
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)->CmdSetStencilReference(Unwrap(commandBuffer), faceMask, reference);
+        renderstate.dynamicStates[VkDynamicStencilReference] = true;
+
+        if(faceMask & VK_STENCIL_FACE_FRONT_BIT)
+          renderstate.front.ref = reference;
+        if(faceMask & VK_STENCIL_FACE_BACK_BIT)
+          renderstate.back.ref = reference;
+      }
+
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)->CmdSetStencilReference(Unwrap(commandBuffer), faceMask, reference);
+    }
   }
 
   return true;
@@ -791,31 +737,26 @@ bool WrappedVulkan::Serialise_vkCmdSetSampleLocationsEXT(
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicSampleLocationsEXT] = true;
-
-          renderstate.sampleLocations.locations.assign(sampleInfo.pSampleLocations,
-                                                       sampleInfo.sampleLocationsCount);
-          renderstate.sampleLocations.gridSize = sampleInfo.sampleLocationGridSize;
-          renderstate.sampleLocations.sampleCount = sampleInfo.sampleLocationsPerPixel;
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)->CmdSetSampleLocationsEXT(Unwrap(commandBuffer), &sampleInfo);
+        renderstate.dynamicStates[VkDynamicSampleLocationsEXT] = true;
+
+        renderstate.sampleLocations.locations.assign(sampleInfo.pSampleLocations,
+                                                     sampleInfo.sampleLocationsCount);
+        renderstate.sampleLocations.gridSize = sampleInfo.sampleLocationGridSize;
+        renderstate.sampleLocations.sampleCount = sampleInfo.sampleLocationsPerPixel;
+      }
+
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)->CmdSetSampleLocationsEXT(Unwrap(commandBuffer), &sampleInfo);
+    }
   }
 
   return true;
@@ -862,34 +803,29 @@ bool WrappedVulkan::Serialise_vkCmdSetDiscardRectangleEXT(SerialiserType &ser,
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicDiscardRectangleEXT] = true;
-
-          if(renderstate.discardRectangles.size() < firstDiscardRectangle + discardRectangleCount)
-            renderstate.discardRectangles.resize(firstDiscardRectangle + discardRectangleCount);
-
-          for(uint32_t i = 0; i < discardRectangleCount; i++)
-            renderstate.discardRectangles[firstDiscardRectangle + i] = pDiscardRectangles[i];
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)
-          ->CmdSetDiscardRectangleEXT(Unwrap(commandBuffer), firstDiscardRectangle,
-                                      discardRectangleCount, pDiscardRectangles);
+        renderstate.dynamicStates[VkDynamicDiscardRectangleEXT] = true;
+
+        if(renderstate.discardRectangles.size() < firstDiscardRectangle + discardRectangleCount)
+          renderstate.discardRectangles.resize(firstDiscardRectangle + discardRectangleCount);
+
+        for(uint32_t i = 0; i < discardRectangleCount; i++)
+          renderstate.discardRectangles[firstDiscardRectangle + i] = pDiscardRectangles[i];
+      }
+
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)
+            ->CmdSetDiscardRectangleEXT(Unwrap(commandBuffer), firstDiscardRectangle,
+                                        discardRectangleCount, pDiscardRectangles);
+    }
   }
 
   return true;
@@ -937,32 +873,27 @@ bool WrappedVulkan::Serialise_vkCmdSetLineStipple(SerialiserType &ser, VkCommand
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicLineStipple] = true;
-
-          renderstate.stippleFactor = lineStippleFactor;
-          renderstate.stipplePattern = lineStipplePattern;
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    // this could be the EXT function, we handle either one in our dispatch tables and assign to the
-    // other since it's a straight promotion. This allows us to share implementation between the two
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)
-          ->CmdSetLineStipple(Unwrap(commandBuffer), lineStippleFactor, lineStipplePattern);
+        renderstate.dynamicStates[VkDynamicLineStipple] = true;
+
+        renderstate.stippleFactor = lineStippleFactor;
+        renderstate.stipplePattern = lineStipplePattern;
+      }
+
+      // this could be the EXT function, we handle either one in our dispatch tables and assign to the
+      // other since it's a straight promotion. This allows us to share implementation between the two
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)
+            ->CmdSetLineStipple(Unwrap(commandBuffer), lineStippleFactor, lineStipplePattern);
+    }
   }
 
   return true;
@@ -1016,28 +947,23 @@ bool WrappedVulkan::Serialise_vkCmdSetCullMode(SerialiserType &ser, VkCommandBuf
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicCullMode] = true;
-
-          renderstate.cullMode = cullMode;
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)->CmdSetCullMode(Unwrap(commandBuffer), cullMode);
+        renderstate.dynamicStates[VkDynamicCullMode] = true;
+
+        renderstate.cullMode = cullMode;
+      }
+
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)->CmdSetCullMode(Unwrap(commandBuffer), cullMode);
+    }
   }
 
   return true;
@@ -1077,28 +1003,23 @@ bool WrappedVulkan::Serialise_vkCmdSetFrontFace(SerialiserType &ser, VkCommandBu
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicFrontFace] = true;
-
-          renderstate.frontFace = frontFace;
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)->CmdSetFrontFace(Unwrap(commandBuffer), frontFace);
+        renderstate.dynamicStates[VkDynamicFrontFace] = true;
+
+        renderstate.frontFace = frontFace;
+      }
+
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)->CmdSetFrontFace(Unwrap(commandBuffer), frontFace);
+    }
   }
 
   return true;
@@ -1139,32 +1060,23 @@ bool WrappedVulkan::Serialise_vkCmdSetPrimitiveTopology(SerialiserType &ser,
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicPrimitiveTopology] = true;
-
-          renderstate.primitiveTopology = primitiveTopology;
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
-    else
-    {
-      m_BakedCmdBufferInfo[m_LastCmdBufferID].state.primitiveTopology = primitiveTopology;
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)->CmdSetPrimitiveTopology(Unwrap(commandBuffer), primitiveTopology);
+        renderstate.dynamicStates[VkDynamicPrimitiveTopology] = true;
+
+        renderstate.primitiveTopology = primitiveTopology;
+      }
+
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)->CmdSetPrimitiveTopology(Unwrap(commandBuffer), primitiveTopology);
+    }
   }
 
   return true;
@@ -1207,28 +1119,23 @@ bool WrappedVulkan::Serialise_vkCmdSetDepthTestEnable(SerialiserType &ser,
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicDepthTestEnable] = true;
-
-          renderstate.depthTestEnable = depthTestEnable;
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)->CmdSetDepthTestEnable(Unwrap(commandBuffer), depthTestEnable);
+        renderstate.dynamicStates[VkDynamicDepthTestEnable] = true;
+
+        renderstate.depthTestEnable = depthTestEnable;
+      }
+
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)->CmdSetDepthTestEnable(Unwrap(commandBuffer), depthTestEnable);
+    }
   }
 
   return true;
@@ -1270,28 +1177,23 @@ bool WrappedVulkan::Serialise_vkCmdSetDepthWriteEnable(SerialiserType &ser,
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicDepthWriteEnable] = true;
-
-          renderstate.depthWriteEnable = depthWriteEnable;
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)->CmdSetDepthWriteEnable(Unwrap(commandBuffer), depthWriteEnable);
+        renderstate.dynamicStates[VkDynamicDepthWriteEnable] = true;
+
+        renderstate.depthWriteEnable = depthWriteEnable;
+      }
+
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)->CmdSetDepthWriteEnable(Unwrap(commandBuffer), depthWriteEnable);
+    }
   }
 
   return true;
@@ -1333,28 +1235,23 @@ bool WrappedVulkan::Serialise_vkCmdSetDepthCompareOp(SerialiserType &ser,
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicDepthCompareOp] = true;
-
-          renderstate.depthCompareOp = depthCompareOp;
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)->CmdSetDepthCompareOp(Unwrap(commandBuffer), depthCompareOp);
+        renderstate.dynamicStates[VkDynamicDepthCompareOp] = true;
+
+        renderstate.depthCompareOp = depthCompareOp;
+      }
+
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)->CmdSetDepthCompareOp(Unwrap(commandBuffer), depthCompareOp);
+    }
   }
 
   return true;
@@ -1396,28 +1293,23 @@ bool WrappedVulkan::Serialise_vkCmdSetDepthBoundsTestEnable(SerialiserType &ser,
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicDepthBoundsTestEnable] = true;
-
-          renderstate.depthBoundsTestEnable = depthBoundsTestEnable;
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)->CmdSetDepthBoundsTestEnable(Unwrap(commandBuffer), depthBoundsTestEnable);
+        renderstate.dynamicStates[VkDynamicDepthBoundsTestEnable] = true;
+
+        renderstate.depthBoundsTestEnable = depthBoundsTestEnable;
+      }
+
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)->CmdSetDepthBoundsTestEnable(Unwrap(commandBuffer), depthBoundsTestEnable);
+    }
   }
 
   return true;
@@ -1460,28 +1352,23 @@ bool WrappedVulkan::Serialise_vkCmdSetStencilTestEnable(SerialiserType &ser,
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicStencilTestEnable] = true;
-
-          renderstate.stencilTestEnable = stencilTestEnable;
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)->CmdSetStencilTestEnable(Unwrap(commandBuffer), stencilTestEnable);
+        renderstate.dynamicStates[VkDynamicStencilTestEnable] = true;
+
+        renderstate.stencilTestEnable = stencilTestEnable;
+      }
+
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)->CmdSetStencilTestEnable(Unwrap(commandBuffer), stencilTestEnable);
+    }
   }
 
   return true;
@@ -1529,42 +1416,38 @@ bool WrappedVulkan::Serialise_vkCmdSetStencilOp(SerialiserType &ser, VkCommandBu
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
+      {
+        VulkanRenderState &renderstate = GetCmdRenderState();
+
+        renderstate.dynamicStates[VkDynamicStencilOp] = true;
+
+        if(faceMask & VK_STENCIL_FACE_FRONT_BIT)
         {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicStencilOp] = true;
-
-          if(faceMask & VK_STENCIL_FACE_FRONT_BIT)
-          {
-            renderstate.front.failOp = failOp;
-            renderstate.front.passOp = passOp;
-            renderstate.front.depthFailOp = depthFailOp;
-            renderstate.front.compareOp = compareOp;
-          }
-          if(faceMask & VK_STENCIL_FACE_BACK_BIT)
-          {
-            renderstate.back.failOp = failOp;
-            renderstate.back.passOp = passOp;
-            renderstate.back.depthFailOp = depthFailOp;
-            renderstate.back.compareOp = compareOp;
-          }
+          renderstate.front.failOp = failOp;
+          renderstate.front.passOp = passOp;
+          renderstate.front.depthFailOp = depthFailOp;
+          renderstate.front.compareOp = compareOp;
+        }
+        if(faceMask & VK_STENCIL_FACE_BACK_BIT)
+        {
+          renderstate.back.failOp = failOp;
+          renderstate.back.passOp = passOp;
+          renderstate.back.depthFailOp = depthFailOp;
+          renderstate.back.compareOp = compareOp;
         }
       }
-      else
-      {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)
-          ->CmdSetStencilOp(Unwrap(commandBuffer), faceMask, failOp, passOp, depthFailOp, compareOp);
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)
+            ->CmdSetStencilOp(Unwrap(commandBuffer), faceMask, failOp, passOp, depthFailOp,
+                              compareOp);
+    }
   }
 
   return true;
@@ -1611,29 +1494,24 @@ bool WrappedVulkan::Serialise_vkCmdSetColorWriteEnableEXT(SerialiserType &ser,
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicColorWriteEXT] = true;
-
-          renderstate.colorWriteEnable.assign(pColorWriteEnables, attachmentCount);
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)
-          ->CmdSetColorWriteEnableEXT(Unwrap(commandBuffer), attachmentCount, pColorWriteEnables);
+        renderstate.dynamicStates[VkDynamicColorWriteEXT] = true;
+
+        renderstate.colorWriteEnable.assign(pColorWriteEnables, attachmentCount);
+      }
+
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)
+            ->CmdSetColorWriteEnableEXT(Unwrap(commandBuffer), attachmentCount, pColorWriteEnables);
+    }
   }
 
   return true;
@@ -1678,28 +1556,23 @@ bool WrappedVulkan::Serialise_vkCmdSetDepthBiasEnable(SerialiserType &ser,
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicDepthBiasEnable] = true;
-
-          renderstate.depthBiasEnable = depthBiasEnable;
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)->CmdSetDepthBiasEnable(Unwrap(commandBuffer), depthBiasEnable);
+        renderstate.dynamicStates[VkDynamicDepthBiasEnable] = true;
+
+        renderstate.depthBiasEnable = depthBiasEnable;
+      }
+
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)->CmdSetDepthBiasEnable(Unwrap(commandBuffer), depthBiasEnable);
+    }
   }
 
   return true;
@@ -1740,28 +1613,23 @@ bool WrappedVulkan::Serialise_vkCmdSetLogicOpEXT(SerialiserType &ser, VkCommandB
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicLogicOpEXT] = true;
-
-          renderstate.logicOp = logicOp;
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)->CmdSetLogicOpEXT(Unwrap(commandBuffer), logicOp);
+        renderstate.dynamicStates[VkDynamicLogicOpEXT] = true;
+
+        renderstate.logicOp = logicOp;
+      }
+
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)->CmdSetLogicOpEXT(Unwrap(commandBuffer), logicOp);
+    }
   }
 
   return true;
@@ -1802,28 +1670,23 @@ bool WrappedVulkan::Serialise_vkCmdSetPatchControlPointsEXT(SerialiserType &ser,
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicControlPointsEXT] = true;
-
-          renderstate.patchControlPoints = patchControlPoints;
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)->CmdSetPatchControlPointsEXT(Unwrap(commandBuffer), patchControlPoints);
+        renderstate.dynamicStates[VkDynamicControlPointsEXT] = true;
+
+        renderstate.patchControlPoints = patchControlPoints;
+      }
+
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)->CmdSetPatchControlPointsEXT(Unwrap(commandBuffer), patchControlPoints);
+    }
   }
 
   return true;
@@ -1866,28 +1729,24 @@ bool WrappedVulkan::Serialise_vkCmdSetPrimitiveRestartEnable(SerialiserType &ser
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicPrimRestart] = true;
-
-          renderstate.primRestartEnable = primitiveRestartEnable;
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)->CmdSetPrimitiveRestartEnable(Unwrap(commandBuffer), primitiveRestartEnable);
+        renderstate.dynamicStates[VkDynamicPrimRestart] = true;
+
+        renderstate.primRestartEnable = primitiveRestartEnable;
+      }
+
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)
+            ->CmdSetPrimitiveRestartEnable(Unwrap(commandBuffer), primitiveRestartEnable);
+    }
   }
 
   return true;
@@ -1931,29 +1790,24 @@ bool WrappedVulkan::Serialise_vkCmdSetRasterizerDiscardEnable(SerialiserType &se
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicRastDiscard] = true;
-
-          renderstate.rastDiscardEnable = rasterizerDiscardEnable;
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)
-          ->CmdSetRasterizerDiscardEnable(Unwrap(commandBuffer), rasterizerDiscardEnable);
+        renderstate.dynamicStates[VkDynamicRastDiscard] = true;
+
+        renderstate.rastDiscardEnable = rasterizerDiscardEnable;
+      }
+
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)
+            ->CmdSetRasterizerDiscardEnable(Unwrap(commandBuffer), rasterizerDiscardEnable);
+    }
   }
 
   return true;
@@ -1998,31 +1852,26 @@ bool WrappedVulkan::Serialise_vkCmdSetFragmentShadingRateKHR(
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicShadingRateKHR] = true;
-
-          renderstate.pipelineShadingRate = *pFragmentSize;
-          renderstate.shadingRateCombiners[0] = combinerOps[0];
-          renderstate.shadingRateCombiners[1] = combinerOps[1];
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)
-          ->CmdSetFragmentShadingRateKHR(Unwrap(commandBuffer), pFragmentSize, combinerOps);
+        renderstate.dynamicStates[VkDynamicShadingRateKHR] = true;
+
+        renderstate.pipelineShadingRate = *pFragmentSize;
+        renderstate.shadingRateCombiners[0] = combinerOps[0];
+        renderstate.shadingRateCombiners[1] = combinerOps[1];
+      }
+
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)
+            ->CmdSetFragmentShadingRateKHR(Unwrap(commandBuffer), pFragmentSize, combinerOps);
+    }
   }
 
   return true;
@@ -2067,28 +1916,23 @@ bool WrappedVulkan::Serialise_vkCmdSetAttachmentFeedbackLoopEnableEXT(Serialiser
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicAttachmentFeedbackLoopEnableEXT] = true;
-
-          renderstate.feedbackAspects = aspectMask;
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)->CmdSetAttachmentFeedbackLoopEnableEXT(Unwrap(commandBuffer), aspectMask);
+        renderstate.dynamicStates[VkDynamicAttachmentFeedbackLoopEnableEXT] = true;
+
+        renderstate.feedbackAspects = aspectMask;
+      }
+
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)->CmdSetAttachmentFeedbackLoopEnableEXT(Unwrap(commandBuffer), aspectMask);
+    }
   }
 
   return true;
@@ -2131,28 +1975,24 @@ bool WrappedVulkan::Serialise_vkCmdSetAlphaToCoverageEnableEXT(SerialiserType &s
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicAlphaToCoverageEXT] = true;
-
-          renderstate.alphaToCoverageEnable = alphaToCoverageEnable;
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)->CmdSetAlphaToCoverageEnableEXT(Unwrap(commandBuffer), alphaToCoverageEnable);
+        renderstate.dynamicStates[VkDynamicAlphaToCoverageEXT] = true;
+
+        renderstate.alphaToCoverageEnable = alphaToCoverageEnable;
+      }
+
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)
+            ->CmdSetAlphaToCoverageEnableEXT(Unwrap(commandBuffer), alphaToCoverageEnable);
+    }
   }
 
   return true;
@@ -2196,28 +2036,23 @@ bool WrappedVulkan::Serialise_vkCmdSetAlphaToOneEnableEXT(SerialiserType &ser,
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicAlphaToOneEXT] = true;
-
-          renderstate.alphaToOneEnable = alphaToOneEnable;
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)->CmdSetAlphaToOneEnableEXT(Unwrap(commandBuffer), alphaToOneEnable);
+        renderstate.dynamicStates[VkDynamicAlphaToOneEXT] = true;
+
+        renderstate.alphaToOneEnable = alphaToOneEnable;
+      }
+
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)->CmdSetAlphaToOneEnableEXT(Unwrap(commandBuffer), alphaToOneEnable);
+    }
   }
 
   return true;
@@ -2271,34 +2106,29 @@ bool WrappedVulkan::Serialise_vkCmdSetColorBlendEnableEXT(SerialiserType &ser,
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicColorBlendEnableEXT] = true;
-
-          if(renderstate.colorBlendEnable.size() < firstAttachment + attachmentCount)
-            renderstate.colorBlendEnable.resize(firstAttachment + attachmentCount);
-
-          for(uint32_t i = 0; i < attachmentCount; i++)
-            renderstate.colorBlendEnable[firstAttachment + i] = pColorBlendEnables[i];
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)
-          ->CmdSetColorBlendEnableEXT(Unwrap(commandBuffer), firstAttachment, attachmentCount,
-                                      pColorBlendEnables);
+        renderstate.dynamicStates[VkDynamicColorBlendEnableEXT] = true;
+
+        if(renderstate.colorBlendEnable.size() < firstAttachment + attachmentCount)
+          renderstate.colorBlendEnable.resize(firstAttachment + attachmentCount);
+
+        for(uint32_t i = 0; i < attachmentCount; i++)
+          renderstate.colorBlendEnable[firstAttachment + i] = pColorBlendEnables[i];
+      }
+
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)
+            ->CmdSetColorBlendEnableEXT(Unwrap(commandBuffer), firstAttachment, attachmentCount,
+                                        pColorBlendEnables);
+    }
   }
 
   return true;
@@ -2346,34 +2176,29 @@ bool WrappedVulkan::Serialise_vkCmdSetColorBlendEquationEXT(
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicColorBlendEquationEXT] = true;
-
-          if(renderstate.colorBlendEquation.size() < firstAttachment + attachmentCount)
-            renderstate.colorBlendEquation.resize(firstAttachment + attachmentCount);
-
-          for(uint32_t i = 0; i < attachmentCount; i++)
-            renderstate.colorBlendEquation[firstAttachment + i] = pColorBlendEquations[i];
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)
-          ->CmdSetColorBlendEquationEXT(Unwrap(commandBuffer), firstAttachment, attachmentCount,
-                                        pColorBlendEquations);
+        renderstate.dynamicStates[VkDynamicColorBlendEquationEXT] = true;
+
+        if(renderstate.colorBlendEquation.size() < firstAttachment + attachmentCount)
+          renderstate.colorBlendEquation.resize(firstAttachment + attachmentCount);
+
+        for(uint32_t i = 0; i < attachmentCount; i++)
+          renderstate.colorBlendEquation[firstAttachment + i] = pColorBlendEquations[i];
+      }
+
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)
+            ->CmdSetColorBlendEquationEXT(Unwrap(commandBuffer), firstAttachment, attachmentCount,
+                                          pColorBlendEquations);
+    }
   }
 
   return true;
@@ -2423,34 +2248,29 @@ bool WrappedVulkan::Serialise_vkCmdSetColorWriteMaskEXT(SerialiserType &ser,
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicColorWriteMaskEXT] = true;
-
-          if(renderstate.colorWriteMask.size() < firstAttachment + attachmentCount)
-            renderstate.colorWriteMask.resize(firstAttachment + attachmentCount);
-
-          for(uint32_t i = 0; i < attachmentCount; i++)
-            renderstate.colorWriteMask[firstAttachment + i] = pColorWriteMasks[i];
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)
-          ->CmdSetColorWriteMaskEXT(Unwrap(commandBuffer), firstAttachment, attachmentCount,
-                                    pColorWriteMasks);
+        renderstate.dynamicStates[VkDynamicColorWriteMaskEXT] = true;
+
+        if(renderstate.colorWriteMask.size() < firstAttachment + attachmentCount)
+          renderstate.colorWriteMask.resize(firstAttachment + attachmentCount);
+
+        for(uint32_t i = 0; i < attachmentCount; i++)
+          renderstate.colorWriteMask[firstAttachment + i] = pColorWriteMasks[i];
+      }
+
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)
+            ->CmdSetColorWriteMaskEXT(Unwrap(commandBuffer), firstAttachment, attachmentCount,
+                                      pColorWriteMasks);
+    }
   }
 
   return true;
@@ -2496,30 +2316,25 @@ bool WrappedVulkan::Serialise_vkCmdSetConservativeRasterizationModeEXT(
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicConservativeRastModeEXT] = true;
-
-          renderstate.conservativeRastMode = conservativeRasterizationMode;
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)
-          ->CmdSetConservativeRasterizationModeEXT(Unwrap(commandBuffer),
-                                                   conservativeRasterizationMode);
+        renderstate.dynamicStates[VkDynamicConservativeRastModeEXT] = true;
+
+        renderstate.conservativeRastMode = conservativeRasterizationMode;
+      }
+
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)
+            ->CmdSetConservativeRasterizationModeEXT(Unwrap(commandBuffer),
+                                                     conservativeRasterizationMode);
+    }
   }
 
   return true;
@@ -2601,28 +2416,23 @@ bool WrappedVulkan::Serialise_vkCmdSetDepthClampEnableEXT(SerialiserType &ser,
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicDepthClampEnableEXT] = true;
-
-          renderstate.depthClampEnable = depthClampEnable;
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)->CmdSetDepthClampEnableEXT(Unwrap(commandBuffer), depthClampEnable);
+        renderstate.dynamicStates[VkDynamicDepthClampEnableEXT] = true;
+
+        renderstate.depthClampEnable = depthClampEnable;
+      }
+
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)->CmdSetDepthClampEnableEXT(Unwrap(commandBuffer), depthClampEnable);
+    }
   }
 
   return true;
@@ -2665,28 +2475,23 @@ bool WrappedVulkan::Serialise_vkCmdSetDepthClipEnableEXT(SerialiserType &ser,
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicDepthClipEnableEXT] = true;
-
-          renderstate.depthClipEnable = depthClipEnable;
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)->CmdSetDepthClipEnableEXT(Unwrap(commandBuffer), depthClipEnable);
+        renderstate.dynamicStates[VkDynamicDepthClipEnableEXT] = true;
+
+        renderstate.depthClipEnable = depthClipEnable;
+      }
+
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)->CmdSetDepthClipEnableEXT(Unwrap(commandBuffer), depthClipEnable);
+    }
   }
 
   return true;
@@ -2728,28 +2533,24 @@ bool WrappedVulkan::Serialise_vkCmdSetDepthClipNegativeOneToOneEXT(SerialiserTyp
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicDepthClipNegativeOneEXT] = true;
-
-          renderstate.negativeOneToOne = negativeOneToOne;
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)->CmdSetDepthClipNegativeOneToOneEXT(Unwrap(commandBuffer), negativeOneToOne);
+        renderstate.dynamicStates[VkDynamicDepthClipNegativeOneEXT] = true;
+
+        renderstate.negativeOneToOne = negativeOneToOne;
+      }
+
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)
+            ->CmdSetDepthClipNegativeOneToOneEXT(Unwrap(commandBuffer), negativeOneToOne);
+    }
   }
 
   return true;
@@ -2792,30 +2593,25 @@ bool WrappedVulkan::Serialise_vkCmdSetExtraPrimitiveOverestimationSizeEXT(
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicOverstimationSizeEXT] = true;
-
-          renderstate.primOverestimationSize = extraPrimitiveOverestimationSize;
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)
-          ->CmdSetExtraPrimitiveOverestimationSizeEXT(Unwrap(commandBuffer),
-                                                      extraPrimitiveOverestimationSize);
+        renderstate.dynamicStates[VkDynamicOverstimationSizeEXT] = true;
+
+        renderstate.primOverestimationSize = extraPrimitiveOverestimationSize;
+      }
+
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)
+            ->CmdSetExtraPrimitiveOverestimationSizeEXT(Unwrap(commandBuffer),
+                                                        extraPrimitiveOverestimationSize);
+    }
   }
 
   return true;
@@ -2859,23 +2655,18 @@ bool WrappedVulkan::Serialise_vkCmdSetLineRasterizationModeEXT(
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicLineRastModeEXT] = true;
-
-          renderstate.lineRasterMode = lineRasterizationMode;
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
+        VulkanRenderState &renderstate = GetCmdRenderState();
+
+        renderstate.dynamicStates[VkDynamicLineRastModeEXT] = true;
+
+        renderstate.lineRasterMode = lineRasterizationMode;
       }
     }
 
@@ -2924,28 +2715,23 @@ bool WrappedVulkan::Serialise_vkCmdSetLineStippleEnableEXT(SerialiserType &ser,
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicLineStippleEnableEXT] = true;
-
-          renderstate.stippledLineEnable = stippledLineEnable;
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)->CmdSetLineStippleEnableEXT(Unwrap(commandBuffer), stippledLineEnable);
+        renderstate.dynamicStates[VkDynamicLineStippleEnableEXT] = true;
+
+        renderstate.stippledLineEnable = stippledLineEnable;
+      }
+
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)->CmdSetLineStippleEnableEXT(Unwrap(commandBuffer), stippledLineEnable);
+    }
   }
 
   return true;
@@ -2988,28 +2774,23 @@ bool WrappedVulkan::Serialise_vkCmdSetLogicOpEnableEXT(SerialiserType &ser,
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicLogicOpEnableEXT] = true;
-
-          renderstate.logicOpEnable = logicOpEnable;
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)->CmdSetLogicOpEnableEXT(Unwrap(commandBuffer), logicOpEnable);
+        renderstate.dynamicStates[VkDynamicLogicOpEnableEXT] = true;
+
+        renderstate.logicOpEnable = logicOpEnable;
+      }
+
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)->CmdSetLogicOpEnableEXT(Unwrap(commandBuffer), logicOpEnable);
+    }
   }
 
   return true;
@@ -3051,28 +2832,23 @@ bool WrappedVulkan::Serialise_vkCmdSetPolygonModeEXT(SerialiserType &ser,
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicPolygonModeEXT] = true;
-
-          renderstate.polygonMode = polygonMode;
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)->CmdSetPolygonModeEXT(Unwrap(commandBuffer), polygonMode);
+        renderstate.dynamicStates[VkDynamicPolygonModeEXT] = true;
+
+        renderstate.polygonMode = polygonMode;
+      }
+
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)->CmdSetPolygonModeEXT(Unwrap(commandBuffer), polygonMode);
+    }
   }
 
   return true;
@@ -3113,28 +2889,23 @@ bool WrappedVulkan::Serialise_vkCmdSetProvokingVertexModeEXT(
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicProvokingVertexModeEXT] = true;
-
-          renderstate.provokingVertexMode = provokingVertexMode;
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)->CmdSetProvokingVertexModeEXT(Unwrap(commandBuffer), provokingVertexMode);
+        renderstate.dynamicStates[VkDynamicProvokingVertexModeEXT] = true;
+
+        renderstate.provokingVertexMode = provokingVertexMode;
+      }
+
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)->CmdSetProvokingVertexModeEXT(Unwrap(commandBuffer), provokingVertexMode);
+    }
   }
 
   return true;
@@ -3176,28 +2947,23 @@ bool WrappedVulkan::Serialise_vkCmdSetRasterizationSamplesEXT(
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicRasterizationSamplesEXT] = true;
-
-          renderstate.rastSamples = rasterizationSamples;
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)->CmdSetRasterizationSamplesEXT(Unwrap(commandBuffer), rasterizationSamples);
+        renderstate.dynamicStates[VkDynamicRasterizationSamplesEXT] = true;
+
+        renderstate.rastSamples = rasterizationSamples;
+      }
+
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)->CmdSetRasterizationSamplesEXT(Unwrap(commandBuffer), rasterizationSamples);
+    }
   }
 
   return true;
@@ -3240,28 +3006,23 @@ bool WrappedVulkan::Serialise_vkCmdSetRasterizationStreamEXT(SerialiserType &ser
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicRasterizationStreamEXT] = true;
-
-          renderstate.rasterStream = rasterizationStream;
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)->CmdSetRasterizationStreamEXT(Unwrap(commandBuffer), rasterizationStream);
+        renderstate.dynamicStates[VkDynamicRasterizationStreamEXT] = true;
+
+        renderstate.rasterStream = rasterizationStream;
+      }
+
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)->CmdSetRasterizationStreamEXT(Unwrap(commandBuffer), rasterizationStream);
+    }
   }
 
   return true;
@@ -3310,28 +3071,24 @@ bool WrappedVulkan::Serialise_vkCmdSetSampleLocationsEnableEXT(SerialiserType &s
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicSampleLocationsEnableEXT] = true;
-
-          renderstate.sampleLocEnable = sampleLocationsEnable;
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)->CmdSetSampleLocationsEnableEXT(Unwrap(commandBuffer), sampleLocationsEnable);
+        renderstate.dynamicStates[VkDynamicSampleLocationsEnableEXT] = true;
+
+        renderstate.sampleLocEnable = sampleLocationsEnable;
+      }
+
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)
+            ->CmdSetSampleLocationsEnableEXT(Unwrap(commandBuffer), sampleLocationsEnable);
+    }
   }
 
   return true;
@@ -3377,28 +3134,23 @@ bool WrappedVulkan::Serialise_vkCmdSetSampleMaskEXT(SerialiserType &ser,
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicSampleMaskEXT] = true;
-
-          renderstate.sampleMask.assign(pSampleMask, ((samples - 1) / 32) + 1);
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)->CmdSetSampleMaskEXT(Unwrap(commandBuffer), samples, pSampleMask);
+        renderstate.dynamicStates[VkDynamicSampleMaskEXT] = true;
+
+        renderstate.sampleMask.assign(pSampleMask, ((samples - 1) / 32) + 1);
+      }
+
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)->CmdSetSampleMaskEXT(Unwrap(commandBuffer), samples, pSampleMask);
+    }
   }
 
   return true;
@@ -3447,28 +3199,23 @@ bool WrappedVulkan::Serialise_vkCmdSetTessellationDomainOriginEXT(
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicTessDomainOriginEXT] = true;
-
-          renderstate.domainOrigin = domainOrigin;
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)->CmdSetTessellationDomainOriginEXT(Unwrap(commandBuffer), domainOrigin);
+        renderstate.dynamicStates[VkDynamicTessDomainOriginEXT] = true;
+
+        renderstate.domainOrigin = domainOrigin;
+      }
+
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)->CmdSetTessellationDomainOriginEXT(Unwrap(commandBuffer), domainOrigin);
+    }
   }
 
   return true;
@@ -3524,29 +3271,24 @@ bool WrappedVulkan::Serialise_vkCmdSetRayTracingPipelineStackSizeKHR(SerialiserT
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicRayTracingStackSizeKHR] = true;
-
-          renderstate.rtStackSize = pipelineStackSize;
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)
-          ->CmdSetRayTracingPipelineStackSizeKHR(Unwrap(commandBuffer), pipelineStackSize);
+        renderstate.dynamicStates[VkDynamicRayTracingStackSizeKHR] = true;
+
+        renderstate.rtStackSize = pipelineStackSize;
+      }
+
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)
+            ->CmdSetRayTracingPipelineStackSizeKHR(Unwrap(commandBuffer), pipelineStackSize);
+    }
   }
 
   return true;
@@ -3590,26 +3332,21 @@ bool WrappedVulkan::Serialise_vkCmdSetRenderingAttachmentLocations(
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicRendering.localRead.UpdateLocations(locationInfo);
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)->CmdSetRenderingAttachmentLocations(Unwrap(commandBuffer), &locationInfo);
+        renderstate.dynamicRendering.localRead.UpdateLocations(locationInfo);
+      }
+
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)->CmdSetRenderingAttachmentLocations(Unwrap(commandBuffer), &locationInfo);
+    }
   }
 
   return true;
@@ -3654,27 +3391,22 @@ bool WrappedVulkan::Serialise_vkCmdSetRenderingInputAttachmentIndices(
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
-        {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicRendering.localRead.UpdateInputIndices(inputAttachmentIndexInfo);
-        }
-      }
-      else
       {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
+        VulkanRenderState &renderstate = GetCmdRenderState();
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)
-          ->CmdSetRenderingInputAttachmentIndices(Unwrap(commandBuffer), &inputAttachmentIndexInfo);
+        renderstate.dynamicRendering.localRead.UpdateInputIndices(inputAttachmentIndexInfo);
+      }
+
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)
+            ->CmdSetRenderingInputAttachmentIndices(Unwrap(commandBuffer), &inputAttachmentIndexInfo);
+    }
   }
 
   return true;
@@ -3719,44 +3451,39 @@ bool WrappedVulkan::Serialise_vkCmdSetDepthBias2EXT(SerialiserType &ser,
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
-      {
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
+      {
+        VulkanRenderState &renderstate = GetCmdRenderState();
+
+        renderstate.dynamicStates[VkDynamicDepthBias] = true;
+
+        renderstate.bias.depth = DepthBiasInfo.depthBiasConstantFactor;
+        renderstate.bias.biasclamp = DepthBiasInfo.depthBiasClamp;
+        renderstate.bias.slope = DepthBiasInfo.depthBiasSlopeFactor;
+
+        const VkDepthBiasRepresentationInfoEXT *depthBiasRepr =
+            (const VkDepthBiasRepresentationInfoEXT *)FindNextStruct(
+                &DepthBiasInfo, VK_STRUCTURE_TYPE_DEPTH_BIAS_REPRESENTATION_INFO_EXT);
+        if(depthBiasRepr)
         {
-          VulkanRenderState &renderstate = GetCmdRenderState();
-
-          renderstate.dynamicStates[VkDynamicDepthBias] = true;
-
-          renderstate.bias.depth = DepthBiasInfo.depthBiasConstantFactor;
-          renderstate.bias.biasclamp = DepthBiasInfo.depthBiasClamp;
-          renderstate.bias.slope = DepthBiasInfo.depthBiasSlopeFactor;
-
-          const VkDepthBiasRepresentationInfoEXT *depthBiasRepr =
-              (const VkDepthBiasRepresentationInfoEXT *)FindNextStruct(
-                  &DepthBiasInfo, VK_STRUCTURE_TYPE_DEPTH_BIAS_REPRESENTATION_INFO_EXT);
-          if(depthBiasRepr)
-          {
-            renderstate.bias.repr = depthBiasRepr->depthBiasRepresentation;
-            renderstate.bias.exact = depthBiasRepr->depthBiasExact != VK_FALSE;
-          }
-          else
-          {
-            renderstate.bias.repr = VK_DEPTH_BIAS_REPRESENTATION_LEAST_REPRESENTABLE_VALUE_FORMAT_EXT;
-            renderstate.bias.exact = false;
-          }
+          renderstate.bias.repr = depthBiasRepr->depthBiasRepresentation;
+          renderstate.bias.exact = depthBiasRepr->depthBiasExact != VK_FALSE;
+        }
+        else
+        {
+          renderstate.bias.repr = VK_DEPTH_BIAS_REPRESENTATION_LEAST_REPRESENTABLE_VALUE_FORMAT_EXT;
+          renderstate.bias.exact = false;
         }
       }
-      else
-      {
-        commandBuffer = VK_NULL_HANDLE;
-      }
-    }
 
-    if(commandBuffer != VK_NULL_HANDLE)
-      ObjDisp(commandBuffer)->CmdSetDepthBias2EXT(Unwrap(commandBuffer), &DepthBiasInfo);
+      if(commandBuffer != VK_NULL_HANDLE)
+        ObjDisp(commandBuffer)->CmdSetDepthBias2EXT(Unwrap(commandBuffer), &DepthBiasInfo);
+    }
   }
 
   return true;
