@@ -1367,7 +1367,6 @@ bool WrappedVulkan::Serialise_vkQueueSubmit(SerialiserType &ser, VkQueue queue, 
       // VkPerformanceQuerySubmitInfoKHR we don't replay since we don't replay perf counter work
 
       rdcstr basename = StringFormat::Fmt("vkQueueSubmit(%u)", submitInfo.commandBufferInfoCount);
-
       ReplayQueueSubmit(queue, submitInfo, basename);
     }
     if(submitCount == 0)
@@ -1558,7 +1557,6 @@ bool WrappedVulkan::Serialise_vkQueueSubmit2(SerialiserType &ser, VkQueue queue,
     for(uint32_t sub = 0; sub < submitCount; sub++)
     {
       rdcstr basename = StringFormat::Fmt("vkQueueSubmit2(%u)", pSubmits[sub].commandBufferInfoCount);
-
       ReplayQueueSubmit(queue, pSubmits[sub], basename);
     }
     if(submitCount == 0)
@@ -1755,13 +1753,13 @@ bool WrappedVulkan::Serialise_vkQueueBindSparse(SerialiserType &ser, VkQueue que
         {
           if(IsLoading(m_State))
             m_SparseBindResources.insert(GetResID(buf[i].buffer));
-
-          buf[i].buffer = Unwrap(buf[i].buffer);
-
-          VkSparseMemoryBind *binds = (VkSparseMemoryBind *)buf[i].pBinds;
-          for(uint32_t b = 0; b < buf[i].bindCount; b++)
-            binds[b].memory = Unwrap(binds[b].memory);
         }
+
+        buf[i].buffer = Unwrap(buf[i].buffer);
+
+        VkSparseMemoryBind *binds = (VkSparseMemoryBind *)buf[i].pBinds;
+        for(uint32_t b = 0; b < buf[i].bindCount; b++)
+          binds[b].memory = Unwrap(binds[b].memory);
       }
 
       VkSparseImageOpaqueMemoryBindInfo *imopaque =
