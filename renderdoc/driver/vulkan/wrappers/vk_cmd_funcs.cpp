@@ -4813,24 +4813,26 @@ bool WrappedVulkan::Serialise_vkCmdCopyQueryPoolResults(
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
-      else
-        commandBuffer = VK_NULL_HANDLE;
-    }
 
-    VulkanCreationInfo::QueryPool &qpInfo = m_CreationInfo.m_QueryPool[GetResID(queryPool)];
+      if(loading)
+      {
+        m_LoadingEventNode.AddResourceUsage(GetResID(queryPool), ResourceUsage::CopySrc);
+        m_LoadingEventNode.AddResourceUsage(GetResID(destBuffer), ResourceUsage::CopyDst);
+      }
 
-    // skip AS queries as we do not serialise them
-    if(qpInfo.queryType == VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR ||
-       qpInfo.queryType == VK_QUERY_TYPE_ACCELERATION_STRUCTURE_SIZE_KHR ||
-       qpInfo.queryType == VK_QUERY_TYPE_ACCELERATION_STRUCTURE_SERIALIZATION_SIZE_KHR ||
-       qpInfo.queryType ==
-           VK_QUERY_TYPE_ACCELERATION_STRUCTURE_SERIALIZATION_BOTTOM_LEVEL_POINTERS_KHR)
-    {
-      if(commandBuffer != VK_NULL_HANDLE)
+      VulkanCreationInfo::QueryPool &qpInfo = m_CreationInfo.m_QueryPool[GetResID(queryPool)];
+
+      // skip AS queries as we do not serialise them
+      if(qpInfo.queryType == VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR ||
+         qpInfo.queryType == VK_QUERY_TYPE_ACCELERATION_STRUCTURE_SIZE_KHR ||
+         qpInfo.queryType == VK_QUERY_TYPE_ACCELERATION_STRUCTURE_SERIALIZATION_SIZE_KHR ||
+         qpInfo.queryType ==
+             VK_QUERY_TYPE_ACCELERATION_STRUCTURE_SERIALIZATION_BOTTOM_LEVEL_POINTERS_KHR)
       {
         const bool is64bit = (flags & VK_QUERY_RESULT_64_BIT) > 0;
         const bool hasAvailability = (flags & VK_QUERY_RESULT_WITH_AVAILABILITY_BIT) > 0;
@@ -4843,13 +4845,10 @@ bool WrappedVulkan::Serialise_vkCmdCopyQueryPoolResults(
 
         ObjDisp(commandBuffer)
             ->CmdFillBuffer(Unwrap(commandBuffer), Unwrap(destBuffer), destOffset, size, 0);
+
+        return true;
       }
 
-      return true;
-    }
-
-    if(commandBuffer != VK_NULL_HANDLE)
-    {
       ObjDisp(commandBuffer)
           ->CmdCopyQueryPoolResults(Unwrap(commandBuffer), Unwrap(queryPool), firstQuery,
                                     queryCount, Unwrap(destBuffer), destOffset, destStride, flags);
@@ -9974,26 +9973,23 @@ bool WrappedVulkan::Serialise_vkCmdCopyQueryPoolResultsToMemoryKHR(
 
   if(IsReplayingAndReading())
   {
-    m_LastCmdBufferID = GetResID(commandBuffer);
-
-    if(IsActiveReplaying(m_State))
+    if(InRerecordRange(m_LastCmdBufferID))
     {
-      if(InRerecordRange(m_LastCmdBufferID))
+      bool loading = IsLoading(m_State);
+      if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
-      else
-        commandBuffer = VK_NULL_HANDLE;
-    }
 
-    VulkanCreationInfo::QueryPool &qpInfo = m_CreationInfo.m_QueryPool[GetResID(queryPool)];
+      if(IsLoading(m_State))
+        m_LoadingEventNode.AddResourceUsage(GetResID(queryPool), ResourceUsage::CopySrc);
 
-    // skip AS queries as we do not serialise them
-    if(qpInfo.queryType == VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR ||
-       qpInfo.queryType == VK_QUERY_TYPE_ACCELERATION_STRUCTURE_SIZE_KHR ||
-       qpInfo.queryType == VK_QUERY_TYPE_ACCELERATION_STRUCTURE_SERIALIZATION_SIZE_KHR ||
-       qpInfo.queryType ==
-           VK_QUERY_TYPE_ACCELERATION_STRUCTURE_SERIALIZATION_BOTTOM_LEVEL_POINTERS_KHR)
-    {
-      if(commandBuffer != VK_NULL_HANDLE)
+      VulkanCreationInfo::QueryPool &qpInfo = m_CreationInfo.m_QueryPool[GetResID(queryPool)];
+
+      // skip AS queries as we do not serialise them
+      if(qpInfo.queryType == VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR ||
+         qpInfo.queryType == VK_QUERY_TYPE_ACCELERATION_STRUCTURE_SIZE_KHR ||
+         qpInfo.queryType == VK_QUERY_TYPE_ACCELERATION_STRUCTURE_SERIALIZATION_SIZE_KHR ||
+         qpInfo.queryType ==
+             VK_QUERY_TYPE_ACCELERATION_STRUCTURE_SERIALIZATION_BOTTOM_LEVEL_POINTERS_KHR)
       {
         const bool is64bit = (queryResultFlags & VK_QUERY_RESULT_64_BIT) > 0;
         const bool hasAvailability = (queryResultFlags & VK_QUERY_RESULT_WITH_AVAILABILITY_BIT) > 0;
@@ -10006,13 +10002,10 @@ bool WrappedVulkan::Serialise_vkCmdCopyQueryPoolResultsToMemoryKHR(
 
         VkDeviceAddressRangeKHR range = {DstRange.address, size};
         ObjDisp(commandBuffer)->CmdFillMemoryKHR(Unwrap(commandBuffer), &range, dstFlags, 0);
+
+        return true;
       }
 
-      return true;
-    }
-
-    if(commandBuffer != VK_NULL_HANDLE)
-    {
       ObjDisp(commandBuffer)
           ->CmdCopyQueryPoolResultsToMemoryKHR(Unwrap(commandBuffer), Unwrap(queryPool), firstQuery,
                                                queryCount, &DstRange, dstFlags, queryResultFlags);
