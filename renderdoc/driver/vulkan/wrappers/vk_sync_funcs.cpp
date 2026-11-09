@@ -189,6 +189,9 @@ bool WrappedVulkan::Serialise_vkGetFenceStatus(SerialiserType &ser, VkDevice dev
   if(IsReplayingAndReading())
   {
     ObjDisp(device)->DeviceWaitIdle(Unwrap(device));
+
+    if(IsLoading(m_State))
+      AddEventResourceUsage(GetResID(fence), ResourceUsage::GetStatus);
   }
 
   return true;
@@ -248,6 +251,11 @@ bool WrappedVulkan::Serialise_vkResetFences(SerialiserType &ser, VkDevice device
     // since we don't have anything signalling or waiting on fences, don't bother to reset them
     // either.
     // ObjDisp(device)->ResetFences(Unwrap(device), fenceCount, pFences);
+    if(IsLoading(m_State))
+    {
+      for(uint32_t i = 0; i < fenceCount; ++i)
+        AddEventResourceUsage(GetResID(pFences[i]), ResourceUsage::Reset);
+    }
   }
 
   return true;
@@ -294,6 +302,12 @@ bool WrappedVulkan::Serialise_vkWaitForFences(SerialiserType &ser, VkDevice devi
   if(IsReplayingAndReading())
   {
     ObjDisp(device)->DeviceWaitIdle(Unwrap(device));
+
+    if(IsLoading(m_State))
+    {
+      for(uint32_t i = 0; i < fenceCount; ++i)
+        AddEventResourceUsage(GetResID(pFences[i]), ResourceUsage::Wait);
+    }
   }
 
   return true;
@@ -406,6 +420,8 @@ bool WrappedVulkan::Serialise_vkSetEvent(SerialiserType &ser, VkDevice device, V
   if(IsReplayingAndReading())
   {
     // see top of this file for current event/fence handling
+    if(IsLoading(m_State))
+      AddEventResourceUsage(GetResID(event), ResourceUsage::Signal);
   }
 
   return true;
@@ -445,6 +461,8 @@ bool WrappedVulkan::Serialise_vkResetEvent(SerialiserType &ser, VkDevice device,
   if(IsReplayingAndReading())
   {
     // see top of this file for current event/fence handling
+    if(IsLoading(m_State))
+      AddEventResourceUsage(GetResID(event), ResourceUsage::Reset);
   }
 
   return true;
@@ -484,6 +502,9 @@ bool WrappedVulkan::Serialise_vkGetEventStatus(SerialiserType &ser, VkDevice dev
   if(IsReplayingAndReading())
   {
     ObjDisp(device)->DeviceWaitIdle(Unwrap(device));
+
+    if(IsLoading(m_State))
+      AddEventResourceUsage(GetResID(event), ResourceUsage::Wait);
   }
 
   return true;
@@ -684,6 +705,9 @@ bool WrappedVulkan::Serialise_vkCmdResetEvent(SerialiserType &ser, VkCommandBuff
       if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
+      if(loading)
+        AddEventResourceUsage(GetResID(event), ResourceUsage::Reset);
+
       // ObjDisp(commandBuffer)->CmdResetEvent(Unwrap(commandBuffer), Unwrap(event), mask);
     }
   }
@@ -804,6 +828,8 @@ bool WrappedVulkan::Serialise_vkCmdWaitEvents(
           if(b.image != VK_NULL_HANDLE && b.oldLayout == VK_IMAGE_LAYOUT_UNDEFINED)
             AddEventResourceUsage(GetResID(b.image), ResourceUsage::Discard);
         }
+        for(uint32_t i = 0; i < eventCount; i++)
+          AddEventResourceUsage(GetResID(pEvents[i]), ResourceUsage::Wait);
       }
 
       // don't wrap this event
@@ -971,6 +997,9 @@ bool WrappedVulkan::Serialise_vkGetSemaphoreCounterValue(SerialiserType &ser, Vk
   if(IsReplayingAndReading())
   {
     ObjDisp(device)->DeviceWaitIdle(Unwrap(device));
+
+    if(IsLoading(m_State))
+      AddEventResourceUsage(GetResID(semaphore), ResourceUsage::ReadCounter);
   }
 
   return true;
@@ -1027,6 +1056,11 @@ bool WrappedVulkan::Serialise_vkWaitSemaphores(SerialiserType &ser, VkDevice dev
   if(IsReplayingAndReading())
   {
     ObjDisp(device)->DeviceWaitIdle(Unwrap(device));
+    if(IsLoading(m_State))
+    {
+      for(uint32_t i = 0; i < WaitInfo.semaphoreCount; ++i)
+        AddEventResourceUsage(GetResID(WaitInfo.pSemaphores[i]), ResourceUsage::Wait);
+    }
   }
 
   return true;
@@ -1077,6 +1111,9 @@ bool WrappedVulkan::Serialise_vkSignalSemaphore(SerialiserType &ser, VkDevice de
   if(IsReplayingAndReading())
   {
     ObjDisp(device)->DeviceWaitIdle(Unwrap(device));
+
+    if(IsLoading(m_State))
+      AddEventResourceUsage(GetResID(SignalInfo.semaphore), ResourceUsage::Signal);
   }
 
   return true;
@@ -1129,6 +1166,9 @@ bool WrappedVulkan::Serialise_vkCmdSetEvent2(SerialiserType &ser, VkCommandBuffe
       bool loading = IsLoading(m_State);
       if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
+
+      if(loading)
+        AddEventResourceUsage(GetResID(event), ResourceUsage::Signal);
 
       //  ObjDisp(commandBuffer)->CmdSetEvent2(Unwrap(commandBuffer), Unwrap(event), &DependencyInfo);
     }
@@ -1190,6 +1230,9 @@ bool WrappedVulkan::Serialise_vkCmdResetEvent2(SerialiserType &ser, VkCommandBuf
       bool loading = IsLoading(m_State);
       if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
+
+      if(loading)
+        AddEventResourceUsage(GetResID(event), ResourceUsage::Reset);
 
       // ObjDisp(commandBuffer)->CmdResetEvent2(Unwrap(commandBuffer), Unwrap(event), stageMask);
     }
@@ -1301,6 +1344,8 @@ bool WrappedVulkan::Serialise_vkCmdWaitEvents2(SerialiserType &ser, VkCommandBuf
                b.newLayout != VK_IMAGE_LAYOUT_UNDEFINED)
               AddEventResourceUsage(GetResID(b.image), ResourceUsage::Discard);
           }
+          for(uint32_t i = 0; i < eventCount; ++i)
+            AddEventResourceUsage(GetResID(pEvents[i]), ResourceUsage::Wait);
         }
 
         if(loading && evIdx == 0)
