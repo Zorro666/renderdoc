@@ -2186,6 +2186,8 @@ bool WrappedVulkan::Serialise_vkResetQueryPool(SerialiserType &ser, VkDevice dev
   if(IsReplayingAndReading())
   {
     ObjDisp(device)->ResetQueryPool(Unwrap(device), Unwrap(queryPool), firstQuery, queryCount);
+    if(IsLoading(m_State))
+      AddEventResourceUsage(GetResID(queryPool), ResourceUsage::Reset);
   }
 
   return true;
