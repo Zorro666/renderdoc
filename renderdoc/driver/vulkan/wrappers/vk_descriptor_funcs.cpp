@@ -2458,6 +2458,8 @@ void WrappedVulkan::ReplayDescriptorSetWrite(VkDevice device, const VkWriteDescr
       }
     }
   }
+  if(IsLoading(m_State))
+    AddEventResourceUsage(GetResID(writeDesc.dstSet), ResourceUsage::DescriptorSetWrite);
 }
 
 void WrappedVulkan::ReplayDescriptorSetCopy(VkDevice device, const VkCopyDescriptorSet &copyDesc)
@@ -2532,6 +2534,11 @@ void WrappedVulkan::ReplayDescriptorSetCopy(VkDevice device, const VkCopyDescrip
 
       (*dstbind)[curDstIdx] = (*srcbind)[curSrcIdx];
     }
+  }
+  if(IsLoading(m_State))
+  {
+    AddEventResourceUsage(srcSetId, ResourceUsage::CopySrc);
+    AddEventResourceUsage(dstSetId, ResourceUsage::CopyDst);
   }
 }
 
