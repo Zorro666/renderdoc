@@ -5579,6 +5579,8 @@ bool WrappedVulkan::Serialise_vkDeviceWaitIdle(SerialiserType &ser, VkDevice dev
   if(IsReplayingAndReading())
   {
     ObjDisp(device)->DeviceWaitIdle(Unwrap(device));
+    if(IsLoading(m_State))
+      AddEventResourceUsage(GetResID(device), ResourceUsage::Wait);
   }
 
   return true;
