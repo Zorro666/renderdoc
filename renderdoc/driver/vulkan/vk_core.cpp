@@ -5184,6 +5184,8 @@ bool WrappedVulkan::ProcessChunk(ReadSerialiser &ser, VulkanChunk chunk)
         action.copyDestination = m_LastPresentedImage;
 
         AddAction(action);
+        if(m_LastPresentedImage != ResourceId())
+          GetLastEventNode().AddResourceUsage(m_LastPresentedImage, ResourceUsage::CopyDst);
       }
 
       return true;
