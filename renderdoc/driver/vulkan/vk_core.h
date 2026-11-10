@@ -1223,11 +1223,15 @@ private:
 
   void AddEventResourceUsage(ResourceId id, ResourceUsage usage)
   {
+    if(!IsLoading(m_State))
+      RDCFATAL("!IsLoading");
     RDCASSERT(IsLoading(m_State));
     m_LoadingEventNode.AddResourceUsage(id, usage);
   }
   void AddEventResourceBind(ResourceId prev, ResourceId cur)
   {
+    if(!IsLoading(m_State))
+      RDCFATAL("!IsLoading");
     RDCASSERT(IsLoading(m_State));
     m_LoadingEventNode.AddResourceBind(prev, cur);
   }
@@ -1295,6 +1299,8 @@ private:
 
   VulkanEventNode &GetLastEventNode()
   {
+    if(!IsLoading(m_State))
+      RDCFATAL("!IsLoading");
     RDCASSERT(IsLoading(m_State));
     rdcarray<VulkanEventNode> &eventNodes =
         (m_LastCmdBufferID != ResourceId() ? m_BakedCmdBufferInfo[m_LastCmdBufferID].eventNodes
@@ -1303,6 +1309,8 @@ private:
   }
   VulkanEventNode &GetLoadingEventNode()
   {
+    if(!IsLoading(m_State))
+      RDCFATAL("!IsLoading");
     RDCASSERT(IsLoading(m_State));
     return m_LoadingEventNode;
   }
