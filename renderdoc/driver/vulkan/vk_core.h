@@ -1219,6 +1219,11 @@ private:
     RDCASSERT(IsLoading(m_State));
     m_LoadingEventNode.AddResourceUsage(id, usage);
   }
+  void AddEventResourceBind(ResourceId prev, ResourceId cur)
+  {
+    RDCASSERT(IsLoading(m_State));
+    m_LoadingEventNode.AddResourceBind(prev, cur);
+  }
 
   rdcarray<APIEvent> m_Events;
   VulkanEventNode m_LoadingEventNode;
