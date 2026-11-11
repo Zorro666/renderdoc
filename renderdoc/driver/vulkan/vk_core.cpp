@@ -6956,6 +6956,9 @@ void WrappedVulkan::AddEvent()
       apievent.annotations = m_RootAnnotation->Duplicate();
   }
 
+  if(m_LastCmdBufferID != ResourceId())
+    node.AddResourceUsage(m_LastCmdBufferID, ResourceUsage::Recorded);
+
   m_AddedEventNode = true;
 }
 
