@@ -2268,6 +2268,10 @@ bool WrappedVulkan::Serialise_vkCmdBeginRenderPass(SerialiserType &ser, VkComman
                                            (uint32_t)imgBarriers.size(), imgBarriers.data());
       if(loading)
       {
+        // EndRenderPass will add Unbind usage for the RenderPass, Framebuffer
+        AddEventResourceUsage(fb, ResourceUsage::Bind);
+        AddEventResourceUsage(rp, ResourceUsage::Bind);
+
         // Record image usage for images cleared in the beginning of the render pass.
         for(size_t i = 0; i < rpinfo.attachments.size(); i++)
         {
@@ -2543,6 +2547,10 @@ bool WrappedVulkan::Serialise_vkCmdEndRenderPass(SerialiserType &ser, VkCommandB
           action.flags |= ActionFlags::PassBoundary | ActionFlags::EndPass;
 
           AddAction(action);
+
+          VulkanEventNode &eventNode = GetLastEventNode();
+          eventNode.AddResourceUsage(renderstate.GetFramebuffer(), ResourceUsage::UnBind);
+          eventNode.AddResourceUsage(renderstate.GetRenderPass(), ResourceUsage::UnBind);
         }
 
         attachments = renderstate.GetFramebufferAttachments();
@@ -2820,8 +2828,13 @@ bool WrappedVulkan::Serialise_vkCmdBeginRenderPass2(SerialiserType &ser,
         m_ActionCallback->PostRemisc(eventId, drawFlags, commandBuffer);
       }
 
+      // JAKE TODO: CHECK THIS AGAINST vkCmdBeginRenderPass
       if(loading)
       {
+        // EndRenderPass will add Unbind usage for the RenderPass, Framebuffer
+        AddEventResourceUsage(fb, ResourceUsage::Bind);
+        AddEventResourceUsage(rp, ResourceUsage::Bind);
+
         // Record image usage for images cleared in the beginning of the render pass.
         const rdcarray<ResourceId> &fbattachments =
             m_BakedCmdBufferInfo[m_LastCmdBufferID].state.GetFramebufferAttachments();
@@ -3135,6 +3148,10 @@ bool WrappedVulkan::Serialise_vkCmdEndRenderPass2(SerialiserType &ser, VkCommand
           action.flags |= ActionFlags::PassBoundary | ActionFlags::EndPass;
 
           AddAction(action);
+
+          VulkanEventNode &eventNode = GetLastEventNode();
+          eventNode.AddResourceUsage(renderstate.GetFramebuffer(), ResourceUsage::UnBind);
+          eventNode.AddResourceUsage(renderstate.GetRenderPass(), ResourceUsage::UnBind);
         }
 
         attachments = GetCmdRenderState().GetFramebufferAttachments();
@@ -3605,6 +3622,12 @@ bool WrappedVulkan::Serialise_vkCmdBindPipeline(SerialiserType &ser, VkCommandBu
             renderstate.domainOrigin = pipeInfo.tessellationDomainOrigin;
           }
         }
+        if(loading)
+        {
+          if(prevPipeline != ResourceId())
+            AddEventResourceUsage(prevPipeline, ResourceUsage::UnBind);
+          AddEventResourceUsage(id, ResourceUsage::Bind);
+        }
       }
 
       ObjDisp(commandBuffer)->CmdBindPipeline(Unwrap(commandBuffer), pipelineBindPoint, Unwrap(pipeline));
@@ -3701,6 +3724,8 @@ bool WrappedVulkan::Serialise_vkCmdBindDescriptorSets(
         // consume the offsets linearly along the descriptor set layouts
         for(uint32_t i = 0; i < setCount; i++)
         {
+          if(loading)
+            AddEventResourceBind(descsets[firstSet + i].descSet, GetResID(pDescriptorSets[i]));
           descsets[firstSet + i] = VulkanStatePipeline::DescriptorAndOffsets();
           descsets[firstSet + i].pipeLayout = GetResID(layout);
           descsets[firstSet + i].descSet = GetResID(pDescriptorSets[i]);
@@ -3822,6 +3847,9 @@ bool WrappedVulkan::Serialise_vkCmdBindDescriptorSets2(
           // consume the offsets linearly along the descriptor set layouts
           for(uint32_t i = 0; i < BindDescriptorSetsInfo.descriptorSetCount; i++)
           {
+            if(loading)
+              AddEventResourceBind(descsets[firstSet + i].descSet,
+                                   GetResID(BindDescriptorSetsInfo.pDescriptorSets[i]));
             descsets[firstSet + i] = VulkanStatePipeline::DescriptorAndOffsets();
             descsets[firstSet + i].pipeLayout = GetResID(BindDescriptorSetsInfo.layout);
             descsets[firstSet + i].descSet = GetResID(BindDescriptorSetsInfo.pDescriptorSets[i]);
@@ -3915,6 +3943,8 @@ bool WrappedVulkan::Serialise_vkCmdBindVertexBuffers(SerialiserType &ser,
 
         for(uint32_t i = 0; i < bindingCount; i++)
         {
+          if(loading)
+            AddEventResourceBind(renderstate.vbuffers[firstBinding + i].buf, GetResID(pBuffers[i]));
           renderstate.vbuffers[firstBinding + i].buf = GetResID(pBuffers[i]);
           renderstate.vbuffers[firstBinding + i].offs = pOffsets[i];
           renderstate.vbuffers[firstBinding + i].size = VK_WHOLE_SIZE;
@@ -3996,6 +4026,9 @@ bool WrappedVulkan::Serialise_vkCmdBindVertexBuffers2(
 
         for(uint32_t i = 0; i < bindingCount; i++)
         {
+          if(loading)
+            AddEventResourceBind(renderstate.vbuffers[firstBinding + i].buf, GetResID(pBuffers[i]));
+
           renderstate.vbuffers[firstBinding + i].buf = GetResID(pBuffers[i]);
           renderstate.vbuffers[firstBinding + i].offs = pOffsets[i];
           renderstate.vbuffers[firstBinding + i].size = pSizes ? pSizes[i] : VK_WHOLE_SIZE;
@@ -4083,6 +4116,8 @@ bool WrappedVulkan::Serialise_vkCmdBindIndexBuffer(SerialiserType &ser,
 
       {
         VulkanRenderState &renderstate = GetCmdRenderState();
+        if(loading)
+          AddEventResourceBind(renderstate.ibuffer.buf, GetResID(buffer));
         renderstate.ibuffer.buf = GetResID(buffer);
         renderstate.ibuffer.offs = offset;
         renderstate.ibuffer.size = VK_WHOLE_SIZE;
@@ -4795,6 +4830,12 @@ bool WrappedVulkan::Serialise_vkCmdCopyQueryPoolResults(
       if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
 
+      if(loading)
+      {
+        AddEventResourceUsage(GetResID(queryPool), ResourceUsage::CopySrc);
+        AddEventResourceUsage(GetResID(destBuffer), ResourceUsage::CopyDst);
+      }
+
       VulkanCreationInfo::QueryPool &qpInfo = m_CreationInfo.m_QueryPool[GetResID(queryPool)];
 
       // skip AS queries as we do not serialise them
@@ -4947,6 +4988,9 @@ bool WrappedVulkan::Serialise_vkCmdBeginQuery(SerialiserType &ser, VkCommandBuff
 
     if(commandBuffer != VK_NULL_HANDLE)
       ObjDisp(commandBuffer)->CmdBeginQuery(Unwrap(commandBuffer), Unwrap(queryPool), query, flags);
+
+    if(IsLoading(m_State))
+      AddEventResourceUsage(GetResID(queryPool), ResourceUsage::Begin);
   }
 
   return true;
@@ -5000,6 +5044,9 @@ bool WrappedVulkan::Serialise_vkCmdEndQuery(SerialiserType &ser, VkCommandBuffer
 
     if(commandBuffer != VK_NULL_HANDLE)
       ObjDisp(commandBuffer)->CmdEndQuery(Unwrap(commandBuffer), Unwrap(queryPool), query);
+
+    if(IsLoading(m_State))
+      AddEventResourceUsage(GetResID(queryPool), ResourceUsage::End);
   }
 
   return true;
@@ -5059,6 +5106,8 @@ bool WrappedVulkan::Serialise_vkCmdResetQueryPool(SerialiserType &ser, VkCommand
 
       m_ResetQueries.push_back({queryPool, firstQuery, queryCount});
     }
+    if(IsLoading(m_State))
+      AddEventResourceUsage(GetResID(queryPool), ResourceUsage::Reset);
   }
 
   return true;
@@ -5208,6 +5257,8 @@ bool WrappedVulkan::Serialise_vkCmdExecuteCommands(SerialiserType &ser, VkComman
         beginNode.startChildExecute = true;
         beginNode.cmdBufId = m_LastCmdBufferID;
         beginNode.childCmdBufId = cmd;
+        beginNode.AddResourceUsage(cmd, ResourceUsage::Reset);
+        beginNode.AddResourceUsage(cmdBufInfo.commandBuffer, ResourceUsage::Reset);
 
         if(!parentActiveRenderPass &&
            (cmdBufInfo.beginFlags & VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT))
@@ -5244,6 +5295,8 @@ bool WrappedVulkan::Serialise_vkCmdExecuteCommands(SerialiserType &ser, VkComman
         VulkanEventNode &endNode = GetLastEventNode();
         endNode.endChildExecute = true;
         endNode.childCmdBufId = cmd;
+        endNode.AddResourceUsage(cmd, ResourceUsage::Submit);
+        endNode.AddResourceUsage(cmdBufInfo.commandBuffer, ResourceUsage::Submit);
       }
 
       // add an extra pop marker
@@ -6246,6 +6299,8 @@ bool WrappedVulkan::Serialise_vkCmdWriteBufferMarkerAMD(SerialiserType &ser,
           ->CmdWriteBufferMarkerAMD(Unwrap(commandBuffer), pipelineStage, Unwrap(dstBuffer),
                                     dstOffset, marker);
     }
+    if(IsLoading(m_State))
+      AddEventResourceUsage(GetResID(dstBuffer), ResourceUsage::CopyDst);
   }
 
   return true;
@@ -6313,6 +6368,8 @@ bool WrappedVulkan::Serialise_vkCmdWriteBufferMarker2AMD(SerialiserType &ser,
           ->CmdWriteBufferMarker2AMD(Unwrap(commandBuffer), stage, Unwrap(dstBuffer), dstOffset,
                                      marker);
     }
+    if(IsLoading(m_State))
+      AddEventResourceUsage(GetResID(dstBuffer), ResourceUsage::CopyDst);
   }
 
   return true;
@@ -6640,6 +6697,8 @@ bool WrappedVulkan::Serialise_vkCmdBindTransformFeedbackBuffersEXT(
 
         for(uint32_t i = 0; i < bindingCount; i++)
         {
+          if(loading)
+            AddEventResourceBind(renderstate.xfbbuffers[firstBinding + i].buf, GetResID(pBuffers[i]));
           renderstate.xfbbuffers[firstBinding + i].buf = GetResID(pBuffers[i]);
           renderstate.xfbbuffers[firstBinding + i].offs = pOffsets[i];
           renderstate.xfbbuffers[firstBinding + i].size = pSizes ? pSizes[i] : VK_WHOLE_SIZE;
@@ -6721,6 +6780,8 @@ bool WrappedVulkan::Serialise_vkCmdBeginTransformFeedbackEXT(
         for(uint32_t i = 0; i < bufferCount; i++)
         {
           ResourceId buf = pCounterBuffers ? GetResID(pCounterBuffers[i]) : ResourceId();
+          if(loading)
+            AddEventResourceBind(renderstate.xfbcounters[i].buf, buf);
           renderstate.xfbcounters[i].buf = buf;
           renderstate.xfbcounters[i].offs = pCounterBufferOffsets ? pCounterBufferOffsets[i] : 0;
         }
@@ -6798,6 +6859,11 @@ bool WrappedVulkan::Serialise_vkCmdEndTransformFeedbackEXT(
 
       {
         VulkanRenderState &renderstate = GetCmdRenderState();
+        if(loading && pCounterBuffers)
+        {
+          for(uint32_t i = 0; i < bufferCount; i++)
+            AddEventResourceUsage(GetResID(pCounterBuffers[i]), ResourceUsage::UnBind);
+        }
         renderstate.firstxfbcounter = 0;
         renderstate.xfbcounters.clear();
       }
@@ -6878,6 +6944,9 @@ bool WrappedVulkan::Serialise_vkCmdBeginQueryIndexedEXT(SerialiserType &ser,
     if(commandBuffer != VK_NULL_HANDLE)
       ObjDisp(commandBuffer)
           ->CmdBeginQueryIndexedEXT(Unwrap(commandBuffer), Unwrap(queryPool), query, flags, index);
+
+    if(IsLoading(m_State))
+      AddEventResourceUsage(GetResID(queryPool), ResourceUsage::Begin);
   }
 
   return true;
@@ -6937,6 +7006,9 @@ bool WrappedVulkan::Serialise_vkCmdEndQueryIndexedEXT(SerialiserType &ser,
     if(commandBuffer != VK_NULL_HANDLE)
       ObjDisp(commandBuffer)
           ->CmdEndQueryIndexedEXT(Unwrap(commandBuffer), Unwrap(queryPool), query, index);
+
+    if(IsLoading(m_State))
+      AddEventResourceUsage(GetResID(queryPool), ResourceUsage::End);
   }
 
   return true;
@@ -8529,6 +8601,8 @@ bool WrappedVulkan::Serialise_vkCmdWriteAccelerationStructuresPropertiesKHR(
   {
     m_LastCmdBufferID = GetResID(commandBuffer);
 
+    if(IsLoading(m_State))
+      AddEventResourceUsage(GetResID(queryPool), ResourceUsage::CopyDst);
     // don't actually replay - this is purely for user information
   }
 
@@ -8655,6 +8729,9 @@ bool WrappedVulkan::Serialise_vkCmdBindShadersEXT(SerialiserType &ser,
           ResourceId shader =
               pShaders && (pShaders[i] != VK_NULL_HANDLE) ? GetResID(pShaders[i]) : ResourceId();
 
+          if(loading)
+            AddEventResourceBind(renderstate.shaderObjects[stageIndex], shader);
+
           renderstate.shaderObjects[stageIndex] = shader;
 
           // calling vkCmdBindShadersEXT disturbs the corresponding pipeline bind points
@@ -8744,6 +8821,9 @@ bool WrappedVulkan::Serialise_vkCmdBindIndexBuffer2(SerialiserType &ser,
 
       {
         VulkanRenderState &renderstate = GetCmdRenderState();
+
+        if(loading)
+          AddEventResourceBind(renderstate.ibuffer.buf, GetResID(buffer));
 
         renderstate.ibuffer.buf = GetResID(buffer);
         renderstate.ibuffer.offs = offset;
@@ -9896,6 +9976,9 @@ bool WrappedVulkan::Serialise_vkCmdCopyQueryPoolResultsToMemoryKHR(
       bool loading = IsLoading(m_State);
       if(!loading)
         commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
+
+      if(IsLoading(m_State))
+        AddEventResourceUsage(GetResID(queryPool), ResourceUsage::CopySrc);
 
       VulkanCreationInfo::QueryPool &qpInfo = m_CreationInfo.m_QueryPool[GetResID(queryPool)];
 
