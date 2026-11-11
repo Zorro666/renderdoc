@@ -5184,6 +5184,8 @@ bool WrappedVulkan::ProcessChunk(ReadSerialiser &ser, VulkanChunk chunk)
         action.copyDestination = m_LastPresentedImage;
 
         AddAction(action);
+        if(m_LastPresentedImage != ResourceId())
+          GetLastEventNode().AddResourceUsage(m_LastPresentedImage, ResourceUsage::CopyDst);
       }
 
       return true;
@@ -6391,8 +6393,44 @@ void WrappedVulkan::AddUsage(VulkanEventNode &eventNode)
 
   const VulkanStatePipeline &pipeState = (compute ? state.compute : state.graphics);
 
+  VulkanCreationInfo &c = m_CreationInfo;
+
+  //////////////////////////////
+  // Pipeline
+  bool shaderObject = pipeState.shaderObject;
+
+  ResourceId pipe = pipeState.pipeline;
+  if(!shaderObject)
+  {
+    eventNode.AddResourceUsage(pipe, ResourceUsage::Pipeline);
+
+    const VulkanCreationInfo::Pipeline &p = c.m_Pipeline[pipe];
+    if(compute)
+    {
+      eventNode.AddResourceUsage(p.compLayout, ResourceUsage::PipelineLayout);
+    }
+    else
+    {
+      eventNode.AddUniqueResourceUsage(p.vertLayout, ResourceUsage::PipelineLayout);
+      eventNode.AddUniqueResourceUsage(p.fragLayout, ResourceUsage::PipelineLayout);
+    }
+  }
+
   //////////////////////////////
   // Shaders
+
+  rdcarray<int> shaderStages = ShaderStagesForAction(action.flags);
+
+  for(int shad : shaderStages)
+  {
+    VulkanCreationInfo::ShaderEntry &sh = shaderObject
+                                              ? c.m_ShaderObject[state.shaderObjects[shad]].shad
+                                              : c.m_Pipeline[pipe].shaders[shad];
+    if(sh.module == ResourceId())
+      continue;
+
+    eventNode.AddResourceUsage(sh.module, ResourceUsage(uint32_t(ResourceUsage::VS_Shader) + shad));
+  }
 
   if(pipeState.UsingDescBufs())
   {
@@ -6530,7 +6568,10 @@ void WrappedVulkan::AddUsageForDescriptorBufferBind(VulkanEventNode &eventNode,
 
   const VulkanCreationInfo::PipelineLayout &pipeLayout =
       c.m_PipelineLayout[descSets[bindset].pipeLayout];
-  const DescSetLayout &layout = c.m_DescSetLayout[pipeLayout.descSetLayouts[bindset]];
+  ResourceId descSetLayoutId = pipeLayout.descSetLayouts[bindset];
+  const DescSetLayout &layout = c.m_DescSetLayout[descSetLayoutId];
+
+  eventNode.AddUniqueResourceUsage(descSetLayoutId, ResourceUsage::DescriptorSetLayout);
 
   if(layout.bindings.empty())
   {
@@ -6650,8 +6691,13 @@ void WrappedVulkan::AddUsageForDescriptorSetBind(VulkanEventNode &eventNode, uin
   if(descSets[bindset].descBufferIdx != ~0U)
     return;
 
-  const DescriptorSetInfo &descset = m_DescriptorSetState[descSets[bindset].descSet];
-  const DescSetLayout &layout = c.m_DescSetLayout[descset.layout];
+  ResourceId descSetId = descSets[bindset].descSet;
+  const DescriptorSetInfo &descset = m_DescriptorSetState[descSetId];
+  ResourceId descSetLayoutId = descset.layout;
+  const DescSetLayout &layout = c.m_DescSetLayout[descSetLayoutId];
+
+  eventNode.AddUniqueResourceUsage(descSetId, ResourceUsage::DescriptorSet);
+  eventNode.AddUniqueResourceUsage(descSetLayoutId, ResourceUsage::DescriptorSetLayout);
 
   if(layout.bindings.empty())
   {
@@ -6719,10 +6765,6 @@ void WrappedVulkan::AddUsageForDescriptor(VulkanEventNode &eventNode, const Desc
   if(slot.type == DescriptorSlotType::Unwritten)
     return;
 
-  // we don't mark samplers with usage
-  if(slot.type == DescriptorSlotType::Sampler)
-    return;
-
   ResourceId id;
 
   switch(slot.type)
@@ -6731,21 +6773,29 @@ void WrappedVulkan::AddUsageForDescriptor(VulkanEventNode &eventNode, const Desc
     case DescriptorSlotType::SampledImage:
     case DescriptorSlotType::StorageImage:
       if(slot.resource != ResourceId())
+      {
+        eventNode.AddResourceUsage(slot.resource, ResourceUsage::ImageView);
         id = c.m_ImageView[slot.resource].image;
+      }
+      if(slot.sampler != ResourceId())
+        eventNode.AddResourceUsage(slot.sampler, ResourceUsage::Sampler);
       break;
     case DescriptorSlotType::UniformTexelBuffer:
     case DescriptorSlotType::StorageTexelBuffer:
-      id = slot.resource;
       if(c.m_BufferView.find(slot.resource) != c.m_BufferView.end())
+      {
+        eventNode.AddResourceUsage(slot.resource, ResourceUsage::BufferView);
         id = c.m_BufferView[slot.resource].buffer;
+      }
       break;
     case DescriptorSlotType::UniformBuffer:
     case DescriptorSlotType::UniformBufferDynamic:
     case DescriptorSlotType::StorageBuffer:
     case DescriptorSlotType::StorageBufferDynamic:
-    case DescriptorSlotType::AccelerationStructure:
-      if(slot.resource != ResourceId())
-        id = slot.resource;
+    case DescriptorSlotType::AccelerationStructure: id = slot.resource; break;
+    case DescriptorSlotType::Sampler:
+      if(slot.sampler != ResourceId())
+        eventNode.AddResourceUsage(slot.sampler, ResourceUsage::Sampler);
       break;
     default: RDCERR("Unexpected type %d", slot.type); break;
   }
@@ -6773,6 +6823,8 @@ void WrappedVulkan::AddFramebufferUsage(VulkanEventNode &eventNode,
   if(renderPass != ResourceId() && framebuffer != ResourceId())
   {
     const VulkanCreationInfo::RenderPass &rp = c.m_RenderPass[renderPass];
+    eventNode.AddResourceUsage(renderPass, ResourceUsage::RenderPass);
+    eventNode.AddResourceUsage(framebuffer, ResourceUsage::Framebuffer);
 
     if(subpass >= rp.subpasses.size())
     {
@@ -6872,6 +6924,11 @@ void WrappedVulkan::AddFramebufferUsage(VulkanEventNode &eventNode,
       }
     }
   }
+  for(const ResourceId &att : fbattachments)
+  {
+    if(att != ResourceId())
+      eventNode.AddResourceUsage(att, ResourceUsage::ImageView);
+  }
 }
 
 void WrappedVulkan::AddEvent()
@@ -6900,6 +6957,9 @@ void WrappedVulkan::AddEvent()
     if(m_RootAnnotation)
       apievent.annotations = m_RootAnnotation->Duplicate();
   }
+
+  if(m_LastCmdBufferID != ResourceId())
+    node.AddResourceUsage(m_LastCmdBufferID, ResourceUsage::Recorded);
 
   m_AddedEventNode = true;
 }
