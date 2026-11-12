@@ -851,6 +851,8 @@ rdcstr DoStringise(const ResourceUsage &el)
     STRINGISE_ENUM_CLASS_NAMED(GS_Constants, "GS - Constants");
     STRINGISE_ENUM_CLASS_NAMED(PS_Constants, "PS - Constants");
     STRINGISE_ENUM_CLASS_NAMED(CS_Constants, "CS - Constants");
+    STRINGISE_ENUM_CLASS_NAMED(TS_Constants, "TS - Constants");
+    STRINGISE_ENUM_CLASS_NAMED(MS_Constants, "MS - Constants");
 
     STRINGISE_ENUM_CLASS_NAMED(All_Constants, "All Stages - Constants");
 
@@ -862,6 +864,8 @@ rdcstr DoStringise(const ResourceUsage &el)
     STRINGISE_ENUM_CLASS_NAMED(GS_Resource, "GS - Read-only Resource");
     STRINGISE_ENUM_CLASS_NAMED(PS_Resource, "PS - Read-only Resource");
     STRINGISE_ENUM_CLASS_NAMED(CS_Resource, "CS - Read-only Resource");
+    STRINGISE_ENUM_CLASS_NAMED(TS_Resource, "TS - Read-only Resource");
+    STRINGISE_ENUM_CLASS_NAMED(MS_Resource, "MS - Read-only Resource");
 
     STRINGISE_ENUM_CLASS_NAMED(All_Resource, "All Stages - Read-only Resource");
 
@@ -871,8 +875,19 @@ rdcstr DoStringise(const ResourceUsage &el)
     STRINGISE_ENUM_CLASS_NAMED(GS_RWResource, "GS - Read-write Resource");
     STRINGISE_ENUM_CLASS_NAMED(PS_RWResource, "PS - Read-write Resource");
     STRINGISE_ENUM_CLASS_NAMED(CS_RWResource, "CS - Read-write Resource");
+    STRINGISE_ENUM_CLASS_NAMED(TS_RWResource, "TS - Read-write Resource");
+    STRINGISE_ENUM_CLASS_NAMED(MS_RWResource, "MS - Read-write Resource");
 
     STRINGISE_ENUM_CLASS_NAMED(All_RWResource, "All Stages - Read-write Resource");
+
+    STRINGISE_ENUM_CLASS_NAMED(VS_Shader, "Vertex Shader");
+    STRINGISE_ENUM_CLASS_NAMED(HS_Shader, "Hull Shader");
+    STRINGISE_ENUM_CLASS_NAMED(DS_Shader, "Domain Shader");
+    STRINGISE_ENUM_CLASS_NAMED(GS_Shader, "Geometry Shader");
+    STRINGISE_ENUM_CLASS_NAMED(PS_Shader, "Pixel Shader");
+    STRINGISE_ENUM_CLASS_NAMED(CS_Shader, "Compute Shader");
+    STRINGISE_ENUM_CLASS_NAMED(TS_Shader, "Task Shader");
+    STRINGISE_ENUM_CLASS_NAMED(MS_Shader, "Mesh Shader");
 
     STRINGISE_ENUM_CLASS_NAMED(InputTarget, "Input target");
     STRINGISE_ENUM_CLASS_NAMED(ColorTarget, "Color target");
@@ -894,6 +909,36 @@ rdcstr DoStringise(const ResourceUsage &el)
     STRINGISE_ENUM_CLASS_NAMED(Barrier, "Barrier");
 
     STRINGISE_ENUM_CLASS_NAMED(CPUWrite, "CPU Write");
+
+    STRINGISE_ENUM_CLASS_NAMED(Pipeline, "Pipeline");
+    STRINGISE_ENUM_CLASS_NAMED(PipelineLayout, "Pipeline Layout");
+    STRINGISE_ENUM_CLASS_NAMED(DescriptorSet, "Descriptor Set");
+    STRINGISE_ENUM_CLASS_NAMED(DescriptorSetLayout, "Descriptor Set Layout");
+    STRINGISE_ENUM_CLASS_NAMED(RenderPass, "Render Pass");
+    STRINGISE_ENUM_CLASS_NAMED(Framebuffer, "Framebuffer");
+    STRINGISE_ENUM_CLASS_NAMED(Sampler, "Sampler");
+    STRINGISE_ENUM_CLASS_NAMED(ImageView, "Image View");
+    STRINGISE_ENUM_CLASS_NAMED(BufferView, "Buffer View");
+
+    STRINGISE_ENUM_CLASS_NAMED(Bind, "Bind");
+    STRINGISE_ENUM_CLASS_NAMED(UnBind, "UnBind");
+
+    STRINGISE_ENUM_CLASS_NAMED(GetStatus, "Get Status");
+    STRINGISE_ENUM_CLASS_NAMED(ReadCounter, "Read Counter");
+    STRINGISE_ENUM_CLASS_NAMED(DescriptorSetWrite, "Descriptor Set Write");
+    STRINGISE_ENUM_CLASS_NAMED(SparseBindingUpdate, "Sparse Binding Update");
+    STRINGISE_ENUM_CLASS_NAMED(Recorded, "Recorded");
+
+    STRINGISE_ENUM_CLASS_NAMED(Reset, "Reset");
+    STRINGISE_ENUM_CLASS_NAMED(Signal, "Signal");
+    STRINGISE_ENUM_CLASS_NAMED(Wait, "Wait");
+
+    STRINGISE_ENUM_CLASS_NAMED(Submit, "Submit");
+    STRINGISE_ENUM_CLASS_NAMED(Marker, "Marker");
+    STRINGISE_ENUM_CLASS_NAMED(Present, "Present");
+
+    STRINGISE_ENUM_CLASS_NAMED(Begin, "Begin");
+    STRINGISE_ENUM_CLASS_NAMED(End, "End");
   }
   END_ENUM_STRINGISE();
 }
