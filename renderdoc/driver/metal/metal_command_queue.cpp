@@ -92,7 +92,8 @@ WrappedMTLCommandBuffer *WrappedMTLCommandQueue::commandBuffer()
   else
   {
     // TODO: implement RD MTL replay
-    GetResourceManager()->AddResource(id, wrappedMTLCommandBuffer);
+    RDCASSERT(GetResourceManager()->GetResource(id) == wrappedMTLCommandBuffer);
+    // GetResourceManager()->AddResource(id, wrappedMTLCommandBuffer);
   }
 
   return wrappedMTLCommandBuffer;

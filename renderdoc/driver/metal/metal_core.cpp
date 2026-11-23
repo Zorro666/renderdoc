@@ -900,7 +900,7 @@ void WrappedMTLDevice::ApplyInitialContents()
 RDResult WrappedMTLDevice::ContextReplayLog(CaptureState readType, uint32_t startEventID,
                                             uint32_t endEventID, bool partial)
 {
-  RDCLOG("M J Replay %d->%d Partial:%s", startEventID, endEventID, ToStr(partial).c_str());
+  RDCLOG("RL Replay %d->%d Partial:%s", startEventID, endEventID, ToStr(partial).c_str());
   m_FrameReader->SetOffset(0);
 
   ReadSerialiser ser(m_FrameReader, Ownership::Nothing);
@@ -1007,7 +1007,7 @@ RDResult WrappedMTLDevice::ContextReplayLog(CaptureState readType, uint32_t star
 
     m_ReplayCurrentCmdBufferID = ResourceId();
 
-    RDCLOG("J %d '%s' %lu", m_RootEventID, ToStr(chunk).c_str(), m_CurChunkOffset);
+    RDCLOG("RL %d '%s' %lu", m_RootEventID, ToStr(chunk).c_str(), m_CurChunkOffset);
     bool success = ContextProcessChunk(ser, chunk);
 
     ser.EndChunk();
@@ -1235,9 +1235,9 @@ void WrappedMTLDevice::ReplayLog(uint32_t startEventID, uint32_t endEventID, Rep
       // If we began our own custom single-action loadrp, and it was ended by a CmdEnd*Encoder,
       // we need to reverse the virtual transitions we did above, as it won't happen otherwise
       MetalRenderState::PipelineBinding activeEncoder = MetalRenderState::BindNone;
-      if(m_ReplayCurrentCmdBufferID != ResourceId())
+      if(m_ReplayPartialCmdBufferID != ResourceId())
       {
-        ReplayCmdBufferInfo &cmdBufInfo = m_ReplayCmdBufferInfos[m_ReplayCurrentCmdBufferID];
+        ReplayCmdBufferInfo &cmdBufInfo = m_ReplayCmdBufferInfos[m_ReplayPartialCmdBufferID];
         activeEncoder = cmdBufInfo.activeEncoder;
         if(activeEncoder == MetalRenderState::BindRender)
         {
@@ -1248,6 +1248,24 @@ void WrappedMTLDevice::ReplayLog(uint32_t startEventID, uint32_t endEventID, Rep
         else if(activeEncoder == MetalRenderState::BindBlit)
         {
           RDCLOG(" S End Blit %p", m_RenderState.blitCommandEncoder);
+          m_RenderState.EndBlitPass();
+          ClearActiveBlitCommandEncoder();
+        }
+      }
+      else if(m_ReplayCurrentCmdBufferID != ResourceId())
+      {
+        ReplayCmdBufferInfo &cmdBufInfo = m_ReplayCmdBufferInfos[m_ReplayCurrentCmdBufferID];
+        activeEncoder = cmdBufInfo.activeEncoder;
+        m_RenderState = cmdBufInfo.renderState;
+        if(activeEncoder == MetalRenderState::BindRender)
+        {
+          RDCLOG(" Z End Render %p", m_RenderState.renderCommandEncoder);
+          m_RenderState.EndRenderPass();
+          ClearActiveRenderCommandEncoder();
+        }
+        else if(activeEncoder == MetalRenderState::BindBlit)
+        {
+          RDCLOG(" Z End Blit %p", m_RenderState.blitCommandEncoder);
           m_RenderState.EndBlitPass();
           ClearActiveBlitCommandEncoder();
         }
@@ -2131,7 +2149,9 @@ bool WrappedMTLDevice::IsCurrentCommandBufferEventInReplayRange()
 
 void WrappedMTLDevice::NewReplayCommandBuffer(WrappedMTLCommandBuffer *cmdBuffer)
 {
-  ResourceId cmdBufferID = GetResID(cmdBuffer);
+  ResourceId cmdID = GetResID(cmdBuffer);
+  RDCASSERT(cmdID != ResourceId());
+  ResourceId cmdBufferID = GetResourceManager()->GetUnreplacedID(cmdID);
   RDCASSERT(cmdBufferID != ResourceId());
 
   ReplayCmdBufferInfo &cmdBufInfo = m_ReplayCmdBufferInfos[cmdBufferID];
@@ -2155,7 +2175,9 @@ void WrappedMTLDevice::ResetReplayCommandBuffer(WrappedMTLCommandBuffer *cmdBuff
 {
   ResourceId cmdID = GetResID(cmdBuffer);
   RDCASSERT(cmdID != ResourceId());
-  ReplayCmdBufferInfo &cmdBufInfo = m_ReplayCmdBufferInfos[cmdID];
+  ResourceId cmdBufferID = GetResourceManager()->GetUnreplacedID(cmdID);
+  RDCASSERT(cmdBufferID != ResourceId());
+  ReplayCmdBufferInfo &cmdBufInfo = m_ReplayCmdBufferInfos[cmdBufferID];
   cmdBufInfo.curEventID = 0;
   cmdBufInfo.activeEncoder = MetalRenderState::BindNone;
   cmdBufInfo.renderState.renderCommandEncoder = NULL;
@@ -2168,7 +2190,9 @@ void WrappedMTLDevice::ReplayCommandBufferEnqueue(WrappedMTLCommandBuffer *cmdBu
   SetCurrentCommandBuffer(NULL);
   ResourceId cmdID = GetResID(cmdBuffer);
   RDCASSERT(cmdID != ResourceId());
-  ReplayCmdBufferInfo &cmdBufInfo = m_ReplayCmdBufferInfos[cmdID];
+  ResourceId cmdBufferID = GetResourceManager()->GetUnreplacedID(cmdID);
+  RDCASSERT(cmdBufferID != ResourceId());
+  ReplayCmdBufferInfo &cmdBufInfo = m_ReplayCmdBufferInfos[cmdBufferID];
   if(IsLoading(m_State))
     cmdBufInfo.queueIndex = Atomic::Inc32(&m_ReplayNextCmdBufferQueueIndex);
 }
@@ -2178,7 +2202,9 @@ void WrappedMTLDevice::ReplayCommandBufferCommit(WrappedMTLCommandBuffer *cmdBuf
   SetCurrentCommandBuffer(NULL);
   if(cmdBuffer == m_ReplayPartialCmdBuffer)
     return;
-  ResourceId cmdID = GetResID(cmdBuffer);
+  ResourceId liveID = GetResID(cmdBuffer);
+  RDCASSERT(liveID != ResourceId());
+  ResourceId cmdID = GetResourceManager()->GetUnreplacedID(liveID);
   RDCASSERT(cmdID != ResourceId());
   ReplayCmdBufferInfo &cmdBufInfo = m_ReplayCmdBufferInfos[cmdID];
   if(IsLoading(m_State))
@@ -2263,7 +2289,7 @@ void WrappedMTLDevice::ReplayCommandBufferCommit(WrappedMTLCommandBuffer *cmdBuf
     uint32_t cmdBufCurEID = cmdBufInfo.curEventID;
 
     // skip past the CommandBuffer commit event
-    m_RootEventID++;
+    // m_RootEventID++;
 
     m_RootEventID += cmdBufInfo.eventCount;
     m_RootActionID += cmdBufInfo.actionCount;
@@ -2303,18 +2329,20 @@ void WrappedMTLDevice::ReplayCommandBufferCommit(WrappedMTLCommandBuffer *cmdBuf
     {
       m_Device->RemovePendingCommandBuffer(cmdBuffer);
       Unwrap(cmdBuffer)->commit();
-      RDCLOG("M %s commit", ToStr(cmdID).c_str());
+      RDCLOG("M %s Commit Full", ToStr(cmdID).c_str());
     }
+    cmdBufInfo.curEventID = 0;
   }
 }
 
 void WrappedMTLDevice::SetCurrentCommandBuffer(WrappedMTLCommandBuffer *cmdBuffer)
 {
-  m_ReplayCurrentCmdBufferID = GetResID(cmdBuffer);
+  ResourceId cmdId = GetResID(cmdBuffer);
+  m_ReplayCurrentCmdBufferID = GetResourceManager()->GetUnreplacedID(cmdId);
   if(cmdBuffer)
   {
     RDCASSERT(GetResourceManager()->HasResource(m_ReplayCurrentCmdBufferID));
-    RDCASSERTEQUAL(m_ReplayCurrentCmdBufferID, GetResID(cmdBuffer));
+    // RDCASSERTEQUAL(m_ReplayCurrentCmdBufferID, GetResID(cmdBuffer));
   }
 }
 

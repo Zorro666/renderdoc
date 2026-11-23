@@ -966,7 +966,7 @@
                                                error:(NSError *__nullable *)error
     API_AVAILABLE(macos(15.0), ios(18.0))
 {
-  METAL_NOT_HOOKED();
+  //  METAL_NOT_HOOKED();
   return [self.real newResidencySetWithDescriptor:desc error:error];
 }
 

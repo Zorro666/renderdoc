@@ -169,21 +169,27 @@ bool WrappedMTLCommandBuffer::Serialise_renderCommandEncoderWithDescriptor(
     MTL::RenderCommandEncoder *mtlRenderCommandEncoder =
         Unwrap(cmdBuffer)->renderCommandEncoder(mtlDescriptor);
     mtlDescriptor->release();
+    if(GetResourceManager()->HasResource(RenderCommandEncoder))
+    {
+      // TODO: we are leaking the original WrappedMTLRenderCommandEncoder
+      // GetResourceManager()->EraseResource(RenderCommandEncoder);
+      RDCLOG("M %s renderCommandEncoder %s ALREADY EXISTS", ToStr(GetResID(cmdBuffer)).c_str(),
+             ToStr(RenderCommandEncoder).c_str());
+    }
     // TODO: don't make a new ID : replace liveID with new wrapped resource
     WrappedMTLRenderCommandEncoder *wrappedMTLRenderCommandEncoder;
-    ResourceId liveID = GetResourceManager()->WrapResource(
-        RenderCommandEncoder, mtlRenderCommandEncoder, wrappedMTLRenderCommandEncoder);
+    ResourceId liveID = GetResourceManager()->WrapResource(ResourceId(), mtlRenderCommandEncoder,
+                                                           wrappedMTLRenderCommandEncoder);
+    GetResourceManager()->ReplaceResource(RenderCommandEncoder, liveID);
     wrappedMTLRenderCommandEncoder->SetCommandBuffer(cmdBuffer);
     if(!m_Device->IsPartialReplay())
     {
-      if(GetResourceManager()->HasResource(RenderCommandEncoder))
+      // GetResourceManager()->AddResource(RenderCommandEncoder, wrappedMTLRenderCommandEncoder);
+      if(IsLoading(m_State))
       {
-        // TODO: we are leaking the original WrappedMTLRenderCommandEncoder
-        // GetResourceManager()->EraseResource(RenderCommandEncoder);
+        m_Device->AddResource(RenderCommandEncoder, ResourceType::RenderPass, "Render Encoder");
+        m_Device->DerivedResource(CommandBuffer, RenderCommandEncoder);
       }
-      GetResourceManager()->AddResource(RenderCommandEncoder, wrappedMTLRenderCommandEncoder);
-      m_Device->AddResource(RenderCommandEncoder, ResourceType::RenderPass, "Render Encoder");
-      m_Device->DerivedResource(cmdBuffer, RenderCommandEncoder);
     }
     RDCLOG("M %s renderCommandEncoder %s", ToStr(GetResID(cmdBuffer)).c_str(),
            ToStr(RenderCommandEncoder).c_str());

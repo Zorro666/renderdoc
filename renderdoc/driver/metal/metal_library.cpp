@@ -50,7 +50,7 @@ bool WrappedMTLLibrary::Serialise_newFunctionWithName(SerialiserType &ser,
   {
     MTL::Function *realMTLFunction = Unwrap(Library)->newFunction(FunctionName);
     WrappedMTLFunction *wrappedMTLFunction;
-    GetResourceManager()->WrapResource(ResourceId(), realMTLFunction, wrappedMTLFunction);
+    GetResourceManager()->WrapResource(Function, realMTLFunction, wrappedMTLFunction);
     m_Device->AddResource(Function, ResourceType::Shader, "Function");
     m_Device->DerivedResource(Library, Function);
   }
