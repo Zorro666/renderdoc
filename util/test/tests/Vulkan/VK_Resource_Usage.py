@@ -1,54 +1,14 @@
-from typing import Dict, List, Tuple
+from typing import List, Tuple
 
 import renderdoc as rd
 import rdtest
 
-class VK_Resource_Usage(rdtest.TestCase):
+class VK_Resource_Usage(rdtest.Resource_Usage):
+    internal = False
     demos_test_name = 'VK_Resource_Usage'
-    resourceUsages: Dict[rd.ResourceId, List[rd.EventUsage]] = {}
-    eids: List[int] = []
-    markerStart = 0
-    markerEnd = 0
-
-    def prune_and_sort(self, eids: List[int]) -> List[int]:
-        return sorted([x for x in eids if x >= self.markerStart and x <= self.markerEnd])
-
-    def add_action(self, action: rd.ActionDescription):
-        self.eids.append(action.eventId)
-        for c in action.children:
-            self.add_action(c)
-        for e in action.events:
-            self.eids.append(e.eventId)
-
-    def check_resource_usage(self, res: rd.ResourceDescription, expectedUsages: List[Tuple[int,rd.ResourceUsage]]):
-        usages = self.resourceUsages[res.resourceId]
-        if len(usages) == 1 and usages[0].eventId == 0 and usages[0].usage == rd.ResourceUsage.Unused:
-            resUsages = usages
-        else:
-            resUsages = [u for u in usages if u.eventId >= self.markerStart and u.eventId <= self.markerEnd]
-        rdtest.log.print(f"Resource '{res.name}' type:{res.type.name} {res.resourceId} usages:{len(resUsages)} expectedUsages:{len(expectedUsages)}")
-        if len(resUsages) != len(expectedUsages):
-            rdtest.log.print(f"Usages for Resource '{res.name}' {res.resourceId}")
-            for u in resUsages:
-                rdtest.log.print(f"EID:{u.eventId} usage:{u.usage.name}")
-            rdtest.log.print(f"Expected Usages for Resource '{res.name}' {res.resourceId}")
-            for u in expectedUsages:
-                eid, usage = u
-                rdtest.log.print(f"EID:{eid} usage:{usage.name}")
-            raise rdtest.TestFailureException(f"'{res.name}' {res.resourceId} Incorrect resource usages count expected:{len(expectedUsages)} actual:{len(resUsages)}")
-        for i, u in enumerate(resUsages):
-            eid, usage = expectedUsages[i]
-            if u.usage != usage:
-                raise rdtest.TestFailureException(f"'{res.name}' {res.resourceId} EID:{u.eventId} Incorrect resource usage expected:{usage.name} actual:{u.usage.name}")
-            if u.eventId != eid:
-                raise rdtest.TestFailureException(f"'{res.name}' {res.resourceId} usage:{u.usage.name} Incorrect resource usage EID expected:{eid} actual:{u.eventId}")
 
     def check_capture(self):
-        assert self.controller is not None
-        # Cache the resource usage before running any replay i.e. without calling SetFrameEvent
-        resources = self.controller.GetResources()
-        for res in resources:
-            self.resourceUsages[res.resourceId] = self.controller.GetUsage(res.resourceId)
+        super(VK_Resource_Usage, self).check_capture()
 
         drawIndirectCount = self.find_action("Draw Indirect Count") is not None
         rdtest.log.print(f"Has Draw Indirect Count: {'Yes' if drawIndirectCount else 'No'}")
@@ -63,8 +23,6 @@ class VK_Resource_Usage(rdtest.TestCase):
         rdtest.log.print(f"Has Mesh Shader: {'Yes' if meshShader else 'No'}")
 
         # Walk the actions finding all the Dispatch, Draw, DrawIndexed, DrawIndirect, DrawIndirectCount
-        sdfile = self.controller.GetStructuredFile()
-        actions = self.controller.GetRootActions().copy()
 
         drawEIDs: List[int] = []
         meshDispatchEIDs: List[int] = []
@@ -158,9 +116,9 @@ class VK_Resource_Usage(rdtest.TestCase):
         markerDrawIndexedIndirectUnBind = self.find_action("DrawIndexedIndirect-UnBind").eventId
         markerDrawIndexedIndirectBind = self.find_action("DrawIndexedIndirect-Bind").eventId
 
-        while len(actions) > 0:
-            action = actions.pop(0)
-            actions += action.children
+        while len(self.actions) > 0:
+            action = self.actions.pop(0)
+            self.actions += action.children
             flags = action.flags
             if flags & rd.ActionFlags.Drawcall:
                 drawEIDs.append(action.eventId)
@@ -210,7 +168,7 @@ class VK_Resource_Usage(rdtest.TestCase):
             for e in action.events:
                 if e.eventId > self.markerEnd:
                     continue
-                eventName = sdfile.chunks[e.chunkIndex].name
+                eventName = self.sdfile.chunks[e.chunkIndex].name
                 if "vkQueueSubmit" in eventName:
                     submitEIDs.append(e.eventId)
                 if "vkSetEvent" in eventName:
@@ -258,7 +216,7 @@ class VK_Resource_Usage(rdtest.TestCase):
         computeWriteDataEIDs += [eid for eid in dispatchEIDs 
                         if eid < markerCompute or eid in indirectEIDs or (eid > markerIndirect and eid < markerIndirectEnd)]
 
-        # Graphics->No Descriptor Set : Graphics -> Desscriptor Set
+        # Graphics->No Descriptor Set : Graphics -> Descriptor Set
         # Graphics->Secondary Command Buffer -> Compute
         # Nested Secondary Command Buffer : Descriptor Buffer
         noDescriptorSetDrawEIDs += [eid for eid in drawEIDs 
@@ -310,7 +268,7 @@ class VK_Resource_Usage(rdtest.TestCase):
         swapImage = self.controller.GetPipelineState().GetOutputTargets()[0].resource
 
         with rdtest.log.auto_section("Checking Resource Usage"):
-            for res in resources:
+            for res in self.resources:
                 expectedUsage: List[Tuple[int,rd.ResourceUsage]] = []
                 if res.type == rd.ResourceType.Device:
                     expectedUsage = []
@@ -665,24 +623,3 @@ class VK_Resource_Usage(rdtest.TestCase):
                     raise rdtest.TestFailureException(f"'{res.name}' {res.resourceId} Unexpected resource type {res.type.name}")
                 expectedUsage.sort(key=lambda x: x[0])
                 self.check_resource_usage(res, expectedUsage)
-
-        actions = self.controller.GetRootActions()
-        for a in actions:
-            self.add_action(a)
-
-        # Select every event of the resource usage to ensure the EID is valid
-        with rdtest.log.auto_section("Checking Resource Usage Events can be replayed"):
-            for res in resources:
-                rdtest.log.print(f"Resource '{res.name}' type:{res.type.name} {res.resourceId}")
-                usages = self.resourceUsages[res.resourceId]
-                for u in usages:
-                    eid = u.eventId
-                    if eid == 0:
-                        continue
-                    self.set_event(eid, True)
-                    if eid not in self.eids:
-                        raise rdtest.TestFailureException(f"'{res.name}' {res.resourceId} Missing EID:{eid}")
-        
-        with rdtest.log.auto_section("Checking Indirect Action Names"):
-            if not self.check_indirect_action_name_consistency(self.controller):
-                raise rdtest.TestFailureException("Indirect action parameters do not match its event parameters")
