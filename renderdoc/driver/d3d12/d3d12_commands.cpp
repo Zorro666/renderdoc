@@ -2253,10 +2253,32 @@ void D3D12CommandData::AddUsage(const D3D12RenderState &state, D3D12EventNode &e
 
     if(a.flags & ActionFlags::Drawcall)
     {
+      rdcarray<bool> usedVBs;
+      usedVBs.resize(state.vbuffers.size());
+      if(pipe && pipe->IsGraphics())
+      {
+        for(size_t i = 0; i < state.vbuffers.size(); i++)
+          usedVBs[i] = false;
+        for(size_t i = 0; i < pipe->graphics->InputLayout.NumElements; ++i)
+        {
+          size_t semIndex = pipe->graphics->InputLayout.pInputElementDescs[i].SemanticIndex;
+          if(semIndex < usedVBs.size())
+            usedVBs[semIndex] = true;
+        }
+      }
+      else
+      {
+        for(size_t i = 0; i < state.vbuffers.size(); i++)
+          usedVBs[i] = true;
+      }
+
       for(size_t i = 0; i < state.vbuffers.size(); i++)
       {
         if(state.vbuffers[i].buf != ResourceId())
-          eventNode.AddResourceUsage(state.vbuffers[i].buf, ResourceUsage::VertexBuffer);
+        {
+          if(usedVBs[i])
+            eventNode.AddResourceUsage(state.vbuffers[i].buf, ResourceUsage::VertexBuffer);
+        }
       }
 
       for(size_t i = 0; i < state.streamouts.size(); i++)
