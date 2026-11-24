@@ -455,4 +455,8 @@ struct D3D12CommandData
   {
     m_LoadingEventNode.AddResourceUsage(id, usage);
   }
+  void AddEventResourceBind(ResourceId prev, ResourceId cur)
+  {
+    m_LoadingEventNode.AddResourceBind(prev, cur);
+  }
 };
