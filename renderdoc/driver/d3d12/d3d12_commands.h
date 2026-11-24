@@ -440,6 +440,10 @@ struct D3D12CommandData
 
     eventNode.AddResourceUsage(id, usage);
   }
+  void AddUniqueResourceUsage(D3D12EventNode &eventNode, ResourceId id, ResourceUsage usage)
+  {
+    eventNode.AddUniqueResourceUsage(id, usage);
+  }
   void AddEventResourceUsage(ResourceId id, ResourceUsage usage)
   {
     m_LoadingEventNode.AddResourceUsage(id, usage);
