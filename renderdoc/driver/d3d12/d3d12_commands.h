@@ -420,6 +420,7 @@ struct D3D12CommandData
   void AddUsage(const D3D12RenderState &state, D3D12EventNode &eventNode);
 
   void AddUsageForBindInRootSig(const D3D12RenderState &state, D3D12EventNode &eventNode,
+                                ShaderStageMask reflMask,
                                 const D3D12RenderState::RootSignature *rootsig,
                                 D3D12_DESCRIPTOR_RANGE_TYPE type, uint32_t space, uint32_t bind,
                                 uint32_t rangeSize);

@@ -2012,7 +2012,7 @@ void D3D12CommandData::AddEvent()
 }
 
 void D3D12CommandData::AddUsageForBindInRootSig(const D3D12RenderState &state,
-                                                D3D12EventNode &eventNode,
+                                                D3D12EventNode &eventNode, ShaderStageMask reflMask,
                                                 const D3D12RenderState::RootSignature *rootsig,
                                                 D3D12_DESCRIPTOR_RANGE_TYPE type, uint32_t space,
                                                 uint32_t bind, uint32_t rangeSize)
@@ -2035,6 +2035,9 @@ void D3D12CommandData::AddUsageForBindInRootSig(const D3D12RenderState &state,
     const D3D12RenderState::SignatureElement &el = rootsig->sigelems[rootEl];
 
     if(p.ParameterType == D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS)
+      continue;
+
+    if(!(ConvertVisibility(p.ShaderVisibility) & reflMask))
       continue;
 
     ResourceUsage cb = ResourceUsage::CS_Constants;
@@ -2314,21 +2317,22 @@ void D3D12CommandData::AddUsage(const D3D12RenderState &state, D3D12EventNode &e
       if(!refls[sh])
         continue;
 
+      ShaderStageMask reflMask = MaskForStage(refls[sh]->stage);
       for(const ConstantBlock &b : refls[sh]->constantBlocks)
       {
-        AddUsageForBindInRootSig(state, eventNode, rootsig, D3D12_DESCRIPTOR_RANGE_TYPE_CBV,
+        AddUsageForBindInRootSig(state, eventNode, reflMask, rootsig, D3D12_DESCRIPTOR_RANGE_TYPE_CBV,
                                  b.fixedBindSetOrSpace, b.fixedBindNumber, b.bindArraySize);
       }
 
       for(const ShaderResource &r : refls[sh]->readOnlyResources)
       {
-        AddUsageForBindInRootSig(state, eventNode, rootsig, D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
+        AddUsageForBindInRootSig(state, eventNode, reflMask, rootsig, D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
                                  r.fixedBindSetOrSpace, r.fixedBindNumber, r.bindArraySize);
       }
 
       for(const ShaderResource &r : refls[sh]->readWriteResources)
       {
-        AddUsageForBindInRootSig(state, eventNode, rootsig, D3D12_DESCRIPTOR_RANGE_TYPE_UAV,
+        AddUsageForBindInRootSig(state, eventNode, reflMask, rootsig, D3D12_DESCRIPTOR_RANGE_TYPE_UAV,
                                  r.fixedBindSetOrSpace, r.fixedBindNumber, r.bindArraySize);
       }
     }
