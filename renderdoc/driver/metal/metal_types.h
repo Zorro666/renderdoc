@@ -51,7 +51,8 @@ const uint32_t MAX_COMPUTE_PASS_SAMPLE_BUFFER_ATTACHMENTS = 4;
   FUNC(RenderPipelineState);             \
   FUNC(Texture);                         \
   FUNC(RenderCommandEncoder);            \
-  FUNC(BlitCommandEncoder);
+  FUNC(BlitCommandEncoder);              \
+  FUNC(ResidencySet);
 
 // These serialise overloads will fetch the ID during capture, serialise the ID
 // directly as-if it were the original type, then on replay load up the resource if available.

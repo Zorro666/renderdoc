@@ -33,6 +33,7 @@
 #include "metal_manager.h"
 #include "metal_render_command_encoder.h"
 #include "metal_render_pipeline_state.h"
+#include "metal_residency_set.h"
 #include "metal_resources.h"
 #include "metal_texture.h"
 

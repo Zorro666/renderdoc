@@ -29,6 +29,9 @@ set(sources
     metal_render_pipeline_state.cpp
     metal_render_pipeline_state.h
     metal_render_pipeline_state_bridge.mm
+    metal_residency_set.cpp
+    metal_residency_set.h
+    metal_residency_set_bridge.mm
     metal_texture.cpp
     metal_texture.h
     metal_texture_bridge.mm

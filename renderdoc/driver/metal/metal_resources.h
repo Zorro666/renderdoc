@@ -45,6 +45,7 @@ enum MetalResourceType
   eResTexture,
   eResRenderCommandEncoder,
   eResBlitCommandEncoder,
+  eResResidencySet,
   eResMax
 };
 
