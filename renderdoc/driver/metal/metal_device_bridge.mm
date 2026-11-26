@@ -50,19 +50,49 @@
 // Use the real MTLDevice to find methods from messages
 - (NSMethodSignature *)methodSignatureForSelector:(SEL)aSelector
 {
-  id fwd = self.real;
-  return [fwd methodSignatureForSelector:aSelector];
+  NSLog(@"MTLDevice methodSignatureForSelector %@", NSStringFromSelector(aSelector));
+  NSMethodSignature *sig = [super methodSignatureForSelector:aSelector];
+  if(!sig)
+  {
+    id fwd = self.real;
+    NSLog(@"- %@ methodSignatureForSelector", fwd);
+    sig = [fwd methodSignatureForSelector:aSelector];
+  }
+
+  return sig;
 }
 
 // Forward any unknown messages to the real MTLDevice
 - (void)forwardInvocation:(NSInvocation *)invocation
 {
   SEL aSelector = [invocation selector];
+  NSLog(@"MTLDevice forwardInvocation %@", NSStringFromSelector(aSelector));
 
-  if([self.real respondsToSelector:aSelector])
-    [invocation invokeWithTarget:self.real];
-  //  else
-  //    [super forwardInvocation:invocation];
+  id fwd = self.real;
+  if([fwd respondsToSelector:aSelector])
+  {
+    NSLog(@"- %@ invokeWIthTarget", fwd);
+    [invocation invokeWithTarget:fwd];
+  }
+  else
+  {
+    NSLog(@"- %@ forwardInvocation", fwd);
+    [fwd forwardInvocation:invocation];
+  }
+}
+
+- (id)forwardingTargetForSelector:(SEL)aSelector
+{
+  NSLog(@"MTLDevice forwardingTargetForSelector %@", NSStringFromSelector(aSelector));
+  id fwd = self.real;
+  if([fwd respondsToSelector:aSelector])
+  {
+    NSLog(@"- %@ handled", fwd);
+    return fwd;
+  }
+
+  NSLog(@"- %@ forwardingTargetForSelector", fwd);
+  return [fwd forwardingTargetForSelector:aSelector];
 }
 
 // MTLDevice : based on the protocol defined in

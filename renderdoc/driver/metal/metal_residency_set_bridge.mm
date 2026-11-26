@@ -48,19 +48,49 @@ API_AVAILABLE(macos(15.0), ios(18.0))
 // Use the real MTLResidencySet to find methods from messages
 - (NSMethodSignature *)methodSignatureForSelector:(SEL)aSelector
 {
-  id fwd = self.real;
-  return [fwd methodSignatureForSelector:aSelector];
+  NSLog(@"MTLResidencySet methodSignatureForSelector %@", NSStringFromSelector(aSelector));
+  NSMethodSignature *sig = [super methodSignatureForSelector:aSelector];
+  if(!sig)
+  {
+    id fwd = self.real;
+    NSLog(@"- %@ methodSignatureForSelector", fwd);
+    sig = [fwd methodSignatureForSelector:aSelector];
+  }
+
+  return sig;
 }
 
 // Forward any unknown messages to the real MTLResidencySet
 - (void)forwardInvocation:(NSInvocation *)invocation
 {
   SEL aSelector = [invocation selector];
+  NSLog(@"MTLResidencySet forwardInvocation %@", NSStringFromSelector(aSelector));
 
-  if([self.real respondsToSelector:aSelector])
-    [invocation invokeWithTarget:self.real];
+  id fwd = self.real;
+  if([fwd respondsToSelector:aSelector])
+  {
+    NSLog(@"- %@ invokeWIthTarget", fwd);
+    [invocation invokeWithTarget:fwd];
+  }
   else
-    [super forwardInvocation:invocation];
+  {
+    NSLog(@"- %@ forwardInvocation", fwd);
+    [fwd forwardInvocation:invocation];
+  }
+}
+
+- (id)forwardingTargetForSelector:(SEL)aSelector
+{
+  NSLog(@"MTLResidencySet forwardingTargetForSelector %@", NSStringFromSelector(aSelector));
+  id fwd = self.real;
+  if([fwd respondsToSelector:aSelector])
+  {
+    NSLog(@"- %@ handled", fwd);
+    return fwd;
+  }
+
+  NSLog(@"- %@ forwardingTargetForSelector", fwd);
+  return [fwd forwardingTargetForSelector:aSelector];
 }
 
 // MTLResidencySet: based on the protocol defined in
