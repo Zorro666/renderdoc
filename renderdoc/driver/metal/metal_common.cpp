@@ -551,6 +551,19 @@ static BlockShape GetBlockShape(MTL::PixelFormat mtlFormat, uint32_t plane)
     case MTL::PixelFormatBGR5A1Unorm:
     case MTL::PixelFormatDepth16Unorm: return {1, 1, 2};
 
+    case MTL::PixelFormatRGB8Unorm:
+    case MTL::PixelFormatRGB8Snorm:
+    case MTL::PixelFormatRGB8Uint:
+    case MTL::PixelFormatRGB8Sint:
+    case MTL::PixelFormatRGB16Unorm:
+    case MTL::PixelFormatRGB16Snorm:
+    case MTL::PixelFormatRGB16Uint:
+    case MTL::PixelFormatRGB16Sint:
+    case MTL::PixelFormatRGB16Float:
+    case MTL::PixelFormatRGB32Uint:
+    case MTL::PixelFormatRGB32Sint:
+    case MTL::PixelFormatRGB32Float: return {1, 1, 3};
+
     case MTL::PixelFormatR32Uint:
     case MTL::PixelFormatR32Sint:
     case MTL::PixelFormatR32Float:
@@ -696,6 +709,7 @@ static BlockShape GetBlockShape(MTL::PixelFormat mtlFormat, uint32_t plane)
       // 4:2:2 packed 8-bit, so 1 byte per pixel for luma and 1 byte per pixel for chroma (2 chroma
       // samples, with 50% subsampling = 1 byte per pixel)
       return {2, 1, 4};
+    case MTL::PixelFormatUnspecialized:
     case MTL::PixelFormatInvalid: return {1, 1, 1};
   }
 }
@@ -739,6 +753,7 @@ BlendMultiplier MakeBlendMultiplier(MTL::BlendFactor blend)
     case MTL::BlendFactorOneMinusSource1Color: return BlendMultiplier::InvSrc1Col;
     case MTL::BlendFactorSource1Alpha: return BlendMultiplier::Src1Alpha;
     case MTL::BlendFactorOneMinusSource1Alpha: return BlendMultiplier::InvSrc1Alpha;
+    case MTL::BlendFactorUnspecialized: return BlendMultiplier::One;
   }
 
   return BlendMultiplier::One;
@@ -753,6 +768,7 @@ BlendOperation MakeBlendOp(MTL::BlendOperation op)
     case MTL::BlendOperationReverseSubtract: return BlendOperation::ReversedSubtract;
     case MTL::BlendOperationMin: return BlendOperation::Minimum;
     case MTL::BlendOperationMax: return BlendOperation::Maximum;
+    case MTL::BlendOperationUnspecialized: return BlendOperation::Add;
   }
 
   return BlendOperation::Add;
@@ -882,6 +898,42 @@ ResourceFormat MakeResourceFormat(MTL::PixelFormat mtlFormat)
       break;
     case MTL::PixelFormatRG16Float:
       info = {ResourceFormatType::Regular, CompType::Float, 2, 2, false};
+      break;
+    case MTL::PixelFormatRGB8Unorm:
+      info = {ResourceFormatType::Regular, CompType::UNorm, 3, 1, false};
+      break;
+    case MTL::PixelFormatRGB8Snorm:
+      info = {ResourceFormatType::Regular, CompType::SNorm, 3, 1, false};
+      break;
+    case MTL::PixelFormatRGB8Uint:
+      info = {ResourceFormatType::Regular, CompType::UInt, 3, 1, false};
+      break;
+    case MTL::PixelFormatRGB8Sint:
+      info = {ResourceFormatType::Regular, CompType::SInt, 3, 1, false};
+      break;
+    case MTL::PixelFormatRGB16Unorm:
+      info = {ResourceFormatType::Regular, CompType::UNorm, 3, 2, false};
+      break;
+    case MTL::PixelFormatRGB16Snorm:
+      info = {ResourceFormatType::Regular, CompType::SNorm, 3, 2, false};
+      break;
+    case MTL::PixelFormatRGB16Uint:
+      info = {ResourceFormatType::Regular, CompType::UInt, 3, 2, false};
+      break;
+    case MTL::PixelFormatRGB16Sint:
+      info = {ResourceFormatType::Regular, CompType::SInt, 3, 2, false};
+      break;
+    case MTL::PixelFormatRGB16Float:
+      info = {ResourceFormatType::Regular, CompType::Float, 3, 2, false};
+      break;
+    case MTL::PixelFormatRGB32Uint:
+      info = {ResourceFormatType::Regular, CompType::UInt, 3, 4, false};
+      break;
+    case MTL::PixelFormatRGB32Sint:
+      info = {ResourceFormatType::Regular, CompType::SInt, 3, 4, false};
+      break;
+    case MTL::PixelFormatRGB32Float:
+      info = {ResourceFormatType::Regular, CompType::Float, 3, 4, false};
       break;
     case MTL::PixelFormatRGBA8Unorm:
       info = {ResourceFormatType::Regular, CompType::UNorm, 4, 1, false};
@@ -1135,6 +1187,7 @@ ResourceFormat MakeResourceFormat(MTL::PixelFormat mtlFormat)
     case MTL::PixelFormatBGR10_XR_sRGB:
       info = {ResourceFormatType::R10G10B10A2, CompType::UNormSRGB, 3, 1, true};
       break;
+    case MTL::PixelFormatUnspecialized: RDCERR("Unexpected MTL::PixelFormatUnspecialized"); break;
     case MTL::PixelFormatInvalid: RDCERR("Unexpected MTL::PixelFormatInvalid"); break;
   };
 

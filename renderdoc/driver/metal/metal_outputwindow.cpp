@@ -1284,8 +1284,7 @@ void MetalReplay::GetOutputWindowDimensions(uint64_t id, int32_t &w, int32_t &h)
     return;
   }
 
-  const CGFloat scaleFactor = outw.MetalLayer->contentsScale();
-  const CGRect bounds = outw.MetalLayer->bounds();
-  w = bounds.size.width * scaleFactor;
-  h = bounds.size.height * scaleFactor;
+  const CGSize size = outw.MetalLayer->drawableSize();
+  w = size.width;
+  h = size.height;
 }

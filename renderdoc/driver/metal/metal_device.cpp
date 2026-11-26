@@ -629,7 +629,7 @@ WrappedMTLTexture *WrappedMTLDevice::newTextureWithDescriptor(RDMTL::TextureDesc
 
 bool WrappedMTLDevice::isDepth24Stencil8PixelFormatSupported()
 {
-  return Unwrap(this)->depth24Stencil8PixelFormatSupported();
+  return Unwrap(this)->isDepth24Stencil8PixelFormatSupported();
 }
 
 MTL::ReadWriteTextureTier WrappedMTLDevice::readWriteTextureSupport()
@@ -644,7 +644,7 @@ MTL::ArgumentBuffersTier WrappedMTLDevice::argumentBuffersSupport()
 
 bool WrappedMTLDevice::areRasterOrderGroupsSupported()
 {
-  return Unwrap(this)->rasterOrderGroupsSupported();
+  return Unwrap(this)->areRasterOrderGroupsSupported();
 }
 
 bool WrappedMTLDevice::supports32BitFloatFiltering()
@@ -674,7 +674,7 @@ bool WrappedMTLDevice::supportsPullModelInterpolation()
 
 bool WrappedMTLDevice::areBarycentricCoordsSupported()
 {
-  return Unwrap(this)->barycentricCoordsSupported();
+  return Unwrap(this)->areBarycentricCoordsSupported();
 }
 
 bool WrappedMTLDevice::supportsShaderBarycentricCoordinates()
@@ -699,7 +699,7 @@ bool WrappedMTLDevice::supportsTextureSampleCount(NS::UInteger sampleCount)
 
 bool WrappedMTLDevice::areProgrammableSamplePositionsSupported()
 {
-  return Unwrap(this)->programmableSamplePositionsSupported();
+  return Unwrap(this)->areProgrammableSamplePositionsSupported();
 }
 
 bool WrappedMTLDevice::supportsRasterizationRateMapWithLayerCount(NS::UInteger layerCount)
@@ -796,7 +796,7 @@ WrappedMTLTexture *WrappedMTLDevice::Common_NewTexture(RDMTL::TextureDescriptor 
     }
     MetalResourceRecord *textureRecord = GetResourceManager()->AddResourceRecord(wrappedMTLTexture);
     textureRecord->AddChunk(chunk);
-    textureRecord->texInfo = new MetalTextureInfo(rdDescriptor, realMTLTexture->framebufferOnly());
+    textureRecord->texInfo = new MetalTextureInfo(rdDescriptor, realMTLTexture->isFramebufferOnly());
   }
   if(ioSurfaceTexture)
   {

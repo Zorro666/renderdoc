@@ -251,7 +251,7 @@ bool WrappedMTLDevice::ProcessChunk(ReadSerialiser &ser, MetalChunk chunk)
     case MetalChunk::MTLDevice_newHeapWithDescriptor: METAL_CHUNK_NOT_HANDLED();
     case MetalChunk::MTLDevice_newBufferWithLength:
     case MetalChunk::MTLDevice_newBufferWithBytes:
-      return Serialise_newBufferWithBytes(ser, NULL, NULL, 0, MTL::ResourceOptionCPUCacheModeDefault);
+      return Serialise_newBufferWithBytes(ser, NULL, NULL, 0, MTL::ResourceCPUCacheModeDefaultCache);
     case MetalChunk::MTLDevice_newBufferWithBytesNoCopy: METAL_CHUNK_NOT_HANDLED();
     case MetalChunk::MTLDevice_newDepthStencilStateWithDescriptor: METAL_CHUNK_NOT_HANDLED();
     case MetalChunk::MTLDevice_newTextureWithDescriptor:
@@ -1588,7 +1588,7 @@ bool WrappedMTLDevice::EndFrameCapture(DeviceOwnedWindow devWnd)
 
   // The backbuffer has to be a non-framebufferOnly texture
   // to be able to copy the pixels for the thumbnail
-  if(!mtlBackBuffer->framebufferOnly())
+  if(!mtlBackBuffer->isFramebufferOnly())
   {
     const uint32_t maxSize = 2048;
 
