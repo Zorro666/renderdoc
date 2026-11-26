@@ -61,8 +61,8 @@
 
   if([self.real respondsToSelector:aSelector])
     [invocation invokeWithTarget:self.real];
-  else
-    [super forwardInvocation:invocation];
+  //  else
+  //    [super forwardInvocation:invocation];
 }
 
 // MTLDevice : based on the protocol defined in
