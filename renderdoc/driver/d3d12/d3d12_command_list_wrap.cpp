@@ -3586,7 +3586,7 @@ void WrappedID3D12GraphicsCommandList::ResetAndRecordExecuteIndirectStates(
 
   const uint32_t numArgsPerExec = (uint32_t)comSig->sig.arguments.size();
 
-  if(m_Cmd->m_LastEventID > baseEventID + execCount * comSig->sig.arguments.size() + 1)
+  if(m_Cmd->m_LastEventID > baseEventID + execCount * comSig->sig.arguments.size())
   {
     // reset states to 0, we've replayed past this EI
     ResetExecuteIndirectStates(pCommandSignature);
