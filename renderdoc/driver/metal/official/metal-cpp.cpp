@@ -22,8 +22,8 @@
  * THE SOFTWARE.
  ******************************************************************************/
 
-// Metal-cpp project: https://developer.apple.com/metal/cpp/
-// https://developer.apple.com/metal/cpp/files/metal-cpp_macOS12_iOS15.zip
+// Metal-cpp project:  https://github.com/apple/metal-cpp
+// Release: metal-cpp_macOS27.0.1_iOS27.0.1
 
 #define NS_PRIVATE_IMPLEMENTATION
 #define CA_PRIVATE_IMPLEMENTATION
