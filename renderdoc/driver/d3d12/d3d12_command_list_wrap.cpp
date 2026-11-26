@@ -3516,6 +3516,64 @@ D3D12ExecuteData WrappedID3D12GraphicsCommandList::SaveExecuteIndirectParameters
   return exec;
 }
 
+void WrappedID3D12GraphicsCommandList::ResetExecuteIndirectStates(ID3D12CommandSignature *pCommandSignature)
+{
+  WrappedID3D12CommandSignature *comSig = (WrappedID3D12CommandSignature *)pCommandSignature;
+
+  BakedCmdListInfo &cmdListInfo = m_Cmd->m_BakedCmdListInfo[m_Cmd->m_LastCmdListID];
+  D3D12RenderState &state = cmdListInfo.state;
+  for(const D3D12_INDIRECT_ARGUMENT_DESC &arg : comSig->sig.arguments)
+  {
+    switch(arg.Type)
+    {
+      case D3D12_INDIRECT_ARGUMENT_TYPE_VERTEX_BUFFER_VIEW:
+        if(arg.VertexBuffer.Slot < state.vbuffers.size())
+          state.vbuffers[arg.VertexBuffer.Slot] = {};
+        break;
+      case D3D12_INDIRECT_ARGUMENT_TYPE_INDEX_BUFFER_VIEW: state.ibuffer = {}; break;
+      case D3D12_INDIRECT_ARGUMENT_TYPE_CONSTANT:
+        if(arg.Constant.RootParameterIndex < state.graphics.sigelems.size())
+        {
+          for(uint32_t j = 0; j < arg.Constant.Num32BitValuesToSet; j++)
+          {
+            size_t index = j + arg.Constant.DestOffsetIn32BitValues;
+            state.graphics.sigelems[arg.Constant.RootParameterIndex].constants.resize_for_index(index);
+            state.graphics.sigelems[arg.Constant.RootParameterIndex].constants[index] = 0;
+          }
+        }
+
+        if(arg.Constant.RootParameterIndex < state.compute.sigelems.size())
+        {
+          for(uint32_t j = 0; j < arg.Constant.Num32BitValuesToSet; j++)
+          {
+            size_t index = j + arg.Constant.DestOffsetIn32BitValues;
+            state.compute.sigelems[arg.Constant.RootParameterIndex].constants.resize_for_index(index);
+            state.compute.sigelems[arg.Constant.RootParameterIndex].constants[index] = 0;
+          }
+        }
+        break;
+      case D3D12_INDIRECT_ARGUMENT_TYPE_CONSTANT_BUFFER_VIEW:
+      case D3D12_INDIRECT_ARGUMENT_TYPE_SHADER_RESOURCE_VIEW:
+      case D3D12_INDIRECT_ARGUMENT_TYPE_UNORDERED_ACCESS_VIEW:
+        // ConstantBufferView, ShaderResourceView and UnorderedAccessView all have one member -
+        // RootParameterIndex
+        if(arg.ConstantBufferView.RootParameterIndex < state.graphics.sigelems.size())
+        {
+          state.graphics.sigelems[arg.ConstantBufferView.RootParameterIndex].id = ResourceId();
+          state.graphics.sigelems[arg.ConstantBufferView.RootParameterIndex].offset = 0;
+        }
+
+        if(arg.ConstantBufferView.RootParameterIndex < state.compute.sigelems.size())
+        {
+          state.compute.sigelems[arg.ConstantBufferView.RootParameterIndex].id = ResourceId();
+          state.compute.sigelems[arg.ConstantBufferView.RootParameterIndex].offset = 0;
+        }
+        break;
+      default: break;
+    }
+  }
+}
+
 void WrappedID3D12GraphicsCommandList::ResetAndRecordExecuteIndirectStates(
     ID3D12GraphicsCommandListX *list, uint32_t baseEventID, uint32_t execCount,
     ID3D12CommandSignature *pCommandSignature, ID3D12Resource *pArgumentBuffer,
@@ -3531,59 +3589,7 @@ void WrappedID3D12GraphicsCommandList::ResetAndRecordExecuteIndirectStates(
   if(m_Cmd->m_LastEventID > baseEventID + execCount * comSig->sig.arguments.size() + 1)
   {
     // reset states to 0, we've replayed past this EI
-    for(const D3D12_INDIRECT_ARGUMENT_DESC &arg : comSig->sig.arguments)
-    {
-      switch(arg.Type)
-      {
-        case D3D12_INDIRECT_ARGUMENT_TYPE_VERTEX_BUFFER_VIEW:
-          if(arg.VertexBuffer.Slot < state.vbuffers.size())
-            state.vbuffers[arg.VertexBuffer.Slot] = {};
-          break;
-        case D3D12_INDIRECT_ARGUMENT_TYPE_INDEX_BUFFER_VIEW: state.ibuffer = {}; break;
-        case D3D12_INDIRECT_ARGUMENT_TYPE_CONSTANT:
-          if(arg.Constant.RootParameterIndex < state.graphics.sigelems.size())
-          {
-            for(uint32_t j = 0; j < arg.Constant.Num32BitValuesToSet; j++)
-            {
-              size_t index = j + arg.Constant.DestOffsetIn32BitValues;
-              state.graphics.sigelems[arg.Constant.RootParameterIndex].constants.resize_for_index(
-                  index);
-              state.graphics.sigelems[arg.Constant.RootParameterIndex].constants[index] = 0;
-            }
-          }
-
-          if(arg.Constant.RootParameterIndex < state.compute.sigelems.size())
-          {
-            for(uint32_t j = 0; j < arg.Constant.Num32BitValuesToSet; j++)
-            {
-              size_t index = j + arg.Constant.DestOffsetIn32BitValues;
-              state.compute.sigelems[arg.Constant.RootParameterIndex].constants.resize_for_index(
-                  index);
-              state.compute.sigelems[arg.Constant.RootParameterIndex].constants[index] = 0;
-            }
-          }
-          break;
-        case D3D12_INDIRECT_ARGUMENT_TYPE_CONSTANT_BUFFER_VIEW:
-        case D3D12_INDIRECT_ARGUMENT_TYPE_SHADER_RESOURCE_VIEW:
-        case D3D12_INDIRECT_ARGUMENT_TYPE_UNORDERED_ACCESS_VIEW:
-          // ConstantBufferView, ShaderResourceView and UnorderedAccessView all have one member -
-          // RootParameterIndex
-          if(arg.ConstantBufferView.RootParameterIndex < state.graphics.sigelems.size())
-          {
-            state.graphics.sigelems[arg.ConstantBufferView.RootParameterIndex].id = ResourceId();
-            state.graphics.sigelems[arg.ConstantBufferView.RootParameterIndex].offset = 0;
-          }
-
-          if(arg.ConstantBufferView.RootParameterIndex < state.compute.sigelems.size())
-          {
-            state.compute.sigelems[arg.ConstantBufferView.RootParameterIndex].id = ResourceId();
-            state.compute.sigelems[arg.ConstantBufferView.RootParameterIndex].offset = 0;
-          }
-          break;
-        default: break;
-      }
-    }
-
+    ResetExecuteIndirectStates(pCommandSignature);
     return;
   }
 
@@ -4434,6 +4440,8 @@ bool WrappedID3D12GraphicsCommandList::Serialise_ExecuteIndirect(
         action.flags = ActionFlags::PopMarker;
         m_Cmd->AddAction(action);
       }
+      // the spec says that any root arguments and VB/IBs set are reset to 0
+      ResetExecuteIndirectStates(pCommandSignature);
     }
   }
 

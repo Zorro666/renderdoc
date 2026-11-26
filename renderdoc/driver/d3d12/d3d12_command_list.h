@@ -232,6 +232,7 @@ public:
       ID3D12GraphicsCommandListX *list, ID3D12CommandSignature *pCommandSignature,
       UINT MaxCommandCount, ID3D12Resource *pArgumentBuffer, UINT64 ArgumentBufferOffset,
       ID3D12Resource *pCountBuffer, UINT64 CountBufferOffset);
+  void ResetExecuteIndirectStates(ID3D12CommandSignature *pCommandSignature);
   void ResetAndRecordExecuteIndirectStates(ID3D12GraphicsCommandListX *list, uint32_t baseEventID,
                                            uint32_t execCount,
                                            ID3D12CommandSignature *pCommandSignature,
