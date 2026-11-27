@@ -244,6 +244,9 @@ struct BakedCmdListInfo
 
   ResourceId parentList;
 
+  // the serialised command list not the baked command list
+  ResourceId commandList;
+
   // modified during recording to ensure we end any markers that should be ended but weren't due to
   // a partial replay
   int markerCount;

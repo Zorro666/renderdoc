@@ -337,6 +337,8 @@ bool WrappedID3D12GraphicsCommandList::Serialise_Reset(SerialiserType &ser,
             m_Cmd->m_BakedCmdListInfo[BakedCommandList].allocator = GetResID(pAllocator);
         m_Cmd->m_BakedCmdListInfo[CommandList].barriers.clear();
         m_Cmd->m_BakedCmdListInfo[BakedCommandList].barriers.clear();
+        m_Cmd->m_BakedCmdListInfo[CommandList].commandList = CommandList;
+        m_Cmd->m_BakedCmdListInfo[BakedCommandList].commandList = CommandList;
 
         // On list execute we increment all child events/actions by
         // m_RootEventID and insert them into the tree.
