@@ -214,10 +214,10 @@ bool WrappedID3D12GraphicsCommandList::Serialise_BeginRenderPass(
     m_Cmd->m_LastCmdListID = GetResID(pCommandList);
 
     bool stateUpdate = false;
+    bool loading = IsLoading(m_State);
 
     if(m_Cmd->InRerecordRange(m_Cmd->m_LastCmdListID))
     {
-      bool loading = IsLoading(m_State);
       ID3D12GraphicsCommandListX *list = !loading ? m_Cmd->RerecordCmdList(m_Cmd->m_LastCmdListID)
                                                   : (ID3D12GraphicsCommandListX *)pCommandList;
 
@@ -319,6 +319,51 @@ bool WrappedID3D12GraphicsCommandList::Serialise_BeginRenderPass(
     if(stateUpdate)
     {
       D3D12RenderState &state = m_Cmd->m_BakedCmdListInfo[m_Cmd->m_LastCmdListID].state;
+
+      if(loading)
+      {
+        D3D12EventNode &eventNode = m_Cmd->GetLastEventNode();
+        for(size_t i = 0; i < RDCMAX(state.rts.size(), RTVs.size()); ++i)
+        {
+          ResourceId oldRTV = (i < state.rts.size()) ? state.rts[i].GetResResourceId() : ResourceId();
+          ResourceId newRTV = (i < RTVs.size()) ? RTVs[i].GetResResourceId() : ResourceId();
+          eventNode.AddResourceBind(oldRTV, newRTV);
+        }
+        eventNode.AddResourceBind(state.dsv.GetResResourceId(), DSV.GetResResourceId());
+        for(UINT i = 0; i < NumRenderTargets; i++)
+        {
+          D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE access = pRenderTargets[i].BeginningAccess.Type;
+          if(access == D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE_CLEAR)
+            eventNode.AddResourceUsage(RTVs[i].GetResResourceId(), ResourceUsage::Clear);
+          else if(access == D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE_DISCARD)
+            eventNode.AddResourceUsage(RTVs[i].GetResResourceId(), ResourceUsage::Discard);
+        }
+        if(pDepthStencil)
+        {
+          bool clear = false;
+          bool discard = false;
+          {
+            D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE depthAccess =
+                pDepthStencil->DepthBeginningAccess.Type;
+            if(depthAccess == D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE_CLEAR)
+              clear = true;
+            else if(depthAccess == D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE_DISCARD)
+              discard = true;
+          }
+          {
+            D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE stencilAccess =
+                pDepthStencil->StencilBeginningAccess.Type;
+            if(stencilAccess == D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE_CLEAR)
+              clear = true;
+            else if(stencilAccess == D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE_DISCARD)
+              discard = true;
+          }
+          if(clear)
+            eventNode.AddResourceUsage(DSV.GetResResourceId(), ResourceUsage::Clear);
+          if(discard)
+            eventNode.AddResourceUsage(DSV.GetResResourceId(), ResourceUsage::Discard);
+        }
+      }
 
       state.rts = RTVs;
       state.dsv = DSV;
@@ -503,10 +548,10 @@ bool WrappedID3D12GraphicsCommandList::Serialise_EndRenderPass(SerialiserType &s
     m_Cmd->m_LastCmdListID = GetResID(pCommandList);
 
     bool stateUpdate = false;
+    bool loading = IsLoading(m_State);
 
     if(m_Cmd->InRerecordRange(m_Cmd->m_LastCmdListID))
     {
-      bool loading = IsLoading(m_State);
       ID3D12GraphicsCommandListX *list = !loading ? m_Cmd->RerecordCmdList(m_Cmd->m_LastCmdListID)
                                                   : (ID3D12GraphicsCommandListX *)pCommandList;
 
@@ -625,6 +670,63 @@ bool WrappedID3D12GraphicsCommandList::Serialise_EndRenderPass(SerialiserType &s
     if(stateUpdate)
     {
       D3D12RenderState &state = m_Cmd->m_BakedCmdListInfo[m_Cmd->m_LastCmdListID].state;
+
+      if(loading)
+      {
+        D3D12EventNode &eventNode = m_Cmd->GetLastEventNode();
+        for(size_t r = 0; r < state.rpRTs.size(); r++)
+        {
+          D3D12_RENDER_PASS_ENDING_ACCESS_TYPE access = state.rpRTs[r].EndingAccess.Type;
+          if(access == D3D12_RENDER_PASS_ENDING_ACCESS_TYPE_DISCARD)
+            eventNode.AddResourceUsage(state.rts[r].GetResResourceId(), ResourceUsage::Discard);
+          else if(access == D3D12_RENDER_PASS_ENDING_ACCESS_TYPE_RESOLVE)
+          {
+            ResourceId srcID = GetResID(state.rpRTs[r].EndingAccess.Resolve.pSrcResource);
+            ResourceId dstID = GetResID(state.rpRTs[r].EndingAccess.Resolve.pDstResource);
+            eventNode.AddResourceUsage(srcID, ResourceUsage::ResolveSrc);
+            eventNode.AddResourceUsage(dstID, ResourceUsage::ResolveDst);
+          }
+        }
+        for(size_t i = 0; i < state.rts.size(); ++i)
+          eventNode.AddResourceUsage(state.rts[i].GetResResourceId(), ResourceUsage::UnBind);
+
+        if(state.rpDSV.cpuDescriptor.ptr != 0)
+        {
+          bool discard = false;
+          ResourceId depthSrcID;
+          ResourceId depthDstID;
+          D3D12_RENDER_PASS_ENDING_ACCESS_TYPE depthAccess = state.rpDSV.DepthEndingAccess.Type;
+          if(depthAccess == D3D12_RENDER_PASS_ENDING_ACCESS_TYPE_DISCARD)
+          {
+            discard = true;
+          }
+          else if(depthAccess == D3D12_RENDER_PASS_ENDING_ACCESS_TYPE_RESOLVE)
+          {
+            depthSrcID = GetResID(state.rpDSV.DepthEndingAccess.Resolve.pSrcResource);
+            depthDstID = GetResID(state.rpDSV.DepthEndingAccess.Resolve.pDstResource);
+            eventNode.AddResourceUsage(depthSrcID, ResourceUsage::ResolveSrc);
+            eventNode.AddResourceUsage(depthDstID, ResourceUsage::ResolveDst);
+          }
+          D3D12_RENDER_PASS_ENDING_ACCESS_TYPE stencilAccess = state.rpDSV.StencilEndingAccess.Type;
+          if(stencilAccess == D3D12_RENDER_PASS_ENDING_ACCESS_TYPE_DISCARD)
+          {
+            discard = true;
+          }
+          else if(stencilAccess == D3D12_RENDER_PASS_ENDING_ACCESS_TYPE_RESOLVE)
+          {
+            ResourceId stencilSrcID = GetResID(state.rpDSV.StencilEndingAccess.Resolve.pSrcResource);
+            ResourceId stencilDstID = GetResID(state.rpDSV.StencilEndingAccess.Resolve.pDstResource);
+            if(stencilSrcID != depthSrcID)
+              eventNode.AddResourceUsage(stencilSrcID, ResourceUsage::ResolveSrc);
+            if(stencilDstID != depthDstID)
+              eventNode.AddResourceUsage(stencilDstID, ResourceUsage::ResolveSrc);
+          }
+          if(discard)
+            eventNode.AddResourceUsage(state.dsv.GetResResourceId(), ResourceUsage::Discard);
+
+          eventNode.AddResourceUsage(state.dsv.GetResResourceId(), ResourceUsage::UnBind);
+        }
+      }
 
       state.rts.clear();
       state.dsv = D3D12Descriptor();
@@ -1666,10 +1768,10 @@ bool WrappedID3D12GraphicsCommandList::Serialise_SetPipelineState1(SerialiserTyp
     m_Cmd->m_LastCmdListID = GetResID(pCommandList);
 
     bool stateUpdate = false;
+    bool loading = IsLoading(m_State);
 
     if(m_Cmd->InRerecordRange(m_Cmd->m_LastCmdListID))
     {
-      bool loading = IsLoading(m_State);
       ID3D12GraphicsCommandListX *list = !loading ? m_Cmd->RerecordCmdList(m_Cmd->m_LastCmdListID)
                                                   : (ID3D12GraphicsCommandListX *)pCommandList;
 
@@ -1687,6 +1789,8 @@ bool WrappedID3D12GraphicsCommandList::Serialise_SetPipelineState1(SerialiserTyp
       D3D12RenderState &state = m_Cmd->m_BakedCmdListInfo[m_Cmd->m_LastCmdListID].state;
       state.pipe = ResourceId();
       state.stateobj = GetResID(pStateObject);
+      if(loading)
+        m_Cmd->AddEventResourceBind(state.pipe, state.stateobj);
     }
   }
 
