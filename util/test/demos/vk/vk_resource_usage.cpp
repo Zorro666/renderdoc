@@ -24,7 +24,11 @@
 
 #include "vk_test.h"
 
-std::string simple_mesh = R"EOSHADER(
+RD_TEST(VK_Resource_Usage, VulkanGraphicsTest)
+{
+  static constexpr const char *Description = "Test resource usage in a variety of scenarios.";
+
+  std::string simple_mesh = R"EOSHADER(
 
 #version 460
 #extension GL_EXT_mesh_shader : require
@@ -65,7 +69,7 @@ void main()
 
 )EOSHADER";
 
-std::string simple_mesh_pixel = R"EOSHADER(
+  std::string simple_mesh_pixel = R"EOSHADER(
 
 #version 460
 
@@ -79,7 +83,7 @@ void main()
 
 )EOSHADER";
 
-std::string pixel = R"EOSHADER(
+  std::string pixel = R"EOSHADER(
 
 #version 460 core
 
@@ -102,7 +106,7 @@ void main()
 
 )EOSHADER";
 
-const std::string compute = R"EOSHADER(
+  const std::string compute = R"EOSHADER(
 
 #version 450 core
 
@@ -125,7 +129,7 @@ void main()
 
 )EOSHADER";
 
-const std::string computeWriteData = R"EOSHADER(
+  const std::string computeWriteData = R"EOSHADER(
 
 #version 430 core
 
@@ -201,10 +205,6 @@ void main()
 }
 
 )EOSHADER";
-
-RD_TEST(VK_Resource_Usage, VulkanGraphicsTest)
-{
-  static constexpr const char *Description = "Test resource usage in a variety of scenarios.";
 
   VkPhysicalDeviceNestedCommandBufferFeaturesEXT nestedFeats = {
       VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_NESTED_COMMAND_BUFFER_FEATURES_EXT,

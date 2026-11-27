@@ -136,7 +136,22 @@ struct VulkanEventNode
   ~VulkanEventNode() = default;
   void AddResourceUsage(ResourceId id, ResourceUsage usage)
   {
+    RDCASSERTNOTEQUAL(id, ResourceId());
     resourceUsage.push_back(make_rdcpair(id, usage));
+  }
+  void AddUniqueResourceUsage(ResourceId id, ResourceUsage usage)
+  {
+    RDCASSERTNOTEQUAL(id, ResourceId());
+    if(resourceUsage.contains(make_rdcpair(id, usage)))
+      return;
+    resourceUsage.push_back(make_rdcpair(id, usage));
+  }
+  void AddResourceBind(ResourceId prev, ResourceId cur)
+  {
+    if(prev != ResourceId())
+      AddUniqueResourceUsage(prev, ResourceUsage::UnBind);
+    if(cur != ResourceId())
+      AddUniqueResourceUsage(cur, ResourceUsage::Bind);
   }
 
   // eventId is not used
@@ -781,6 +796,9 @@ private:
     rdcarray<PendingAnnotation> pendingAnnotations;
     rdcarray<ResourceId> executedCmds;
 
+    // the serialised command buffer not the baked command buffer
+    ResourceId commandBuffer;
+
     uint32_t beginChunk = 0;
     uint32_t endChunk = 0;
 
@@ -1203,6 +1221,11 @@ private:
   {
     RDCASSERT(IsLoading(m_State));
     m_LoadingEventNode.AddResourceUsage(id, usage);
+  }
+  void AddEventResourceBind(ResourceId prev, ResourceId cur)
+  {
+    RDCASSERT(IsLoading(m_State));
+    m_LoadingEventNode.AddResourceBind(prev, cur);
   }
 
   rdcarray<APIEvent> m_Events;
