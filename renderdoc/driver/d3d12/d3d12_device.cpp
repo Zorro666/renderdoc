@@ -2234,6 +2234,8 @@ bool WrappedID3D12Device::Serialise_MapDataWrite(SerialiserType &ser, ID3D12Reso
         memcpy(writePtr, MappedData, (size_t)rangeSize);
         Resource->Unmap(Subresource, &range);
       }
+      if(id != ResourceId())
+        m_Queue->AddResourceUsage(id, ResourceUsage::CPUWrite);
     }
     else if(IsActiveReplaying(m_State))
     {
@@ -2442,10 +2444,11 @@ bool WrappedID3D12Device::Serialise_WriteToSubresource(SerialiserType &ser, ID3D
   {
     D3D12CommandData &cmd = *m_Queue->GetCommandData();
 
-    if(IsLoading(m_State))
-      cmd.AddEventResourceUsage(GetResID(Resource), ResourceUsage::CPUWrite);
-
     ResourceId id = GetResID(Resource);
+
+    if(IsLoading(m_State))
+      cmd.AddEventResourceUsage(id, ResourceUsage::CPUWrite);
+
     if(m_UploadResourceIds.find(id) != m_UploadResourceIds.end())
     {
       ID3D12Resource *uploadBuf = GetUploadBuffer(cmd.m_CurChunkOffset, dataSize);
@@ -2757,6 +2760,7 @@ bool WrappedID3D12Device::Serialise_Present(SerialiserType &ser, ID3D12Resource 
     action.copyDestination = PresentedBackbuffer;
 
     cmd.AddAction(action);
+    cmd.GetLastEventNode().AddResourceUsage(PresentedBackbuffer, ResourceUsage::Present);
   }
 
   return true;
