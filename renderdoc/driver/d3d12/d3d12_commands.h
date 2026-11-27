@@ -86,7 +86,22 @@ struct D3D12EventNode
   }
   void AddResourceUsage(ResourceId id, ResourceUsage usage)
   {
+    RDCASSERTNOTEQUAL(id, ResourceId());
     resourceUsage.push_back(make_rdcpair(id, usage));
+  }
+  void AddUniqueResourceUsage(ResourceId id, ResourceUsage usage)
+  {
+    RDCASSERTNOTEQUAL(id, ResourceId());
+    if(resourceUsage.contains(make_rdcpair(id, usage)))
+      return;
+    resourceUsage.push_back(make_rdcpair(id, usage));
+  }
+  void AddResourceBind(ResourceId prev, ResourceId cur)
+  {
+    if(prev != ResourceId())
+      AddUniqueResourceUsage(prev, ResourceUsage::UnBind);
+    if(cur != ResourceId())
+      AddUniqueResourceUsage(cur, ResourceUsage::Bind);
   }
 
   // eventId is not used
@@ -228,6 +243,9 @@ struct BakedCmdListInfo
   BarrierSet barriers;
 
   ResourceId parentList;
+
+  // the serialised command list not the baked command list
+  ResourceId commandList;
 
   // modified during recording to ensure we end any markers that should be ended but weren't due to
   // a partial replay
@@ -432,8 +450,16 @@ struct D3D12CommandData
 
     eventNode.AddResourceUsage(id, usage);
   }
+  void AddUniqueResourceUsage(D3D12EventNode &eventNode, ResourceId id, ResourceUsage usage)
+  {
+    eventNode.AddUniqueResourceUsage(id, usage);
+  }
   void AddEventResourceUsage(ResourceId id, ResourceUsage usage)
   {
     m_LoadingEventNode.AddResourceUsage(id, usage);
+  }
+  void AddEventResourceBind(ResourceId prev, ResourceId cur)
+  {
+    m_LoadingEventNode.AddResourceBind(prev, cur);
   }
 };

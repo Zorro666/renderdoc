@@ -156,10 +156,10 @@ bool WrappedID3D12GraphicsCommandList::Serialise_RSSetShadingRateImage(Serialise
     m_Cmd->m_LastCmdListID = GetResID(pCommandList);
 
     bool stateUpdate = false;
+    bool loading = IsLoading(m_State);
 
     if(m_Cmd->InRerecordRange(m_Cmd->m_LastCmdListID))
     {
-      bool loading = IsLoading(m_State);
       ID3D12GraphicsCommandListX *list = !loading ? m_Cmd->RerecordCmdList(m_Cmd->m_LastCmdListID)
                                                   : (ID3D12GraphicsCommandListX *)pCommandList;
 
@@ -175,6 +175,9 @@ bool WrappedID3D12GraphicsCommandList::Serialise_RSSetShadingRateImage(Serialise
     if(stateUpdate)
     {
       D3D12RenderState &state = m_Cmd->m_BakedCmdListInfo[m_Cmd->m_LastCmdListID].state;
+
+      if(loading)
+        m_Cmd->AddEventResourceBind(state.shadingRateImage, GetResID(shadingRateImage));
 
       state.shadingRateImage = GetResID(shadingRateImage);
     }

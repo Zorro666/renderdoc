@@ -246,6 +246,10 @@ public:
   void SetFrameReader(StreamReader *reader) { m_FrameReader = reader; }
   D3D12CommandData *GetCommandData() { return &m_Cmd; }
   const rdcarray<EventUsage> &GetUsage(ResourceId id) { return m_Cmd.m_ResourceUses[id]; }
+  void AddResourceUsage(ResourceId id, ResourceUsage usage)
+  {
+    m_Cmd.AddEventResourceUsage(id, usage);
+  }
   // interface for DXGI
   virtual IUnknown *GetRealIUnknown() { return GetReal(); }
   virtual IID GetBackbufferUUID() { return __uuidof(ID3D12Resource); }

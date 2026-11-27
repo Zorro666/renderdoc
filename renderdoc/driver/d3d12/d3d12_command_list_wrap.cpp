@@ -337,6 +337,8 @@ bool WrappedID3D12GraphicsCommandList::Serialise_Reset(SerialiserType &ser,
             m_Cmd->m_BakedCmdListInfo[BakedCommandList].allocator = GetResID(pAllocator);
         m_Cmd->m_BakedCmdListInfo[CommandList].barriers.clear();
         m_Cmd->m_BakedCmdListInfo[BakedCommandList].barriers.clear();
+        m_Cmd->m_BakedCmdListInfo[CommandList].commandList = CommandList;
+        m_Cmd->m_BakedCmdListInfo[BakedCommandList].commandList = CommandList;
 
         // On list execute we increment all child events/actions by
         // m_RootEventID and insert them into the tree.
@@ -628,6 +630,10 @@ bool WrappedID3D12GraphicsCommandList::Serialise_ClearState(SerialiserType &ser,
       state = D3D12RenderState();
       state.m_DebugManager = m_pDevice->GetDebugManager();
       state.m_ResourceManager = m_pDevice->GetResourceManager();
+
+      if(IsLoading(m_State))
+        m_Cmd->AddEventResourceBind(state.pipe, GetResID(pPipelineState));
+
       state.pipe = GetResID(pPipelineState);
 
       if(state.pipe != ResourceId())
@@ -978,10 +984,10 @@ bool WrappedID3D12GraphicsCommandList::Serialise_SetDescriptorHeaps(
     }
 
     bool stateUpdate = false;
+    bool loading = IsLoading(m_State);
 
     if(m_Cmd->InRerecordRange(m_Cmd->m_LastCmdListID))
     {
-      bool loading = IsLoading(m_State);
       ID3D12GraphicsCommandListX *list = !loading ? m_Cmd->RerecordCmdList(m_Cmd->m_LastCmdListID)
                                                   : (ID3D12GraphicsCommandListX *)pCommandList;
 
@@ -998,6 +1004,15 @@ bool WrappedID3D12GraphicsCommandList::Serialise_SetDescriptorHeaps(
     {
       D3D12RenderState &state = m_Cmd->m_BakedCmdListInfo[m_Cmd->m_LastCmdListID].state;
 
+      if(loading)
+      {
+        for(size_t i = 0; i < RDCMAX(state.heaps.size(), heapIDs.size()); ++i)
+        {
+          ResourceId oldHeap = (i < state.heaps.size()) ? state.heaps[i] : ResourceId();
+          ResourceId newHeap = (i < heapIDs.size()) ? heapIDs[i] : ResourceId();
+          m_Cmd->AddEventResourceBind(oldHeap, newHeap);
+        }
+      }
       state.heaps = heapIDs;
     }
   }
@@ -1045,10 +1060,10 @@ bool WrappedID3D12GraphicsCommandList::Serialise_IASetIndexBuffer(SerialiserType
     m_Cmd->m_LastCmdListID = GetResID(pCommandList);
 
     bool stateUpdate = false;
+    bool loading = IsLoading(m_State);
 
     if(m_Cmd->InRerecordRange(m_Cmd->m_LastCmdListID))
     {
-      bool loading = IsLoading(m_State);
       ID3D12GraphicsCommandListX *list = !loading ? m_Cmd->RerecordCmdList(m_Cmd->m_LastCmdListID)
                                                   : (ID3D12GraphicsCommandListX *)pCommandList;
 
@@ -1065,6 +1080,8 @@ bool WrappedID3D12GraphicsCommandList::Serialise_IASetIndexBuffer(SerialiserType
     {
       D3D12RenderState &state = m_Cmd->m_BakedCmdListInfo[m_Cmd->m_LastCmdListID].state;
 
+      ResourceId oldBuf = state.ibuffer.buf;
+
       if(pView)
       {
         WrappedID3D12Resource::GetResIDFromAddr(pView->BufferLocation, state.ibuffer.buf,
@@ -1078,6 +1095,8 @@ bool WrappedID3D12GraphicsCommandList::Serialise_IASetIndexBuffer(SerialiserType
         state.ibuffer.offs = 0;
         state.ibuffer.bytewidth = 2;
       }
+      if(loading)
+        m_Cmd->AddEventResourceBind(oldBuf, state.ibuffer.buf);
     }
   }
 
@@ -1118,10 +1137,10 @@ bool WrappedID3D12GraphicsCommandList::Serialise_IASetVertexBuffers(
     m_Cmd->m_LastCmdListID = GetResID(pCommandList);
 
     bool stateUpdate = false;
+    bool loading = IsLoading(m_State);
 
     if(m_Cmd->InRerecordRange(m_Cmd->m_LastCmdListID))
     {
-      bool loading = IsLoading(m_State);
       ID3D12GraphicsCommandListX *list = !loading ? m_Cmd->RerecordCmdList(m_Cmd->m_LastCmdListID)
                                                   : (ID3D12GraphicsCommandListX *)pCommandList;
 
@@ -1143,12 +1162,15 @@ bool WrappedID3D12GraphicsCommandList::Serialise_IASetVertexBuffers(
 
       for(UINT i = 0; i < NumViews; i++)
       {
+        ResourceId oldBuf = state.vbuffers[StartSlot + i].buf;
         WrappedID3D12Resource::GetResIDFromAddr(pViews ? pViews[i].BufferLocation : 0,
                                                 state.vbuffers[StartSlot + i].buf,
                                                 state.vbuffers[StartSlot + i].offs);
 
         state.vbuffers[StartSlot + i].stride = pViews ? pViews[i].StrideInBytes : 0;
         state.vbuffers[StartSlot + i].size = pViews ? pViews[i].SizeInBytes : 0;
+        if(loading)
+          m_Cmd->AddEventResourceBind(oldBuf, state.vbuffers[StartSlot + i].buf);
       }
     }
   }
@@ -1191,10 +1213,10 @@ bool WrappedID3D12GraphicsCommandList::Serialise_SOSetTargets(
     m_Cmd->m_LastCmdListID = GetResID(pCommandList);
 
     bool stateUpdate = false;
+    bool loading = IsLoading(m_State);
 
     if(m_Cmd->InRerecordRange(m_Cmd->m_LastCmdListID))
     {
-      bool loading = IsLoading(m_State);
       ID3D12GraphicsCommandListX *list = !loading ? m_Cmd->RerecordCmdList(m_Cmd->m_LastCmdListID)
                                                   : (ID3D12GraphicsCommandListX *)pCommandList;
 
@@ -1217,6 +1239,7 @@ bool WrappedID3D12GraphicsCommandList::Serialise_SOSetTargets(
       for(UINT i = 0; i < NumViews; i++)
       {
         D3D12RenderState::StreamOut &so = state.streamouts[StartSlot + i];
+        ResourceId oldBuf = so.buf;
 
         WrappedID3D12Resource::GetResIDFromAddr(pViews ? pViews[i].BufferLocation : 0, so.buf,
                                                 so.offs);
@@ -1225,6 +1248,8 @@ bool WrappedID3D12GraphicsCommandList::Serialise_SOSetTargets(
                                                 so.countbuf, so.countoffs);
 
         so.size = pViews ? pViews[i].SizeInBytes : 0;
+        if(loading)
+          m_Cmd->AddEventResourceBind(oldBuf, so.buf);
       }
     }
   }
@@ -1265,10 +1290,10 @@ bool WrappedID3D12GraphicsCommandList::Serialise_SetPipelineState(SerialiserType
     m_Cmd->m_LastCmdListID = GetResID(pCommandList);
 
     bool stateUpdate = false;
+    bool loading = IsLoading(m_State);
 
     if(m_Cmd->InRerecordRange(m_Cmd->m_LastCmdListID))
     {
-      bool loading = IsLoading(m_State);
       ID3D12GraphicsCommandListX *list = !loading ? m_Cmd->RerecordCmdList(m_Cmd->m_LastCmdListID)
                                                   : (ID3D12GraphicsCommandListX *)pCommandList;
 
@@ -1284,8 +1309,15 @@ bool WrappedID3D12GraphicsCommandList::Serialise_SetPipelineState(SerialiserType
     if(stateUpdate)
     {
       D3D12RenderState &state = m_Cmd->m_BakedCmdListInfo[m_Cmd->m_LastCmdListID].state;
+      ResourceId oldPipe = state.pipe;
       state.pipe = GetResID(pPipelineState);
       state.stateobj = ResourceId();
+      if(loading)
+      {
+        m_Cmd->AddEventResourceBind(oldPipe, state.pipe);
+        if(state.stateobj != ResourceId())
+          m_Cmd->AddEventResourceUsage(state.stateobj, ResourceUsage::UnBind);
+      }
 
       if(pPipelineState)
       {
@@ -1442,10 +1474,10 @@ bool WrappedID3D12GraphicsCommandList::Serialise_OMSetRenderTargets(
     }
 
     bool stateUpdate = false;
+    bool loading = IsLoading(m_State);
 
     if(m_Cmd->InRerecordRange(m_Cmd->m_LastCmdListID))
     {
-      bool loading = IsLoading(m_State);
       ID3D12GraphicsCommandListX *list = !loading ? m_Cmd->RerecordCmdList(m_Cmd->m_LastCmdListID)
                                                   : (ID3D12GraphicsCommandListX *)pCommandList;
 
@@ -1462,6 +1494,17 @@ bool WrappedID3D12GraphicsCommandList::Serialise_OMSetRenderTargets(
     if(stateUpdate)
     {
       D3D12RenderState &state = m_Cmd->m_BakedCmdListInfo[m_Cmd->m_LastCmdListID].state;
+
+      if(loading)
+      {
+        for(size_t i = 0; i < RDCMAX(state.rts.size(), RTVs.size()); ++i)
+        {
+          ResourceId oldRTV = (i < state.rts.size()) ? state.rts[i].GetResResourceId() : ResourceId();
+          ResourceId newRTV = (i < RTVs.size()) ? RTVs[i].GetResResourceId() : ResourceId();
+          m_Cmd->AddEventResourceBind(oldRTV, newRTV);
+        }
+        m_Cmd->AddEventResourceBind(state.dsv.GetResResourceId(), DSV.GetResResourceId());
+      }
 
       state.rts = RTVs;
       state.dsv = DSV;
@@ -1545,10 +1588,10 @@ bool WrappedID3D12GraphicsCommandList::Serialise_SetComputeRootSignature(
     m_Cmd->m_LastCmdListID = GetResID(pCommandList);
 
     bool stateUpdate = false;
+    bool loading = IsLoading(m_State);
 
     if(m_Cmd->InRerecordRange(m_Cmd->m_LastCmdListID))
     {
-      bool loading = IsLoading(m_State);
       ID3D12GraphicsCommandListX *list = !loading ? m_Cmd->RerecordCmdList(m_Cmd->m_LastCmdListID)
                                                   : (ID3D12GraphicsCommandListX *)pCommandList;
 
@@ -1574,6 +1617,10 @@ bool WrappedID3D12GraphicsCommandList::Serialise_SetComputeRootSignature(
       if(Unwrap(GetResourceManager()->GetResAs<ID3D12RootSignature>(state.compute.rootsig)) !=
          Unwrap(pRootSignature))
         state.compute.sigelems.clear();
+
+      if(loading)
+        m_Cmd->AddEventResourceBind(state.compute.rootsig, GetResID(pRootSignature));
+
       state.compute.rootsig = GetResID(pRootSignature);
     }
   }
@@ -1626,10 +1673,10 @@ bool WrappedID3D12GraphicsCommandList::Serialise_SetComputeRootDescriptorTable(
     m_Cmd->m_LastCmdListID = GetResID(pCommandList);
 
     bool stateUpdate = false;
+    bool loading = IsLoading(m_State);
 
     if(m_Cmd->InRerecordRange(m_Cmd->m_LastCmdListID))
     {
-      bool loading = IsLoading(m_State);
       ID3D12GraphicsCommandListX *list = !loading ? m_Cmd->RerecordCmdList(m_Cmd->m_LastCmdListID)
                                                   : (ID3D12GraphicsCommandListX *)pCommandList;
 
@@ -1647,6 +1694,11 @@ bool WrappedID3D12GraphicsCommandList::Serialise_SetComputeRootDescriptorTable(
       D3D12RenderState &state = m_Cmd->m_BakedCmdListInfo[m_Cmd->m_LastCmdListID].state;
 
       state.compute.sigelems.resize_for_index(RootParameterIndex);
+
+      if(loading)
+        m_Cmd->AddEventResourceBind(state.compute.sigelems[RootParameterIndex].id,
+                                    GetWrapped(BaseDescriptor)->GetHeapResourceId());
+
       state.compute.sigelems[RootParameterIndex] = D3D12RenderState::SignatureElement(
           eRootTable, GetWrapped(BaseDescriptor)->GetHeapResourceId(),
           (UINT64)GetWrapped(BaseDescriptor)->GetHeapIndex());
@@ -1891,10 +1943,10 @@ bool WrappedID3D12GraphicsCommandList::Serialise_SetComputeRootConstantBufferVie
     WrappedID3D12Resource::GetResIDFromAddr(BufferLocation, id, offs);
 
     bool stateUpdate = false;
+    bool loading = IsLoading(m_State);
 
     if(m_Cmd->InRerecordRange(m_Cmd->m_LastCmdListID))
     {
-      bool loading = IsLoading(m_State);
       ID3D12GraphicsCommandListX *list = !loading ? m_Cmd->RerecordCmdList(m_Cmd->m_LastCmdListID)
                                                   : (ID3D12GraphicsCommandListX *)pCommandList;
 
@@ -1912,6 +1964,10 @@ bool WrappedID3D12GraphicsCommandList::Serialise_SetComputeRootConstantBufferVie
       D3D12RenderState &state = m_Cmd->m_BakedCmdListInfo[m_Cmd->m_LastCmdListID].state;
 
       state.compute.sigelems.resize_for_index(RootParameterIndex);
+
+      if(loading)
+        m_Cmd->AddEventResourceBind(state.compute.sigelems[RootParameterIndex].id, id);
+
       state.compute.sigelems[RootParameterIndex] =
           D3D12RenderState::SignatureElement(eRootCBV, id, offs);
     }
@@ -1970,10 +2026,10 @@ bool WrappedID3D12GraphicsCommandList::Serialise_SetComputeRootShaderResourceVie
     WrappedID3D12Resource::GetResIDFromAddr(BufferLocation, id, offs);
 
     bool stateUpdate = false;
+    bool loading = IsLoading(m_State);
 
     if(m_Cmd->InRerecordRange(m_Cmd->m_LastCmdListID))
     {
-      bool loading = IsLoading(m_State);
       ID3D12GraphicsCommandListX *list = !loading ? m_Cmd->RerecordCmdList(m_Cmd->m_LastCmdListID)
                                                   : (ID3D12GraphicsCommandListX *)pCommandList;
 
@@ -1991,6 +2047,10 @@ bool WrappedID3D12GraphicsCommandList::Serialise_SetComputeRootShaderResourceVie
       D3D12RenderState &state = m_Cmd->m_BakedCmdListInfo[m_Cmd->m_LastCmdListID].state;
 
       state.compute.sigelems.resize_for_index(RootParameterIndex + 1);
+
+      if(loading)
+        m_Cmd->AddEventResourceBind(state.compute.sigelems[RootParameterIndex].id, id);
+
       state.compute.sigelems[RootParameterIndex] =
           D3D12RenderState::SignatureElement(eRootSRV, id, offs);
     }
@@ -2049,10 +2109,10 @@ bool WrappedID3D12GraphicsCommandList::Serialise_SetComputeRootUnorderedAccessVi
     WrappedID3D12Resource::GetResIDFromAddr(BufferLocation, id, offs);
 
     bool stateUpdate = false;
+    bool loading = IsLoading(m_State);
 
     if(m_Cmd->InRerecordRange(m_Cmd->m_LastCmdListID))
     {
-      bool loading = IsLoading(m_State);
       ID3D12GraphicsCommandListX *list = !loading ? m_Cmd->RerecordCmdList(m_Cmd->m_LastCmdListID)
                                                   : (ID3D12GraphicsCommandListX *)pCommandList;
 
@@ -2070,6 +2130,10 @@ bool WrappedID3D12GraphicsCommandList::Serialise_SetComputeRootUnorderedAccessVi
       D3D12RenderState &state = m_Cmd->m_BakedCmdListInfo[m_Cmd->m_LastCmdListID].state;
 
       state.compute.sigelems.resize_for_index(RootParameterIndex);
+
+      if(loading)
+        m_Cmd->AddEventResourceBind(state.compute.sigelems[RootParameterIndex].id, id);
+
       state.compute.sigelems[RootParameterIndex] =
           D3D12RenderState::SignatureElement(eRootUAV, id, offs);
     }
@@ -2123,10 +2187,10 @@ bool WrappedID3D12GraphicsCommandList::Serialise_SetGraphicsRootSignature(
     m_Cmd->m_LastCmdListID = GetResID(pCommandList);
 
     bool stateUpdate = false;
+    bool loading = IsLoading(m_State);
 
     if(m_Cmd->InRerecordRange(m_Cmd->m_LastCmdListID))
     {
-      bool loading = IsLoading(m_State);
       ID3D12GraphicsCommandListX *list = !loading ? m_Cmd->RerecordCmdList(m_Cmd->m_LastCmdListID)
                                                   : (ID3D12GraphicsCommandListX *)pCommandList;
 
@@ -2152,6 +2216,10 @@ bool WrappedID3D12GraphicsCommandList::Serialise_SetGraphicsRootSignature(
       if(Unwrap(GetResourceManager()->GetResAs<ID3D12RootSignature>(state.graphics.rootsig)) !=
          Unwrap(pRootSignature))
         state.graphics.sigelems.clear();
+
+      if(loading)
+        m_Cmd->AddEventResourceBind(state.graphics.rootsig, GetResID(pRootSignature));
+
       state.graphics.rootsig = GetResID(pRootSignature);
     }
   }
@@ -2193,10 +2261,10 @@ bool WrappedID3D12GraphicsCommandList::Serialise_SetGraphicsRootDescriptorTable(
     m_Cmd->m_LastCmdListID = GetResID(pCommandList);
 
     bool stateUpdate = false;
+    bool loading = IsLoading(m_State);
 
     if(m_Cmd->InRerecordRange(m_Cmd->m_LastCmdListID))
     {
-      bool loading = IsLoading(m_State);
       ID3D12GraphicsCommandListX *list = !loading ? m_Cmd->RerecordCmdList(m_Cmd->m_LastCmdListID)
                                                   : (ID3D12GraphicsCommandListX *)pCommandList;
 
@@ -2214,6 +2282,11 @@ bool WrappedID3D12GraphicsCommandList::Serialise_SetGraphicsRootDescriptorTable(
       D3D12RenderState &state = m_Cmd->m_BakedCmdListInfo[m_Cmd->m_LastCmdListID].state;
 
       state.graphics.sigelems.resize_for_index(RootParameterIndex);
+
+      if(loading)
+        m_Cmd->AddEventResourceBind(state.graphics.sigelems[RootParameterIndex].id,
+                                    GetWrapped(BaseDescriptor)->GetHeapResourceId());
+
       state.graphics.sigelems[RootParameterIndex] = D3D12RenderState::SignatureElement(
           eRootTable, GetWrapped(BaseDescriptor)->GetHeapResourceId(),
           (UINT64)GetWrapped(BaseDescriptor)->GetHeapIndex());
@@ -2439,10 +2512,10 @@ bool WrappedID3D12GraphicsCommandList::Serialise_SetGraphicsRootConstantBufferVi
     WrappedID3D12Resource::GetResIDFromAddr(BufferLocation, id, offs);
 
     bool stateUpdate = false;
+    bool loading = IsLoading(m_State);
 
     if(m_Cmd->InRerecordRange(m_Cmd->m_LastCmdListID))
     {
-      bool loading = IsLoading(m_State);
       ID3D12GraphicsCommandListX *list = !loading ? m_Cmd->RerecordCmdList(m_Cmd->m_LastCmdListID)
                                                   : (ID3D12GraphicsCommandListX *)pCommandList;
 
@@ -2460,6 +2533,10 @@ bool WrappedID3D12GraphicsCommandList::Serialise_SetGraphicsRootConstantBufferVi
       D3D12RenderState &state = m_Cmd->m_BakedCmdListInfo[m_Cmd->m_LastCmdListID].state;
 
       state.graphics.sigelems.resize_for_index(RootParameterIndex);
+
+      if(loading)
+        m_Cmd->AddEventResourceBind(state.graphics.sigelems[RootParameterIndex].id, id);
+
       state.graphics.sigelems[RootParameterIndex] =
           D3D12RenderState::SignatureElement(eRootCBV, id, offs);
     }
@@ -2512,10 +2589,10 @@ bool WrappedID3D12GraphicsCommandList::Serialise_SetGraphicsRootShaderResourceVi
     WrappedID3D12Resource::GetResIDFromAddr(BufferLocation, id, offs);
 
     bool stateUpdate = false;
+    bool loading = IsLoading(m_State);
 
     if(m_Cmd->InRerecordRange(m_Cmd->m_LastCmdListID))
     {
-      bool loading = IsLoading(m_State);
       ID3D12GraphicsCommandListX *list = !loading ? m_Cmd->RerecordCmdList(m_Cmd->m_LastCmdListID)
                                                   : (ID3D12GraphicsCommandListX *)pCommandList;
 
@@ -2533,6 +2610,10 @@ bool WrappedID3D12GraphicsCommandList::Serialise_SetGraphicsRootShaderResourceVi
       D3D12RenderState &state = m_Cmd->m_BakedCmdListInfo[m_Cmd->m_LastCmdListID].state;
 
       state.graphics.sigelems.resize_for_index(RootParameterIndex);
+
+      if(loading)
+        m_Cmd->AddEventResourceBind(state.graphics.sigelems[RootParameterIndex].id, id);
+
       state.graphics.sigelems[RootParameterIndex] =
           D3D12RenderState::SignatureElement(eRootSRV, id, offs);
     }
@@ -2585,10 +2666,10 @@ bool WrappedID3D12GraphicsCommandList::Serialise_SetGraphicsRootUnorderedAccessV
     WrappedID3D12Resource::GetResIDFromAddr(BufferLocation, id, offs);
 
     bool stateUpdate = false;
+    bool loading = IsLoading(m_State);
 
     if(m_Cmd->InRerecordRange(m_Cmd->m_LastCmdListID))
     {
-      bool loading = IsLoading(m_State);
       ID3D12GraphicsCommandListX *list = !loading ? m_Cmd->RerecordCmdList(m_Cmd->m_LastCmdListID)
                                                   : (ID3D12GraphicsCommandListX *)pCommandList;
 
@@ -2606,6 +2687,10 @@ bool WrappedID3D12GraphicsCommandList::Serialise_SetGraphicsRootUnorderedAccessV
       D3D12RenderState &state = m_Cmd->m_BakedCmdListInfo[m_Cmd->m_LastCmdListID].state;
 
       state.graphics.sigelems.resize_for_index(RootParameterIndex);
+
+      if(loading)
+        m_Cmd->AddEventResourceBind(state.graphics.sigelems[RootParameterIndex].id, id);
+
       state.graphics.sigelems[RootParameterIndex] =
           D3D12RenderState::SignatureElement(eRootUAV, id, offs);
     }
@@ -2673,6 +2758,7 @@ bool WrappedID3D12GraphicsCommandList::Serialise_BeginQuery(SerialiserType &ser,
     else
     {
       Unwrap(pCommandList)->BeginQuery(Unwrap(pQueryHeap), Type, Index);
+      m_Cmd->AddEventResourceUsage(GetResID(pQueryHeap), ResourceUsage::Begin);
     }
   }
 
@@ -2741,6 +2827,7 @@ bool WrappedID3D12GraphicsCommandList::Serialise_EndQuery(SerialiserType &ser,
       // refer to queries from previous frames.
       // see the comment in ResolveQueryData for more information
       queryHeap->SetQueryValid(Index, Type);
+      m_Cmd->AddEventResourceUsage(GetResID(pQueryHeap), ResourceUsage::End);
     }
   }
 
@@ -2848,6 +2935,7 @@ bool WrappedID3D12GraphicsCommandList::Serialise_ResolveQueryData(
 
         D3D12EventNode &eventNode = m_Cmd->GetLastEventNode();
         eventNode.AddResourceUsage(GetResID(pDestinationBuffer), ResourceUsage::ResolveDst);
+        eventNode.AddResourceUsage(GetResID(pQueryHeap), ResourceUsage::CopySrc);
       }
     }
   }
@@ -2916,6 +3004,8 @@ bool WrappedID3D12GraphicsCommandList::Serialise_SetPredication(SerialiserType &
     else
     {
       Unwrap(pCommandList)->SetPredication(Unwrap(pBuffer), AlignedBufferOffset, Operation);
+      if(pBuffer)
+        m_Cmd->AddEventResourceUsage(GetResID(pBuffer), ResourceUsage::PredicationSrc);
 
       stateUpdate = true;
     }
@@ -2994,6 +3084,7 @@ bool WrappedID3D12GraphicsCommandList::Serialise_SetMarker(SerialiserType &ser, 
 
         m_Cmd->AddEvent();
         m_Cmd->AddAction(action);
+        m_Cmd->GetLastEventNode().AddResourceUsage(m_Cmd->m_LastCmdListID, ResourceUsage::Marker);
       }
     }
   }
@@ -3067,6 +3158,7 @@ bool WrappedID3D12GraphicsCommandList::Serialise_BeginEvent(SerialiserType &ser,
 
         m_Cmd->AddEvent();
         m_Cmd->AddAction(action);
+        m_Cmd->GetLastEventNode().AddResourceUsage(m_Cmd->m_LastCmdListID, ResourceUsage::Marker);
       }
     }
   }
@@ -3126,6 +3218,7 @@ bool WrappedID3D12GraphicsCommandList::Serialise_EndEvent(SerialiserType &ser)
 
         m_Cmd->AddEvent();
         m_Cmd->AddAction(action);
+        m_Cmd->GetLastEventNode().AddResourceUsage(m_Cmd->m_LastCmdListID, ResourceUsage::Marker);
       }
     }
   }
@@ -3446,6 +3539,7 @@ bool WrappedID3D12GraphicsCommandList::Serialise_ExecuteBundle(SerialiserType &s
         action.flags |= ActionFlags::CmdList;
 
         m_Cmd->AddAction(action);
+        m_Cmd->GetLastEventNode().AddResourceUsage(GetResID(pBundle), ResourceUsage::Submit);
       }
     }
   }
@@ -3931,6 +4025,7 @@ void WrappedID3D12GraphicsCommandList::FinaliseExecuteIndirectEvents(BakedCmdLis
             if(arg.VertexBuffer.Slot >= state.vbuffers.size())
               state.vbuffers.resize(arg.VertexBuffer.Slot + 1);
 
+            eventNode.AddResourceBind(state.vbuffers[arg.VertexBuffer.Slot].buf, id);
             state.vbuffers[arg.VertexBuffer.Slot].buf = id;
             state.vbuffers[arg.VertexBuffer.Slot].offs = offs;
             state.vbuffers[arg.VertexBuffer.Slot].size = vb->SizeInBytes;
@@ -3958,6 +4053,7 @@ void WrappedID3D12GraphicsCommandList::FinaliseExecuteIndirectEvents(BakedCmdLis
             }
             ib->BufferLocation = res ? res->GetGPUVirtualAddress() + offs : 0;
 
+            eventNode.AddResourceBind(state.ibuffer.buf, id);
             state.ibuffer.buf = id;
             state.ibuffer.offs = offs;
             state.ibuffer.size = ib->SizeInBytes;
@@ -3988,12 +4084,16 @@ void WrappedID3D12GraphicsCommandList::FinaliseExecuteIndirectEvents(BakedCmdLis
             // RootParameterIndex
             if(arg.ConstantBufferView.RootParameterIndex < state.graphics.sigelems.size())
             {
+              eventNode.AddResourceBind(
+                  state.graphics.sigelems[arg.ConstantBufferView.RootParameterIndex].id, id);
               state.graphics.sigelems[arg.ConstantBufferView.RootParameterIndex].id = id;
               state.graphics.sigelems[arg.ConstantBufferView.RootParameterIndex].offset = offs;
             }
 
             if(arg.ConstantBufferView.RootParameterIndex < state.compute.sigelems.size())
             {
+              eventNode.AddResourceBind(
+                  state.compute.sigelems[arg.ConstantBufferView.RootParameterIndex].id, id);
               state.compute.sigelems[arg.ConstantBufferView.RootParameterIndex].id = id;
               state.compute.sigelems[arg.ConstantBufferView.RootParameterIndex].offset = offs;
             }

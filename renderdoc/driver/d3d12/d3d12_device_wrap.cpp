@@ -1391,6 +1391,8 @@ bool WrappedID3D12Device::Serialise_DynamicDescriptorWrite(SerialiserType &ser,
 
       desc.Create(D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES, this, *handle);
       handle->GetHeap()->MarkMutableIndex(handle->GetHeapIndex());
+      if(IsLoading(m_State))
+        m_Queue->AddResourceUsage(GetResID(handle->GetHeap()), ResourceUsage::DescriptorStoreWrite);
     }
   }
 
@@ -2178,6 +2180,11 @@ bool WrappedID3D12Device::Serialise_DynamicDescriptorCopies(
     {
       CopyDescriptorsSimple(1, *copy.dst, *copy.src, copy.type);
       copy.dst->GetHeap()->MarkMutableIndex(copy.dst->GetHeapIndex());
+      if(IsLoading(m_State))
+      {
+        m_Queue->AddResourceUsage(GetResID(copy.src->GetHeap()), ResourceUsage::CopySrc);
+        m_Queue->AddResourceUsage(GetResID(copy.dst->GetHeap()), ResourceUsage::CopyDst);
+      }
     }
   }
 
