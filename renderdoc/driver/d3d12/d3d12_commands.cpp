@@ -1108,6 +1108,8 @@ bool WrappedID3D12CommandQueue::ProcessChunk(ReadSerialiser &ser, D3D12Chunk chu
         action.copyDestination = m_Cmd.m_LastPresentedImage;
 
         m_Cmd.AddAction(action);
+        if(PresentedImage != ResourceId())
+          m_Cmd.GetLastEventNode().AddResourceUsage(PresentedImage, ResourceUsage::Present);
       }
 
       ret = true;
