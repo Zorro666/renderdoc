@@ -2010,6 +2010,9 @@ void D3D12CommandData::AddEvent()
       apievent.annotations = m_RootAnnotation->Duplicate();
   }
 
+  if(m_LastCmdListID != ResourceId())
+    node.AddResourceUsage(m_LastCmdListID, ResourceUsage::Recorded);
+
   m_AddedEventNode = true;
 }
 
