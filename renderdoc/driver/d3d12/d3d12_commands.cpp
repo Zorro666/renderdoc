@@ -1108,6 +1108,8 @@ bool WrappedID3D12CommandQueue::ProcessChunk(ReadSerialiser &ser, D3D12Chunk chu
         action.copyDestination = m_Cmd.m_LastPresentedImage;
 
         m_Cmd.AddAction(action);
+        if(PresentedImage != ResourceId())
+          m_Cmd.GetLastEventNode().AddResourceUsage(PresentedImage, ResourceUsage::Present);
       }
 
       ret = true;
@@ -2008,6 +2010,9 @@ void D3D12CommandData::AddEvent()
       apievent.annotations = m_RootAnnotation->Duplicate();
   }
 
+  if(m_LastCmdListID != ResourceId())
+    node.AddResourceUsage(m_LastCmdListID, ResourceUsage::Recorded);
+
   m_AddedEventNode = true;
 }
 
@@ -2025,6 +2030,25 @@ void D3D12CommandData::AddUsageForBindInRootSig(const D3D12RenderState &state,
   D3D12ResourceManager *rm = m_pDevice->GetResourceManager();
 
   WrappedID3D12RootSignature *sig = rm->GetResAs<WrappedID3D12RootSignature>(rootsig->rootsig);
+
+  if(type == D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER)
+  {
+    for(const D3D12_STATIC_SAMPLER_DESC1 &sampler : sig->sig.StaticSamplers)
+    {
+      if(sampler.RegisterSpace == space && sampler.ShaderRegister >= bind &&
+         sampler.ShaderRegister < bind + rangeSize)
+      {
+        // Use the Root Signature ResourceId : Sampler is not a resource
+        AddUniqueResourceUsage(eventNode, GetResID(sig), ResourceUsage::Sampler);
+
+        // common case - root element matches 1:1 with a non-array shader bind, if so we can exit.
+        // If not we might have to continue since other parts of it might be mapped to a table, or
+        // another root element
+        if(rangeSize == 1)
+          return;
+      }
+    }
+  }
 
   for(size_t rootEl = 0; rootEl < sig->sig.Parameters.size(); rootEl++)
   {
@@ -2100,6 +2124,7 @@ void D3D12CommandData::AddUsageForBindInRootSig(const D3D12RenderState &state,
     {
       WrappedID3D12DescriptorHeap *heap =
           m_pDevice->GetResourceManager()->GetResAs<WrappedID3D12DescriptorHeap>(el.id);
+      const ResourceId heapId = el.id;
 
       if(heap == NULL)
         continue;
@@ -2161,6 +2186,7 @@ void D3D12CommandData::AddUsageForBindInRootSig(const D3D12RenderState &state,
 
         if(range.RangeType == D3D12_DESCRIPTOR_RANGE_TYPE_CBV)
         {
+          AddUniqueResourceUsage(eventNode, heapId, cb);
           for(UINT i = 0; i < num && i < rangeSize; i++)
           {
             ResourceId id = WrappedID3D12Resource::GetResIDFromAddr(desc->GetCBV().BufferLocation);
@@ -2174,10 +2200,23 @@ void D3D12CommandData::AddUsageForBindInRootSig(const D3D12RenderState &state,
                 range.RangeType == D3D12_DESCRIPTOR_RANGE_TYPE_UAV)
         {
           ResourceUsage usage = range.RangeType == D3D12_DESCRIPTOR_RANGE_TYPE_SRV ? ro : rw;
+          AddUniqueResourceUsage(eventNode, heapId, usage);
 
           for(UINT i = 0; i < num && i < rangeSize; i++)
           {
             AddResourceUsage(eventNode, desc->GetResResourceId(), usage);
+            if(desc->GetCounterResourceId() != ResourceId())
+              AddResourceUsage(eventNode, desc->GetResResourceId(), ResourceUsage::CounterBuffer);
+
+            desc++;
+          }
+        }
+        else if(range.RangeType == D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER)
+        {
+          for(UINT i = 0; i < num && i < rangeSize; i++)
+          {
+            // Use the Heap ResourceId : Sampler is not a resource
+            AddUniqueResourceUsage(eventNode, heapId, ResourceUsage::Sampler);
 
             desc++;
           }
@@ -2207,12 +2246,19 @@ void D3D12CommandData::AddUsage(const D3D12RenderState &state, D3D12EventNode &e
   WrappedID3D12PipelineState *pipe = NULL;
 
   if(state.pipe != ResourceId())
+  {
     pipe = rm->GetResAs<WrappedID3D12PipelineState>(state.pipe);
+    eventNode.AddResourceUsage(state.pipe, ResourceUsage::Pipeline);
+  }
+  // state.
+  for(ResourceId id : state.heaps)
+    eventNode.AddResourceUsage(id, ResourceUsage::DescriptorStore);
 
   const ShaderReflection *refls[NumShaderStages] = {};
 
   if((a.flags & ActionFlags::Dispatch) && state.compute.rootsig != ResourceId())
   {
+    eventNode.AddResourceUsage(state.compute.rootsig, ResourceUsage::PipelineLayout);
     rootsig = &state.compute;
 
     if(pipe && pipe->IsCompute())
@@ -2220,10 +2266,12 @@ void D3D12CommandData::AddUsage(const D3D12RenderState &state, D3D12EventNode &e
       WrappedID3D12Shader *sh = (WrappedID3D12Shader *)pipe->compute->CS.pShaderBytecode;
 
       refls[uint32_t(ShaderStage::Compute)] = &sh->GetDetails();
+      eventNode.AddResourceUsage(sh->GetResourceID(), ResourceUsage::CS_Shader);
     }
   }
   else if(state.graphics.rootsig != ResourceId())
   {
+    eventNode.AddResourceUsage(state.graphics.rootsig, ResourceUsage::PipelineLayout);
     rootsig = &state.graphics;
 
     if(pipe && pipe->IsGraphics())
@@ -2247,7 +2295,11 @@ void D3D12CommandData::AddUsage(const D3D12RenderState &state, D3D12EventNode &e
         WrappedID3D12Shader *sh = (WrappedID3D12Shader *)srcArr[stage]->pShaderBytecode;
 
         if(sh)
+        {
           refls[stage] = &sh->GetDetails();
+          eventNode.AddResourceUsage(sh->GetResourceID(),
+                                     ResourceUsage(uint32_t(ResourceUsage::VS_Shader) + stage));
+        }
       }
     }
 
@@ -2334,6 +2386,13 @@ void D3D12CommandData::AddUsage(const D3D12RenderState &state, D3D12EventNode &e
       {
         AddUsageForBindInRootSig(state, eventNode, reflMask, rootsig, D3D12_DESCRIPTOR_RANGE_TYPE_UAV,
                                  r.fixedBindSetOrSpace, r.fixedBindNumber, r.bindArraySize);
+      }
+
+      for(const ShaderSampler &r : refls[sh]->samplers)
+      {
+        AddUsageForBindInRootSig(state, eventNode, reflMask, rootsig,
+                                 D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER, r.fixedBindSetOrSpace,
+                                 r.fixedBindNumber, r.bindArraySize);
       }
     }
   }

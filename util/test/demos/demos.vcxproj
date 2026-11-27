@@ -228,6 +228,7 @@
     <ClCompile Include="d3d12\d3d12_vrs.cpp" />
     <ClCompile Include="d3d12\d3d12_workgroup_zoo.cpp" />
     <ClCompile Include="d3d12\d3d12_write_subresource.cpp" />
+    <ClCompile Include="d3d12\d3d12_resource_usage.cpp" />
     <ClCompile Include="dx\d3d_helpers.cpp" />
     <ClCompile Include="3rdparty\glad\glad.c" />
     <ClCompile Include="3rdparty\glad\glad_egl.c">

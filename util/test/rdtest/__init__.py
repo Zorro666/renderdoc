@@ -15,3 +15,4 @@ from .shared.Workgroup_Zoo import *
 from .shared.Groupshared import *
 from .shared.Annotations import *
 from .shared.Stripped_Shaders import *
+from .shared.Resource_Usage import *

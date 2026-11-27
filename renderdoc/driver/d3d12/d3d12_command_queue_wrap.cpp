@@ -64,6 +64,11 @@ bool WrappedID3D12CommandQueue::Serialise_UpdateTileMappings(
                                 pResourceRegionStartCoordinates, pResourceRegionSizes,
                                 Unwrap(pHeap), NumRanges, pRangeFlags, pHeapRangeStartOffsets,
                                 pRangeTileCounts, Flags & ~D3D12_TILE_MAPPING_FLAG_NO_HAZARD);
+    if(IsLoading(m_State))
+    {
+      AddResourceUsage(GetResID(pResource), ResourceUsage::SparseBindingUpdate);
+      AddResourceUsage(GetResID(pHeap), ResourceUsage::SparseBindingUpdate);
+    }
   }
 
   return true;
@@ -361,6 +366,11 @@ bool WrappedID3D12CommandQueue::Serialise_CopyTileMappings(
     m_pReal->CopyTileMappings(Unwrap(pDstResource), &DstRegionStartCoordinate, Unwrap(pSrcResource),
                               &SrcRegionStartCoordinate, &RegionSize,
                               Flags & ~D3D12_TILE_MAPPING_FLAG_NO_HAZARD);
+    if(IsLoading(m_State))
+    {
+      AddResourceUsage(GetResID(pSrcResource), ResourceUsage::SparseBindingUpdate);
+      AddResourceUsage(GetResID(pDstResource), ResourceUsage::SparseBindingUpdate);
+    }
   }
 
   return true;
@@ -487,6 +497,7 @@ bool WrappedID3D12CommandQueue::Serialise_ExecuteCommandLists(SerialiserType &se
     if(IsLoading(m_State))
     {
       m_Cmd.AddEvent();
+      m_Cmd.GetLastEventNode().AddResourceUsage(GetResID(pQueue), ResourceUsage::Submit);
 
       for(uint32_t i = 0; i < NumCommandLists; i++)
       {
@@ -620,6 +631,8 @@ bool WrappedID3D12CommandQueue::Serialise_ExecuteCommandLists(SerialiserType &se
           eventNode.addActionUse = false;
           eventNode.addPrimaryExecute = true;
           eventNode.primaryCmdId = cmd;
+          eventNode.AddResourceUsage(cmd, ResourceUsage::Reset);
+          eventNode.AddResourceUsage(cmdListInfo.commandList, ResourceUsage::Reset);
         }
 
         // insert the baked command buffer into the root events, resolving indirect actions
@@ -637,6 +650,8 @@ bool WrappedID3D12CommandQueue::Serialise_ExecuteCommandLists(SerialiserType &se
           D3D12EventNode &eventNode = m_Cmd.GetLastEventNode();
           eventNode.event.chunkIndex = cmdListInfo.endChunk;
           eventNode.addActionUse = false;
+          eventNode.AddResourceUsage(cmd, ResourceUsage::Close);
+          eventNode.AddResourceUsage(cmdListInfo.commandList, ResourceUsage::Close);
           if(localAnnotations)
           {
             // Modify using the annotations stored in the event node
@@ -1229,6 +1244,7 @@ bool WrappedID3D12CommandQueue::Serialise_SetMarker(SerialiserType &ser, UINT Me
 
       m_Cmd.AddEvent();
       m_Cmd.AddAction(action);
+      m_Cmd.GetLastEventNode().AddResourceUsage(GetResID(pQueue), ResourceUsage::Marker);
     }
   }
 
@@ -1287,6 +1303,7 @@ bool WrappedID3D12CommandQueue::Serialise_BeginEvent(SerialiserType &ser, UINT M
 
       m_Cmd.AddEvent();
       m_Cmd.AddAction(action);
+      m_Cmd.GetLastEventNode().AddResourceUsage(GetResID(pQueue), ResourceUsage::Marker);
     }
   }
 
@@ -1364,6 +1381,8 @@ bool WrappedID3D12CommandQueue::Serialise_Signal(SerialiserType &ser, ID3D12Fenc
   {
     m_pReal->Signal(Unwrap(pFence), Value);
     m_pDevice->DeviceWaitForIdle();
+    if(IsLoading(m_State))
+      AddResourceUsage(GetResID(pFence), ResourceUsage::Signal);
   }
 
   return true;
@@ -1402,6 +1421,8 @@ bool WrappedID3D12CommandQueue::Serialise_Wait(SerialiserType &ser, ID3D12Fence 
   if(IsReplayingAndReading() && pFence)
   {
     m_pDevice->DeviceWaitForIdle();
+    if(IsLoading(m_State))
+      AddResourceUsage(GetResID(pFence), ResourceUsage::Wait);
   }
 
   return true;
